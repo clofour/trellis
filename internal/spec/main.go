@@ -14,17 +14,17 @@ func ParseSpec(raw []byte) ([]models.Job, error) {
 		return nil, err
 	}
 
-	var jobs []models.Job
+	var job *models.Job
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeDurationHookFunc(),
 		),
-		Result:  &jobs,
+		Result:  &job,
 		TagName: "yaml",
 	})
 	if err != nil {
 		return nil, err
 	}
-	return jobs, decoder.Decode(raw)
+	return job, decoder.Decode(data)
 }
