@@ -1,44 +1,44 @@
 package models
 
-type Job struct {
+type JobSpec struct {
 	Name       string
-	TaskGroups []TaskGroup
+	TaskGroups []TaskGroupSpec
 }
 
-type TaskGroup struct {
+type TaskGroupSpec struct {
 	Name  string
 	Count int
-	Tasks []Task
+	Tasks []TaskSpec
 }
 
-type Task struct {
+type TaskSpec struct {
 	Name        string
 	Image       string
 	Ports       []string
 	Env         map[string]string
-	Resources   *Resources
-	HealthCheck *HealthCheck
-	Volumes     []Volume
+	Resources   *ResourcesSpec
+	HealthCheck *HealthCheckSpec
+	Volumes     []VolumeSpec
 }
 
-type Resources struct {
+type ResourcesSpec struct {
 	CPU    int
 	Memory int
 }
 
-type HealthCheck struct {
+type HealthCheckSpec struct {
 	Type    string
 	Port    int
 	Path    string
 	Command string
 }
 
-type Volume struct {
+type VolumeSpec struct {
 	Name string
 	Path string
 }
 
-type Mount struct {
+type MountSpec struct {
 	Name          string
 	HostPath      string
 	ContainerPath string

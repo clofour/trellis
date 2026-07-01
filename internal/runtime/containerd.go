@@ -255,7 +255,7 @@ func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*C
 	return result, nil
 }
 
-func convertOci(mounts []models.Mount) []specs.Mount {
+func convertOci(mounts []models.MountSpec) []specs.Mount {
 	result := make([]specs.Mount, len(mounts))
 
 	for i, m := range mounts {

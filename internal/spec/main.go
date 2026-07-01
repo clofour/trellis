@@ -7,14 +7,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func ParseSpec(raw []byte) (*models.Job, error) {
+func ParseSpec(raw []byte) (*models.JobSpec, error) {
 	var data map[string]interface{}
 	err := yaml.Unmarshal(raw, &data)
 	if err != nil {
 		return nil, err
 	}
 
-	var job *models.Job
+	var job *models.JobSpec
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(

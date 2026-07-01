@@ -18,7 +18,7 @@ func NewVolumeManager() *VolumeManager {
 	}
 }
 
-func (vm *VolumeManager) Create(jobName string, taskName string, volume models.Volume) error {
+func (vm *VolumeManager) Create(jobName string, taskName string, volume models.VolumeSpec) error {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	err := os.MkdirAll(hostPath, 0755)
@@ -29,7 +29,7 @@ func (vm *VolumeManager) Create(jobName string, taskName string, volume models.V
 	return nil
 }
 
-func (vm *VolumeManager) Check(jobName string, taskName string, volume models.Volume) (bool, error) {
+func (vm *VolumeManager) Check(jobName string, taskName string, volume models.VolumeSpec) (bool, error) {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	info, err := os.Stat(hostPath)
@@ -40,7 +40,7 @@ func (vm *VolumeManager) Check(jobName string, taskName string, volume models.Vo
 	return info.IsDir(), nil
 }
 
-func (vm *VolumeManager) Delete(jobName string, taskName string, volume models.Volume) error {
+func (vm *VolumeManager) Delete(jobName string, taskName string, volume models.VolumeSpec) error {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	err := os.RemoveAll(hostPath)

@@ -19,7 +19,7 @@ type CreateOptions struct {
 	ID     string
 	Image  string
 	Env    []string
-	Mounts []models.Mount
+	Mounts []models.MountSpec
 }
 
 type ContainerInfo struct {
