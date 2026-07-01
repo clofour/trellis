@@ -1,6 +1,10 @@
 package runtime
 
-import "context"
+import (
+	"context"
+
+	"github.com/clofour/trellis/internal/agent"
+)
 
 type ContainerStatus string
 
@@ -12,9 +16,10 @@ const (
 )
 
 type CreateOptions struct {
-	ID    string
-	Image string
-	Env   []string
+	ID     string
+	Image  string
+	Env    []string
+	Mounts []agent.Mount
 }
 
 type ContainerInfo struct {

@@ -6,11 +6,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/clofour/trellis/internal/agent"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/pkg/cio"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/errdefs"
+	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 const trellisNamespace = "trellis"
@@ -35,12 +37,8 @@ func (c *ContainerdRuntime) Close() error {
 	return c.client.Close()
 }
 
-func (c *ContainerdRuntime) WithNamespace(ctx context.Context) context.Context {
-	return namespaces.WithNamespace(ctx, trellisNamespace)
-}
-
 func (c *ContainerdRuntime) Pull(ctx context.Context, image string) error {
-	ctx = c.WithNamespace(ctx)
+	ctx = c.withNamespace(ctx)
 
 	_, err := c.client.Pull(ctx, image, containerd.WithPullUnpack)
 	if err != nil {
@@ -51,7 +49,7 @@ func (c *ContainerdRuntime) Pull(ctx context.Context, image string) error {
 }
 
 func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (string, error) {
-	ctx = c.WithNamespace(ctx)
+	ctx = c.withNamespace(ctx)
 
 	image, err := c.client.GetImage(ctx, options.Image)
 	if err != nil {
@@ -61,6 +59,7 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 	ociSpecOpts := []oci.SpecOpts{
 		oci.WithImageConfig(image),
 		oci.WithEnv(options.Env),
+		oci.WithMounts(convertOci(options.Mounts)),
 	}
 
 	container, err := c.client.NewContainer(ctx, options.ID,
@@ -76,7 +75,7 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 }
 
 func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error {
-	ctx = c.WithNamespace(ctx)
+	ctx = c.withNamespace(ctx)
 
 	container, err := c.client.LoadContainer(ctx, containerID)
 	if err != nil {
@@ -98,7 +97,7 @@ func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error
 }
 
 func (c *ContainerdRuntime) Stop(ctx context.Context, containerID string) error {
-	ctx = c.WithNamespace(ctx)
+	ctx = c.withNamespace(ctx)
 
 	container, err := c.client.LoadContainer(ctx, containerID)
 	if err != nil {
@@ -149,7 +148,7 @@ func (c *ContainerdRuntime) Stop(ctx context.Context, containerID string) error 
 }
 
 func (c *ContainerdRuntime) Remove(ctx context.Context, containerID string) error {
-	ctx = c.WithNamespace(ctx)
+	ctx = c.withNamespace(ctx)
 
 	container, err := c.client.LoadContainer(ctx, containerID)
 	if err != nil {
@@ -165,7 +164,7 @@ func (c *ContainerdRuntime) Remove(ctx context.Context, containerID string) erro
 }
 
 func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*ContainerInfo, error) {
-	ctx = c.WithNamespace(ctx)
+	ctx = c.withNamespace(ctx)
 
 	container, err := c.client.LoadContainer(ctx, containerID)
 	if err != nil {
@@ -209,4 +208,25 @@ func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*C
 	}
 
 	return result, nil
+}
+
+func convertOci(mounts []agent.Mount) []specs.Mount {
+	result := make([]specs.Mount, len(mounts))
+
+	for i, m := range mounts {
+
+		result[i] = specs.Mount{
+			Source:      m.HostPath,
+			Destination: m.ContainerPath,
+			Type:        "bind",
+			Options:     []string{"rbind", "rw"},
+		}
+
+	}
+
+	return result
+}
+
+func (c *ContainerdRuntime) withNamespace(ctx context.Context) context.Context {
+	return namespaces.WithNamespace(ctx, trellisNamespace)
 }

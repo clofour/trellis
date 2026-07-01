@@ -12,14 +12,16 @@ type VolumeManager struct {
 	dataRootPath string
 }
 
+type Mount struct {
+	Name          string
+	HostPath      string
+	ContainerPath string
+}
+
 func New() *VolumeManager {
 	return &VolumeManager{
 		dataRootPath: "/var/lib/trellis/data",
 	}
-}
-
-func (vm *VolumeManager) getHostPath(jobName string, taskName string, volumeName string) string {
-	return filepath.Join(vm.dataRootPath, jobName, taskName, volumeName)
 }
 
 func (vm *VolumeManager) Create(jobName string, taskName string, volume models.Volume) error {
@@ -53,4 +55,8 @@ func (vm *VolumeManager) Delete(jobName string, taskName string, volume models.V
 	}
 
 	return nil
+}
+
+func (vm *VolumeManager) getHostPath(jobName string, taskName string, volumeName string) string {
+	return filepath.Join(vm.dataRootPath, jobName, taskName, volumeName)
 }
