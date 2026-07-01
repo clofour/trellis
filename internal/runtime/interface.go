@@ -27,6 +27,6 @@ type ContainerRuntime interface {
 	Create(ctx context.Context, options CreateOptions) (string, error)
 	Start(ctx context.Context, containerId string) error
 	Stop(ctx context.Context, containerId string) error
-	Remove(ctx context.Context, containerID string)
+	Remove(ctx context.Context, containerID string) error
 	Inspect(ctx context.Context, containerID string) (ContainerInfo, error)
 }
