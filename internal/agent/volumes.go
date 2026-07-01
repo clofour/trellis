@@ -12,12 +12,6 @@ type VolumeManager struct {
 	dataRootPath string
 }
 
-type Mount struct {
-	Name          string
-	HostPath      string
-	ContainerPath string
-}
-
 func New() *VolumeManager {
 	return &VolumeManager{
 		dataRootPath: "/var/lib/trellis/data",

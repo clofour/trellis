@@ -6,7 +6,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clofour/trellis/internal/agent"
+	"github.com/clofour/trellis/internal/models"
+
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/pkg/cio"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
@@ -254,7 +255,7 @@ func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*C
 	return result, nil
 }
 
-func convertOci(mounts []agent.Mount) []specs.Mount {
+func convertOci(mounts []models.Mount) []specs.Mount {
 	result := make([]specs.Mount, len(mounts))
 
 	for i, m := range mounts {

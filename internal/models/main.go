@@ -37,3 +37,9 @@ type Volume struct {
 	Name string
 	Path string
 }
+
+type Mount struct {
+	Name          string
+	HostPath      string
+	ContainerPath string
+}

@@ -3,7 +3,7 @@ package runtime
 import (
 	"context"
 
-	"github.com/clofour/trellis/internal/agent"
+	"github.com/clofour/trellis/internal/models"
 )
 
 type ContainerStatus string
@@ -19,7 +19,7 @@ type CreateOptions struct {
 	ID     string
 	Image  string
 	Env    []string
-	Mounts []agent.Mount
+	Mounts []models.Mount
 }
 
 type ContainerInfo struct {
@@ -33,6 +33,6 @@ type ContainerRuntime interface {
 	Start(ctx context.Context, containerId string) error
 	Stop(ctx context.Context, containerId string) error
 	Remove(ctx context.Context, containerID string) error
-	Exec(ctx context.Context, containerID string, command string) error
+	Exec(ctx context.Context, containerID string, command []string) (int, error)
 	Inspect(ctx context.Context, containerID string) (ContainerInfo, error)
 }
