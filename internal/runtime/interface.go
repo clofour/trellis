@@ -33,5 +33,6 @@ type ContainerRuntime interface {
 	Start(ctx context.Context, containerId string) error
 	Stop(ctx context.Context, containerId string) error
 	Remove(ctx context.Context, containerID string) error
+	Exec(ctx context.Context, containerID string, command string) error
 	Inspect(ctx context.Context, containerID string) (ContainerInfo, error)
 }

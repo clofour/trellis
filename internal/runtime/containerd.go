@@ -163,6 +163,50 @@ func (c *ContainerdRuntime) Remove(ctx context.Context, containerID string) erro
 	return nil
 }
 
+func (c *ContainerdRuntime) Exec(ctx context.Context, containerID string, command []string) (int, error) {
+	ctx = c.withNamespace(ctx)
+
+	container, err := c.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return 1, fmt.Errorf("loading container %s: %w", containerID, err)
+	}
+
+	task, err := container.Task(ctx, nil)
+	if err != nil {
+		return 1, fmt.Errorf("getting task for %s: %w", containerID, err)
+	}
+
+	execID := fmt.Sprintf("healthcheck-%d", time.Now().UnixNano())
+	process := &specs.Process{
+		Args: command,
+		Cwd:  "/",
+	}
+
+	taskExec, err := task.Exec(ctx, execID, process, cio.NullIO)
+	if err != nil {
+		return 1, fmt.Errorf("constructing command %s: %w", command, err)
+	}
+	defer taskExec.Delete(ctx)
+
+	exitChannel, err := taskExec.Wait(ctx)
+	if err != nil {
+		return 1, fmt.Errorf("waiting on command %s: %w", command, err)
+	}
+
+	err = taskExec.Start(ctx)
+	if err != nil {
+		return 1, fmt.Errorf("executing command %s: %w", command, err)
+	}
+
+	status := <-exitChannel
+	code, _, err := status.Result()
+	if err != nil {
+		return 1, fmt.Errorf("extracting status %s: %w", command, err)
+	}
+
+	return int(code), nil
+}
+
 func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*ContainerInfo, error) {
 	ctx = c.withNamespace(ctx)
 
