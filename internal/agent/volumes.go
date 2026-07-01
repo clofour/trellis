@@ -12,7 +12,7 @@ type VolumeManager struct {
 	dataRootPath string
 }
 
-func New() *VolumeManager {
+func NewVolumeManager() *VolumeManager {
 	return &VolumeManager{
 		dataRootPath: "/var/lib/trellis/data",
 	}

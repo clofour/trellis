@@ -1,4 +1,4 @@
-package agent
+package health
 
 import (
 	"context"
@@ -8,12 +8,6 @@ import (
 
 	"github.com/clofour/trellis/internal/runtime"
 )
-
-type HealthManager struct {
-	name string
-}
-
-const checkTimeout = 10
 
 func CheckHTTP(ctx context.Context, addr string, port int, path string) (bool, error) {
 	client := &http.Client{}
@@ -33,11 +27,13 @@ func CheckHTTP(ctx context.Context, addr string, port int, path string) (bool, e
 	return response.StatusCode >= 200 && response.StatusCode < 300, nil
 }
 
-func CheckTCP(ctx context.Context, addr string) (bool, error) {
+func CheckTCP(ctx context.Context, addr string, port int) (bool, error) {
+	url := fmt.Sprintf("http://%s:%d", addr, port)
+
 	dialer := net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	conn, err := dialer.DialContext(ctx, "tcp", url)
 	if err != nil {
-		return false, fmt.Errorf("executing request %s: %w", addr, err)
+		return false, fmt.Errorf("executing request %s: %w", url, err)
 	}
 	defer conn.Close()
 
