@@ -15,18 +15,22 @@ type Agent struct {
 	// discovery registr
 	// ports *agent.PortManager
 	volumes *VolumeManager
+
+	allocations map[string]*Allocation
 }
 
 type Allocation struct {
+	ID string
+
 	JobName   string
 	GroupName string
 	TaskName  string
-	Spec      models.TaskSpec
+	Spec      *models.TaskSpec
 
 	ContainerID string
 	ServiceID   string
 	Ports       []models.Port
-	Mounts      []models.Mount
+	Mounts      []*models.Mount
 }
 
 func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, volumes *VolumeManager) *Agent {
@@ -35,6 +39,15 @@ func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, vo
 		health:  health,
 		volumes: volumes,
 	}
+}
+
+func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
+	result := make([]*Allocation, 0, len(a.allocations))
+	for _, alloc := range a.allocations {
+		result = append(result, alloc)
+	}
+
+	return result
 }
 
 func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName string, taskName string, spec *models.TaskSpec) error {
@@ -72,9 +85,45 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 		return fmt.Errorf("start container %s: %w", containerID, err)
 	}
 
-	alloc := &Allocation{}
+	alloc := &Allocation{
+		ID: allocID,
+
+		JobName:   jobName,
+		GroupName: groupName,
+		TaskName:  taskName,
+		Spec:      spec,
+
+		ContainerID: containerID,
+		ServiceID:   "0",
+		Mounts:      mounts,
+	}
+	a.allocations[allocID] = alloc
+
+	// a.health.RegisterTask()
 
 	return nil
 }
 
-func (a *Agent) StopAllocation(ctx context.Context)
+func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
+	alloc, ok := a.allocations[allocID]
+	if !ok {
+		return fmt.Errorf("allocation %s not found", allocID)
+	}
+	delete(a.allocations, allocID)
+
+	// a.health.DeregisterTask()
+
+	containerID := alloc.ContainerID
+
+	err := a.runtime.Stop(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("stop container %s: %w", containerID, err)
+	}
+
+	err = a.runtime.Remove(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("remove container %s: %w", containerID, err)
+	}
+
+	return nil
+}
