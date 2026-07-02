@@ -18,8 +18,8 @@ const (
 type CreateOptions struct {
 	ID     string
 	Image  string
-	Env    []string
-	Mounts []models.MountSpec
+	Env    map[string]string
+	Mounts []*models.Mount
 }
 
 type ContainerInfo struct {
@@ -34,5 +34,5 @@ type ContainerRuntime interface {
 	Stop(ctx context.Context, containerId string) error
 	Remove(ctx context.Context, containerID string) error
 	Exec(ctx context.Context, containerID string, command []string) (int, error)
-	Inspect(ctx context.Context, containerID string) (ContainerInfo, error)
+	Inspect(ctx context.Context, containerID string) (*ContainerInfo, error)
 }

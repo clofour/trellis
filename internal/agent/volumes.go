@@ -18,15 +18,18 @@ func NewVolumeManager() *VolumeManager {
 	}
 }
 
-func (vm *VolumeManager) Create(jobName string, taskName string, volume models.VolumeSpec) error {
+func (vm *VolumeManager) Create(jobName string, taskName string, volume models.VolumeSpec) (*models.Mount, error) {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	err := os.MkdirAll(hostPath, 0755)
 	if err != nil {
-		return fmt.Errorf("creating volume dir %s: %w", hostPath, err)
+		return nil, fmt.Errorf("creating volume dir %s: %w", hostPath, err)
 	}
 
-	return nil
+	return &models.Mount{
+		HostPath:      hostPath,
+		ContainerPath: volume.Path,
+	}, nil
 }
 
 func (vm *VolumeManager) Check(jobName string, taskName string, volume models.VolumeSpec) (bool, error) {

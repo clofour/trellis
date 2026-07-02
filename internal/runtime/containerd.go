@@ -23,7 +23,7 @@ type ContainerdRuntime struct {
 	client *containerd.Client
 }
 
-func New(socketPath string) (*ContainerdRuntime, error) {
+func NewContainerdRuntime(socketPath string) (*ContainerdRuntime, error) {
 	client, err := containerd.New(socketPath)
 	if err != nil {
 		return nil, err
@@ -59,8 +59,8 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 
 	ociSpecOpts := []oci.SpecOpts{
 		oci.WithImageConfig(image),
-		oci.WithEnv(options.Env),
-		oci.WithMounts(convertOci(options.Mounts)),
+		oci.WithEnv(convertEnv(options.Env)),
+		oci.WithMounts(convertMounts(options.Mounts)),
 	}
 
 	container, err := c.client.NewContainer(ctx, options.ID,
@@ -255,7 +255,17 @@ func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*C
 	return result, nil
 }
 
-func convertOci(mounts []models.MountSpec) []specs.Mount {
+func convertEnv(envMap map[string]string) []string {
+	env := make([]string, 0, len(envMap))
+
+	for k, v := range envMap {
+		env = append(env, k+"="+v)
+	}
+
+	return env
+}
+
+func convertMounts(mounts []*models.Mount) []specs.Mount {
 	result := make([]specs.Mount, len(mounts))
 
 	for i, m := range mounts {

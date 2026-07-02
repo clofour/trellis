@@ -37,9 +37,3 @@ type VolumeSpec struct {
 	Name string
 	Path string
 }
-
-type MountSpec struct {
-	Name          string
-	HostPath      string
-	ContainerPath string
-}
