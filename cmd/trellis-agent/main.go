@@ -13,6 +13,9 @@ import (
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
+	"github.com/clofour/trellis/internal/service"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 
 	"github.com/spf13/cobra"
 )
@@ -57,14 +60,20 @@ func run(config *models.Config) error {
 
 	vm := agent.NewVolumeManager()
 
-	// Consul
+	pm := agent.NewPortManager(crt, 0, 0, 0)
 
-	// server := &http.Server{
-	// 	Addr: runConfig.ListenAddr,
-	// 	Handler:
-	// }
+	sr, err := service.NewConsulRegistry()
+	if err != nil {
+		return fmt.Errorf("init service registry %s: %w", "TBA", err)
+	}
 
-	agent := agent.NewAgent(crt, hm, vm)
+	ag := agent.NewAgent(crt, hm, pm, vm, sr)
+
+	e := echo.New()
+	e.Use(middleware.Recover())
+	handler := agent.NewHandler(ag)
+	handler.Register(e)
+	e.Start(":8149")
 
 	<-ctx.Done()
 
