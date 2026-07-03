@@ -97,6 +97,20 @@ func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error
 	return nil
 }
 
+func (c *ContainerdRuntime) Restart(ctx context.Context, containerID string) error {
+	err := c.Stop(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("stopping container %s: %w", containerID, err)
+	}
+
+	err = c.Start(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("starting container %s: %w", containerID, err)
+	}
+
+	return nil
+}
+
 func (c *ContainerdRuntime) Stop(ctx context.Context, containerID string) error {
 	ctx = c.withNamespace(ctx)
 
