@@ -7,14 +7,15 @@ import (
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
+	"github.com/clofour/trellis/internal/service"
 )
 
 type Agent struct {
 	runtime runtime.ContainerRuntime
 	health  *health.HealthManager
-	// discovery registr
-	// ports *agent.PortManager
+	ports   *PortManager
 	volumes *VolumeManager
+	service service.ServiceRegistry
 
 	allocations map[string]*Allocation
 }
@@ -29,15 +30,17 @@ type Allocation struct {
 
 	ContainerID string
 	ServiceID   string
-	Ports       []models.Port
+	Ports       []*models.Port
 	Mounts      []*models.Mount
 }
 
-func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, volumes *VolumeManager) *Agent {
+func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry) *Agent {
 	return &Agent{
 		runtime: runtime,
 		health:  health,
+		ports:   ports,
 		volumes: volumes,
+		service: service,
 
 		allocations: make(map[string]*Allocation),
 	}
@@ -53,8 +56,17 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 }
 
 func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName string, taskName string, spec *models.TaskSpec) error {
-	// Validate spec
 	allocID := fmt.Sprintf("%s-%s-%s-%d", jobName, groupName, taskName)
+
+	var ports []*models.Port
+	for _, p := range spec.Ports {
+		port, err := a.ports.Claim(p)
+		if err != nil {
+			return fmt.Errorf("claim port %d: %w", p.HostPort, err)
+		}
+
+		ports = append(ports, port)
+	}
 
 	var mounts []*models.Mount
 	for _, v := range spec.Volumes {
@@ -87,6 +99,12 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 		return fmt.Errorf("start container %s: %w", containerID, err)
 	}
 
+	// a.health.RegisterTask()
+
+	for _, p := range ports {
+		a.service.Register(ctx, allocID, taskName, "127.0.0.1", p.HostPort)
+	}
+
 	alloc := &Allocation{
 		ID: allocID,
 
@@ -97,11 +115,10 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 
 		ContainerID: containerID,
 		ServiceID:   "0",
+		Ports:       ports,
 		Mounts:      mounts,
 	}
 	a.allocations[allocID] = alloc
-
-	// a.health.RegisterTask()
 
 	return nil
 }
