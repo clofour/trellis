@@ -30,9 +30,12 @@ func NewPortManager(runtime runtime.ContainerRuntime, min int, max int, cursor i
 
 	return &PortManager{
 		runtime: runtime,
-		min:     min,
-		max:     max,
-		cursor:  min,
+
+		claims: make(map[int]*models.Port),
+
+		min:    min,
+		max:    max,
+		cursor: min,
 	}
 }
 

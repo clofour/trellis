@@ -38,6 +38,8 @@ func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, vo
 		runtime: runtime,
 		health:  health,
 		volumes: volumes,
+
+		allocations: make(map[string]*Allocation),
 	}
 }
 
