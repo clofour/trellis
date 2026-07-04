@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
 )
 
@@ -15,14 +16,11 @@ const checkTimeout = 5 * time.Second
 const checkThreshold = 3
 
 type HealthSubscriber interface {
-	OnHealthy(taskID string)
-	OnUnhealthy(taskID string)
+	OnHealthy(allocID string)
+	OnUnhealthy(allocID string)
 }
 
 type HealthConfig struct {
-	ContainerID string
-	TaskID      string
-
 	Type    string
 	Addr    string
 	Port    int
@@ -31,56 +29,69 @@ type HealthConfig struct {
 }
 
 type trackedTask struct {
+	allocID     string
+	containerID string
+
 	config HealthConfig
 	health *TaskHealth
 	cancel context.CancelFunc
 }
 
 type HealthManager struct {
-	mtx      sync.Mutex
-	runtime  runtime.ContainerRuntime
-	tasks    map[string]*trackedTask
-	consumer HealthSubscriber
+	mtx        sync.Mutex
+	runtime    runtime.ContainerRuntime
+	tasks      map[string]*trackedTask
+	Subscriber HealthSubscriber
 }
 
-func NewHealthManager(runtime runtime.ContainerRuntime, consumer HealthSubscriber) *HealthManager {
+func NewHealthManager(runtime runtime.ContainerRuntime, subscriber HealthSubscriber) *HealthManager {
 	return &HealthManager{
-		runtime:  runtime,
-		tasks:    make(map[string]*trackedTask),
-		consumer: consumer,
+		runtime:    runtime,
+		tasks:      make(map[string]*trackedTask),
+		Subscriber: subscriber,
 	}
 }
 
-func (h *HealthManager) RegisterTask(config HealthConfig) {
+func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *models.HealthCheckSpec) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	existingTrackedTask, ok := h.tasks[config.TaskID]
+	existingTrackedTask, ok := h.tasks[allocID]
 	if ok {
 		existingTrackedTask.cancel()
-		delete(h.tasks, config.TaskID)
+		delete(h.tasks, allocID)
+	}
+
+	config := HealthConfig{
+		Type:    spec.Type,
+		Addr:    "127.0.0.1",
+		Port:    spec.Port,
+		Path:    spec.Path,
+		Command: spec.Command,
 	}
 
 	newTrackedTask := &trackedTask{
-		config: config,
-		health: NewTaskHealth(),
-		cancel: cancel,
+		allocID:     allocID,
+		containerID: containerID,
+		config:      config,
+		health:      NewTaskHealth(),
+		cancel:      cancel,
 	}
-	h.tasks[config.TaskID] = newTrackedTask
+	h.tasks[allocID] = newTrackedTask
 
 	go h.runHealthCheckLoop(ctx, newTrackedTask)
 }
 
-func (h *HealthManager) DeregisterTask(taskID string) {
+func (h *HealthManager) DeregisterTask(allocID string) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
-	trackedTask, ok := h.tasks[taskID]
+	trackedTask, ok := h.tasks[allocID]
 	if ok {
 		trackedTask.cancel()
-		delete(h.tasks, taskID)
+		delete(h.tasks, allocID)
 	}
 }
 
@@ -106,9 +117,9 @@ func (h *HealthManager) runHealthCheckLoop(ctx context.Context, trackedTask *tra
 			if change {
 				switch status {
 				case StatusHealthy:
-					h.consumer.OnHealthy(trackedTask.config.TaskID)
+					h.Subscriber.OnHealthy(trackedTask.allocID)
 				case StatusUnhealthy:
-					h.consumer.OnUnhealthy(trackedTask.config.TaskID)
+					h.Subscriber.OnUnhealthy(trackedTask.allocID)
 				}
 			}
 		}
@@ -127,7 +138,7 @@ func (h *HealthManager) runHealthCheck(ctx context.Context, trackedTask *tracked
 	case "tcp":
 		return CheckTCP(ctx, config.Addr, config.Port)
 	case "script":
-		return CheckScript(ctx, h.runtime, config.ContainerID, config.Command)
+		return CheckScript(ctx, h.runtime, trackedTask.containerID, config.Command)
 	default:
 		return false, fmt.Errorf("unknown check type %s", config.Type)
 	}

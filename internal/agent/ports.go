@@ -103,7 +103,7 @@ func (p *PortManager) Claim(portSpec models.PortSpec) (*models.Port, error) {
 	return port, nil
 }
 
-func (p *PortManager) Release(port models.Port) error {
+func (p *PortManager) Release(port *models.Port) error {
 	hostPort := port.HostPort
 
 	_, ok := p.claims[hostPort]

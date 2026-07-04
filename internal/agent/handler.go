@@ -18,16 +18,29 @@ type RunRequest struct {
 }
 
 type AllocationRequest struct {
-	Name    string
-	Image   string
-	Env     map[string]string
-	Ports   []string
-	Volumes []VolumeRequest
+	Name        string
+	Image       string
+	Env         map[string]string
+	Ports       []PortRequest
+	Volumes     []VolumeRequest
+	HealthCheck HealthCheckRequest
+}
+
+type PortRequest struct {
+	HostPort      int
+	ContainerPort int
 }
 
 type VolumeRequest struct {
 	Name string
 	Path string
+}
+
+type HealthCheckRequest struct {
+	Type    string
+	Port    int
+	Path    string
+	Command []string
 }
 
 func NewHandler(agent *Agent) *Handler {
@@ -93,11 +106,28 @@ func convertAlloc(req AllocationRequest) *models.TaskSpec {
 		})
 	}
 
+	ports := make([]models.PortSpec, 0, len(req.Volumes))
+	for _, port := range req.Ports {
+		ports = append(ports, models.PortSpec{
+			HostPort:      port.HostPort,
+			ContainerPort: port.ContainerPort,
+		})
+	}
+
+	healthCheckRequest := req.HealthCheck
+	healthCheck := &models.HealthCheckSpec{
+		Type:    healthCheckRequest.Type,
+		Port:    healthCheckRequest.Port,
+		Path:    healthCheckRequest.Path,
+		Command: healthCheckRequest.Command,
+	}
+
 	return &models.TaskSpec{
-		Name:    req.Name,
-		Image:   req.Image,
-		Ports:   req.Ports,
-		Env:     req.Env,
-		Volumes: volumes,
+		Name:        req.Name,
+		Image:       req.Image,
+		Env:         req.Env,
+		HealthCheck: healthCheck,
+		Ports:       ports,
+		Volumes:     volumes,
 	}
 }

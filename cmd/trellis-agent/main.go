@@ -58,6 +58,8 @@ func run(config *models.Config) error {
 
 	hm := health.NewHealthManager(crt, nil)
 
+	rc := agent.NewRestartController(crt, nil)
+
 	vm := agent.NewVolumeManager()
 
 	pm := agent.NewPortManager(crt, 0, 0, 0)
@@ -67,13 +69,22 @@ func run(config *models.Config) error {
 		return fmt.Errorf("init service registry %s: %w", "TBA", err)
 	}
 
-	ag := agent.NewAgent(crt, hm, pm, vm, sr)
+	ag := agent.NewAgent(crt, hm, rc, pm, vm, sr)
 
 	e := echo.New()
 	e.Use(middleware.Recover())
 	handler := agent.NewHandler(ag)
 	handler.Register(e)
-	e.Start(":8149")
+	sc := echo.StartConfig{
+		Address:         config.ListenAddr,
+		GracefulTimeout: shutdownTime,
+	}
+	go func() {
+		err := sc.Start(ctx, e)
+		if err != nil {
+			// error
+		}
+	}()
 
 	<-ctx.Done()
 

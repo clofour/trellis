@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/models"
@@ -13,6 +14,7 @@ import (
 type Agent struct {
 	runtime runtime.ContainerRuntime
 	health  *health.HealthManager
+	restart *RestartController
 	ports   *PortManager
 	volumes *VolumeManager
 	service service.ServiceRegistry
@@ -34,16 +36,26 @@ type Allocation struct {
 	Mounts      []*models.Mount
 }
 
-func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry) *Agent {
-	return &Agent{
+func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry) *Agent {
+	agent := &Agent{
 		runtime: runtime,
 		health:  health,
+		restart: restart,
 		ports:   ports,
 		volumes: volumes,
 		service: service,
 
 		allocations: make(map[string]*Allocation),
 	}
+
+	return agent
+}
+
+func (a *Agent) Init(ctx context.Context) {
+	a.health.Subscriber = a
+	a.restart.subscriber = a
+
+	a.restart.RunDetectionLoop(ctx)
 }
 
 func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
@@ -99,7 +111,9 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 		return fmt.Errorf("start container %s: %w", containerID, err)
 	}
 
-	// a.health.RegisterTask()
+	a.health.RegisterTask(allocID, containerID, spec.HealthCheck)
+
+	a.restart.Track(ctx, allocID)
 
 	for _, p := range ports {
 		a.service.Register(ctx, allocID, taskName, "127.0.0.1", p.HostPort)
@@ -130,7 +144,9 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	}
 	delete(a.allocations, allocID)
 
-	// a.health.DeregisterTask()
+	a.health.DeregisterTask(allocID)
+
+	a.restart.Untrack(ctx, allocID)
 
 	containerID := alloc.ContainerID
 
@@ -143,6 +159,17 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	if err != nil {
 		return fmt.Errorf("remove container %s: %w", containerID, err)
 	}
+
+	for k, p := range alloc.Ports {
+		err := a.ports.Release(p)
+		if err != nil {
+			return fmt.Errorf("release port %d: %w", p.HostPort, err)
+		}
+
+		slices.Delete(alloc.Ports, k, k+1)
+	}
+
+	a.service.Deregister(ctx, allocID)
 
 	return nil
 }

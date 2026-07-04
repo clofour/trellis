@@ -14,11 +14,11 @@ type TaskGroupSpec struct {
 type TaskSpec struct {
 	Name        string
 	Image       string
-	Ports       []PortSpec
 	Env         map[string]string
+	Ports       []PortSpec
+	Volumes     []VolumeSpec
 	Resources   *ResourcesSpec
 	HealthCheck *HealthCheckSpec
-	Volumes     []VolumeSpec
 }
 
 type PortSpec struct {
@@ -35,7 +35,7 @@ type HealthCheckSpec struct {
 	Type    string
 	Port    int
 	Path    string
-	Command string
+	Command []string
 }
 
 type VolumeSpec struct {
