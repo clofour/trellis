@@ -8,7 +8,7 @@ import (
 	"github.com/clofour/trellis/internal/models"
 )
 
-type ServiceController struct {
+type StateController struct {
 	store StateStore
 
 	cluster string
@@ -16,14 +16,14 @@ type ServiceController struct {
 
 const trellisNamespace = "trellis"
 
-func NewServiceController(store StateStore, cluster string) *ServiceController {
-	return &ServiceController{
+func NewStateController(store StateStore, cluster string) *StateController {
+	return &StateController{
 		store:   store,
 		cluster: cluster,
 	}
 }
 
-func (s *ServiceController) GetCluster(ctx context.Context) (*models.Cluster, error) {
+func (s *StateController) GetCluster(ctx context.Context) (*models.Cluster, error) {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
 
 	value, err := s.store.Get(ctx, key)
@@ -40,7 +40,7 @@ func (s *ServiceController) GetCluster(ctx context.Context) (*models.Cluster, er
 	return cluster, nil
 }
 
-func (s *ServiceController) PutCluster(ctx context.Context, cluster *models.Cluster) error {
+func (s *StateController) PutCluster(ctx context.Context, cluster *models.Cluster) error {
 	value, err := json.Marshal(cluster)
 	if err != nil {
 		return fmt.Errorf("marshal json: %w", err)
