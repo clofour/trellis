@@ -23,7 +23,7 @@ import (
 const shutdownTime = 10 * time.Second
 
 func main() {
-	config := &models.Config{}
+	config := &models.AgentConfig{}
 
 	root := &cobra.Command{
 		Use:   "trellis-agent",
@@ -45,7 +45,7 @@ func main() {
 	}
 }
 
-func run(config *models.Config) error {
+func run(config *models.AgentConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
