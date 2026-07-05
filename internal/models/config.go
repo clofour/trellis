@@ -1,6 +1,6 @@
 package models
 
-type ControlConfig struct {
+type ServerConfig struct {
 	ListenAddr string
 	DataRoot   string
 }
