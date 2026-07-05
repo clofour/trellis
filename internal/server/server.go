@@ -50,3 +50,10 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 
 	return token, nil
 }
+
+func (s *Server) ValidateAPIToken(ctx context.Context, token string) bool {
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+
+	return s.cluster.Hash == hashHex
+}

@@ -2,13 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/clofour/trellis/internal/agent"
 	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/server"
+	"github.com/clofour/trellis/internal/state"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/spf13/cobra"
@@ -41,16 +43,31 @@ func run(config *models.ServerConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	ss, err := state.NewConsulStore()
+	if err != nil {
+		return fmt.Errorf("init state store: %w", err)
+	}
+
+	sc := state.NewStateController(ss, "default")
+
+	s := server.NewServer(sc)
+
 	e := echo.New()
 	e.Use(middleware.Recover())
-	handler := agent.NewHandler(ag)
+	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
+		KeyLookup: "header:Authorization:Bearer ",
+		Validator: func(c *echo.Context, key string, source middleware.ExtractorSource) (bool, error) {
+			return s.ValidateAPIToken(ctx, key), nil
+		},
+	}))
+	handler := server.NewHandler()
 	handler.Register(e)
-	sc := echo.StartConfig{
+	sConfig := echo.StartConfig{
 		Address:         config.ListenAddr,
 		GracefulTimeout: shutdownTime,
 	}
 	go func() {
-		err := sc.Start(ctx, e)
+		err := sConfig.Start(ctx, e)
 		if err != nil {
 			// error
 		}
