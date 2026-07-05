@@ -1,18 +1,52 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+
+	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/state"
 )
 
-func Initialize() string {
+type Server struct {
+	state *state.StateController
+
+	cluster *models.Cluster
+}
+
+func NewServer(state *state.StateController) *Server {
+	return &Server{
+		state: state,
+	}
+}
+
+func (s *Server) Init(ctx context.Context) (string, error) {
+	cluster, err := s.state.GetCluster(ctx)
+	if err != nil {
+		return "", fmt.Errorf("init cluster: %w", err)
+	}
+
+	if cluster != nil {
+		s.cluster = cluster
+		return "", nil
+	}
+
 	b := make([]byte, 32)
 	rand.Read(b)
 
 	token := base64.RawURLEncoding.EncodeToString(b)
 
 	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
 
-	return token
+	cluster = &models.Cluster{
+		Hash: hashHex,
+	}
+	s.cluster = cluster
+
+	return token, nil
 }

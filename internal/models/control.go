@@ -7,7 +7,7 @@ import (
 )
 
 type Cluster struct {
-	hash string
+	Hash string
 }
 
 type NodeStatus string
