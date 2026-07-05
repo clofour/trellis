@@ -6,6 +6,10 @@ import (
 	"github.com/google/uuid"
 )
 
+type Cluster struct {
+	hash string
+}
+
 type NodeStatus string
 
 const (
