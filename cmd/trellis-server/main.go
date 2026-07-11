@@ -22,8 +22,8 @@ func main() {
 	config := &models.ServerConfig{}
 
 	root := &cobra.Command{
-		Use:   "trellis-agent",
-		Short: "Trellis agent",
+		Use:   "trellis-server",
+		Short: "Trellis server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(config)
 		},
@@ -72,4 +72,6 @@ func run(config *models.ServerConfig) error {
 			// error
 		}
 	}()
+
+	return nil
 }

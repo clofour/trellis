@@ -31,13 +31,13 @@ func (s *StateController) GetCluster(ctx context.Context) (*models.Cluster, erro
 		return nil, fmt.Errorf("get key %s: %w", key, err)
 	}
 
-	var cluster *models.Cluster
-	err = json.Unmarshal(value, cluster)
+	var cluster models.Cluster
+	err = json.Unmarshal(value, &cluster)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshal json: %w", key, err)
+		return nil, fmt.Errorf("unmarshal json: %w", err)
 	}
 
-	return cluster, nil
+	return &cluster, nil
 }
 
 func (s *StateController) PutCluster(ctx context.Context, cluster *models.Cluster) error {

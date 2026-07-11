@@ -27,7 +27,7 @@ func NewServer(state *state.StateController) *Server {
 func (s *Server) Init(ctx context.Context) (string, error) {
 	cluster, err := s.state.GetCluster(ctx)
 	if err != nil {
-		return "", fmt.Errorf("init cluster: %w", err)
+		return "", fmt.Errorf("get cluster: %w", err)
 	}
 
 	if cluster != nil {
@@ -46,6 +46,12 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	cluster = &models.Cluster{
 		Hash: hashHex,
 	}
+
+	err = s.state.PutCluster(ctx, cluster)
+	if err != nil {
+		return "", fmt.Errorf("init cluster: %w", err)
+	}
+
 	s.cluster = cluster
 
 	return token, nil
