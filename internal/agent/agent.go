@@ -9,9 +9,12 @@ import (
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/service"
+	"github.com/google/uuid"
 )
 
 type Agent struct {
+	NodeID uuid.UUID
+
 	runtime runtime.ContainerRuntime
 	health  *health.HealthManager
 	restart *RestartController
@@ -19,6 +22,7 @@ type Agent struct {
 	volumes *VolumeManager
 	service service.ServiceRegistry
 
+	nodeID      string
 	allocations map[string]*Allocation
 }
 
@@ -36,7 +40,7 @@ type Allocation struct {
 	Mounts      []*models.Mount
 }
 
-func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry) *Agent {
+func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry, nodeID string) *Agent {
 	agent := &Agent{
 		runtime: runtime,
 		health:  health,
@@ -45,6 +49,7 @@ func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, re
 		volumes: volumes,
 		service: service,
 
+		nodeID:      nodeID,
 		allocations: make(map[string]*Allocation),
 	}
 
