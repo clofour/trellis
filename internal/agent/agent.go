@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
@@ -21,6 +22,7 @@ type Agent struct {
 	ports   *PortManager
 	volumes *VolumeManager
 	service service.ServiceRegistry
+	server  *client.ServerClient
 
 	nodeID      string
 	allocations map[string]*Allocation
@@ -40,7 +42,7 @@ type Allocation struct {
 	Mounts      []*models.Mount
 }
 
-func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry, nodeID string) *Agent {
+func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry, server *client.ServerClient, nodeID string) *Agent {
 	agent := &Agent{
 		runtime: runtime,
 		health:  health,
@@ -48,6 +50,7 @@ func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, re
 		ports:   ports,
 		volumes: volumes,
 		service: service,
+		server:  server,
 
 		nodeID:      nodeID,
 		allocations: make(map[string]*Allocation),
@@ -57,6 +60,8 @@ func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, re
 }
 
 func (a *Agent) Init(ctx context.Context) {
+	a.server.RegisterNode(ctx, &client.NodeRegistrationRequest{})
+
 	a.health.Subscriber = a
 	a.restart.subscriber = a
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/agent"
+	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
@@ -37,8 +38,10 @@ func main() {
 	}
 
 	flags := root.Flags()
-	flags.StringVar(&config.ListenAddr, "listen", ":9100", "HTTP API listen address")
+	flags.StringVar(&config.ListenAddr, "listen", ":9100", "Agent HTTP API listen address")
 	flags.StringVar(&config.DataRoot, "data-root", "/var/lib/trellis/data", "Directory for local state and volumes")
+	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8127", "Server HTTP API listen address")
+	flags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
 	flags.StringVar(&config.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
 	flags.StringVar(&config.ConsulAddr, "consul-addr", "127.0.0.1:8500", "Consul agent address")
 
@@ -80,6 +83,8 @@ func run(config *models.AgentConfig) error {
 	if err != nil {
 		return fmt.Errorf("init service registry %s: %w", "TBA", err)
 	}
+
+	sc := client.NewServerClient(config.ClusterToken, config.ServerAddr)
 
 	ag := agent.NewAgent(crt, hm, rc, pm, vm, sr, id)
 

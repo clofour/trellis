@@ -15,9 +15,9 @@ type ServerClient struct {
 	client  *http.Client
 }
 
-func NewServerClient(token string, addr string, port string) *ServerClient {
+func NewServerClient(token string, addr string) *ServerClient {
 	return &ServerClient{
-		baseURL: fmt.Sprintf("http://%s:%d", addr, port),
+		baseURL: addr,
 		token:   token,
 		client:  &http.Client{},
 	}
