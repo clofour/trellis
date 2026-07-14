@@ -13,3 +13,5 @@ type AgentConfig struct {
 	ContainerdSock string
 	ConsulAddr     string
 }
+
+type CLIConfig struct{}
