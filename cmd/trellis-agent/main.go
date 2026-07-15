@@ -39,7 +39,7 @@ func main() {
 
 	flags := root.Flags()
 	flags.StringVar(&config.ListenAddr, "listen", ":9100", "Agent HTTP API listen address")
-	flags.StringVar(&config.DataRoot, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
+	flags.StringVar(&config.DataDir, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
 	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8127", "Server HTTP API listen address")
 	flags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
 	flags.StringVar(&config.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
@@ -66,38 +66,38 @@ func run(config *models.AgentConfig) error {
 		return fmt.Errorf("acquire node id: %w", err)
 	}
 
-	crt, err := runtime.NewContainerdRuntime(config.ContainerdSock)
+	runtime, err := runtime.NewContainerdRuntime(config.ContainerdSock)
 	if err != nil {
 		return fmt.Errorf("init runtime %s: %w", config.ContainerdSock, err)
 	}
 
-	hm := health.NewHealthManager(crt, nil)
+	healthMgr := health.NewHealthManager(runtime, nil)
 
-	rc := agent.NewRestartController(crt, nil)
+	restartCtl := agent.NewRestartController(runtime, nil)
 
-	vm := agent.NewVolumeManager()
+	volumeMgr := agent.NewVolumeManager()
 
-	pm := agent.NewPortManager(crt, 0, 0, 0)
+	portMgr := agent.NewPortManager(runtime, 0, 0, 0)
 
-	sr, err := service.NewConsulRegistry()
+	registry, err := service.NewConsulRegistry()
 	if err != nil {
 		return fmt.Errorf("init service registry %s: %w", "TBA", err)
 	}
 
-	sc := client.NewServerClient(config.ClusterToken, config.ServerAddr)
+	serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr)
 
-	ag := agent.NewAgent(crt, hm, rc, pm, vm, sr, id)
+	ag := agent.NewAgent(runtime, healthMgr, restartCtl, portMgr, volumeMgr, registry, serverClient, id)
 
 	e := echo.New()
 	e.Use(middleware.Recover())
 	handler := agent.NewHandler(ag)
 	handler.Register(e)
-	sc := echo.StartConfig{
+	startCfg := echo.StartConfig{
 		Address:         config.ListenAddr,
 		GracefulTimeout: shutdownTime,
 	}
 	go func() {
-		err := sc.Start(ctx, e)
+		err := startCfg.Start(ctx, e)
 		if err != nil {
 			// error
 		}

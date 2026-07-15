@@ -78,7 +78,7 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 }
 
 func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName string, taskName string, spec *models.TaskSpec) error {
-	allocID := fmt.Sprintf("%s-%s-%s-%d", jobName, groupName, taskName)
+	allocID := fmt.Sprintf("%s-%s-%s-%d", jobName, groupName, taskName, 0)
 
 	var ports []*models.Port
 	for _, p := range spec.Ports {

@@ -51,6 +51,7 @@ func run(config *models.ServerConfig) error {
 	sc := state.NewStateController(ss, "default")
 
 	s := server.NewServer(sc)
+	s.Init(ctx)
 
 	e := echo.New()
 	e.Use(middleware.Recover())
@@ -72,6 +73,8 @@ func run(config *models.ServerConfig) error {
 			// error
 		}
 	}()
+
+	<-ctx.Done()
 
 	return nil
 }
