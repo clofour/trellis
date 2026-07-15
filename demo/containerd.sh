@@ -13,4 +13,4 @@ Signed-By: /etc/apt/keyrings/docker.asc
 EOF
 
 apt update
-apt install containerd.io
+apt install -y containerd.io

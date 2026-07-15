@@ -39,7 +39,7 @@ func main() {
 
 	flags := root.Flags()
 	flags.StringVar(&config.ListenAddr, "listen", ":9100", "Agent HTTP API listen address")
-	flags.StringVar(&config.DataRoot, "data-root", "/var/lib/trellis/data", "Directory for local state and volumes")
+	flags.StringVar(&config.DataRoot, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
 	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8127", "Server HTTP API listen address")
 	flags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
 	flags.StringVar(&config.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
@@ -57,11 +57,11 @@ func run(config *models.AgentConfig) error {
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	err := initializeDataDir(config.DataRoot)
+	err := initializeDataDir(config.DataDir)
 	if err != nil {
-		return fmt.Errorf("init data dir %s: %w", config.DataRoot, err)
+		return fmt.Errorf("init data dir %s: %w", config.DataDir, err)
 	}
-	id, err := acquireNodeID(config.DataRoot)
+	id, err := acquireNodeID(config.DataDir)
 	if err != nil {
 		return fmt.Errorf("acquire node id: %w", err)
 	}

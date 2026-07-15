@@ -5,8 +5,8 @@ cat > /etc/consul.d/server.hcl <<EOF
 
     datacenter = "dc1"
 
-    bind_addr = ""
-    client_addr = ""
+    bind_addr = "0.0.0.0"
+    client_addr = "127.0.0.1"
 
     data_dir = "/opt/consul"
 

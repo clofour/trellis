@@ -2,12 +2,12 @@ package models
 
 type ServerConfig struct {
 	ListenAddr string
-	DataRoot   string
+	DataDir    string
 }
 
 type AgentConfig struct {
 	ListenAddr     string
-	DataRoot       string
+	DataDir        string
 	ServerAddr     string
 	ClusterToken   string
 	ContainerdSock string

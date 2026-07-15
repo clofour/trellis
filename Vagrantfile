@@ -1,5 +1,5 @@
 Vagrant.configure("2") do |config|
-    config.vm.box = "generic/ubuntu2204"
+    config.vm.box = " generic/debian12"
 
     config.hostmanager.enabled = true
     config.hostmanager.manage_guest = true
@@ -26,7 +26,7 @@ Vagrant.configure("2") do |config|
 
             node.vm.provision "common", type: "shell", path: "demo/common.sh"
             if definition[:role] == "control"
-                node.vm.provision "consul-server", type: "shell", path: "scdemoripts/consul-server.sh"
+                node.vm.provision "consul-server", type: "shell", path: "demo/consul-server.sh"
                 node.vm.provision "trellis-server", type: "shell", path: "demo/trellis-server.sh"
             else
                 node.vm.provision "containerd", type: "shell", path: "demo/containerd.sh"

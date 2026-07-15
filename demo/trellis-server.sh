@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-SHARE_DIR="/share"
+SHARE_DIR="/vagrant/bin"
 DATA_DIR="/var/lib/trellis/data"
 
 cat > /etc/systemd/system/trellis-server.service <<EOF
@@ -10,7 +10,7 @@ After=consul.service network-online.target
 Wants=consul.service network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/trellis-server --cluster-name cluster --listen :9100 --data-dir ${DATA_DIR}
+ExecStart=/usr/local/bin/trellis-server --listen :9100 --data-dir ${DATA_DIR}
 Restart=on-failure
 
 [Install]
@@ -25,5 +25,6 @@ for _ in $(seq 1 30); do
     if [ -s "${DATA_DIR}/token" ]; then
         install -m 0644 "${DATA_DIR}/token" "${SHARE_DIR}/share"
         exit 0
-    end
+    fi
+    sleep 1
 done

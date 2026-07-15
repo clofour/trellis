@@ -5,8 +5,9 @@ cat > /etc/consul.d/server.hcl <<EOF
 
     datacenter = "dc1"
 
-    bind_addr = ""
-    retry_join = ""
+    bind_addr = "0.0.0.0"
+    client_addr = "0.0.0.0"
+    retry_join = "control.trellis.local"
 
     data_dir = "/opt/consul"
 EOF
