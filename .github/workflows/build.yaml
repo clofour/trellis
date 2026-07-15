@@ -1,4 +1,4 @@
-name: lint
+name: build
 on:
   push:
     branches:
@@ -6,8 +6,8 @@ on:
 permissions:
   contents: read
 jobs:
-  lint:
-    name: lint
+  build:
+    name: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
