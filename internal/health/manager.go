@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
+	"github.com/clofour/trellis/internal/spec"
 )
 
 const checkInterval = 10 * time.Second
@@ -52,7 +52,7 @@ func NewHealthManager(runtime runtime.ContainerRuntime, subscriber HealthSubscri
 	}
 }
 
-func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *models.HealthCheckSpec) {
+func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *spec.HealthCheckSpec) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
+	"github.com/clofour/trellis/internal/spec"
 )
 
 type PortManager struct {
@@ -60,7 +61,7 @@ func (p *PortManager) Check(hostPort int) (bool, error) {
 	return false, nil
 }
 
-func (p *PortManager) Claim(portSpec models.PortSpec) (*models.Port, error) {
+func (p *PortManager) Claim(portSpec spec.PortSpec) (*models.Port, error) {
 	hostPort := portSpec.HostPort
 	if hostPort == 0 {
 

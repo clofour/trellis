@@ -3,7 +3,7 @@ package agent
 import (
 	"net/http"
 
-	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/labstack/echo/v5"
 )
 
@@ -97,32 +97,32 @@ func (h *Handler) handleDelete(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func convertAlloc(req AllocationRequest) *models.TaskSpec {
-	volumes := make([]models.VolumeSpec, 0, len(req.Volumes))
+func convertAlloc(req AllocationRequest) *spec.TaskSpec {
+	volumes := make([]spec.VolumeSpec, 0, len(req.Volumes))
 	for _, volume := range req.Volumes {
-		volumes = append(volumes, models.VolumeSpec{
+		volumes = append(volumes, spec.VolumeSpec{
 			Name: volume.Name,
 			Path: volume.Path,
 		})
 	}
 
-	ports := make([]models.PortSpec, 0, len(req.Volumes))
+	ports := make([]spec.PortSpec, 0, len(req.Volumes))
 	for _, port := range req.Ports {
-		ports = append(ports, models.PortSpec{
+		ports = append(ports, spec.PortSpec{
 			HostPort:      port.HostPort,
 			ContainerPort: port.ContainerPort,
 		})
 	}
 
 	healthCheckRequest := req.HealthCheck
-	healthCheck := &models.HealthCheckSpec{
+	healthCheck := &spec.HealthCheckSpec{
 		Type:    healthCheckRequest.Type,
 		Port:    healthCheckRequest.Port,
 		Path:    healthCheckRequest.Path,
 		Command: healthCheckRequest.Command,
 	}
 
-	return &models.TaskSpec{
+	return &spec.TaskSpec{
 		Name:        req.Name,
 		Image:       req.Image,
 		Env:         req.Env,

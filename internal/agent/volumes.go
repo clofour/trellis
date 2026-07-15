@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/spec"
 )
 
 type VolumeManager struct {
@@ -18,7 +19,7 @@ func NewVolumeManager() *VolumeManager {
 	}
 }
 
-func (vm *VolumeManager) Create(jobName string, taskName string, volume models.VolumeSpec) (*models.Mount, error) {
+func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.VolumeSpec) (*models.Mount, error) {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	err := os.MkdirAll(hostPath, 0755)
@@ -32,7 +33,7 @@ func (vm *VolumeManager) Create(jobName string, taskName string, volume models.V
 	}, nil
 }
 
-func (vm *VolumeManager) Check(jobName string, taskName string, volume models.VolumeSpec) (bool, error) {
+func (vm *VolumeManager) Check(jobName string, taskName string, volume spec.VolumeSpec) (bool, error) {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	info, err := os.Stat(hostPath)
@@ -43,7 +44,7 @@ func (vm *VolumeManager) Check(jobName string, taskName string, volume models.Vo
 	return info.IsDir(), nil
 }
 
-func (vm *VolumeManager) Delete(jobName string, taskName string, volume models.VolumeSpec) error {
+func (vm *VolumeManager) Delete(jobName string, taskName string, volume spec.VolumeSpec) error {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	err := os.RemoveAll(hostPath)

@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/client"
+	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
-	"github.com/clofour/trellis/internal/service"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
 
@@ -22,7 +23,7 @@ type Agent struct {
 	restart *RestartController
 	ports   *PortManager
 	volumes *VolumeManager
-	service service.ServiceRegistry
+	service discovery.ServiceRegistry
 	server  *client.ServerClient
 
 	nodeID      string
@@ -35,7 +36,7 @@ type Allocation struct {
 	JobName   string
 	GroupName string
 	TaskName  string
-	Spec      *models.TaskSpec
+	Spec      *spec.TaskSpec
 
 	ContainerID string
 	ServiceID   string
@@ -79,7 +80,7 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName string, taskName string, spec *models.TaskSpec) error {
+func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName string, taskName string, spec *spec.TaskSpec) error {
 	allocID := fmt.Sprintf("%s-%s-%s-%d", jobName, groupName, taskName, 0)
 
 	var ports []*models.Port

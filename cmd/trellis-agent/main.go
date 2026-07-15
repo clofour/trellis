@@ -13,10 +13,10 @@ import (
 
 	"github.com/clofour/trellis/internal/agent"
 	"github.com/clofour/trellis/internal/client"
+	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
-	"github.com/clofour/trellis/internal/service"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -79,7 +79,7 @@ func run(config *models.AgentConfig) error {
 
 	portMgr := agent.NewPortManager(runtime, 0, 0, 0)
 
-	registry, err := service.NewConsulRegistry()
+	registry, err := discovery.NewConsulRegistry()
 	if err != nil {
 		return fmt.Errorf("init service registry %s: %w", "TBA", err)
 	}
