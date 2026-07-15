@@ -44,7 +44,7 @@ type Allocation struct {
 	Mounts      []*models.Mount
 }
 
-func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service service.ServiceRegistry, server *client.ServerClient, nodeID string) *Agent {
+func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID string) *Agent {
 	agent := &Agent{
 		runtime: runtime,
 		health:  health,
