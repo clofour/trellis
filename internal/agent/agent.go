@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/health"
@@ -65,7 +66,8 @@ func (a *Agent) Init(ctx context.Context) {
 	a.health.Subscriber = a
 	a.restart.subscriber = a
 
-	a.restart.RunDetectionLoop(ctx)
+	go a.runHeartbeatLoop(ctx)
+	go a.restart.RunDetectionLoop(ctx)
 }
 
 func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
@@ -182,4 +184,21 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	a.service.Deregister(ctx, allocID)
 
 	return nil
+}
+
+func (a *Agent) runHeartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(10)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.server.SendHeartbeat(ctx, &client.HeartbeatRequest{
+				NodeID:    a.NodeID,
+				Timestamp: time.Now(),
+			})
+		}
+	}
 }

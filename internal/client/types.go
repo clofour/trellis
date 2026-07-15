@@ -1,6 +1,10 @@
 package client
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type NodeRegistrationRequest struct {
 	ID     uuid.UUID
@@ -14,4 +18,9 @@ type NodeRegistrationRequest struct {
 
 type NodeRegistrationResponse struct {
 	ID uuid.UUID
+}
+
+type HeartbeatRequest struct {
+	NodeID    uuid.UUID
+	Timestamp time.Time
 }

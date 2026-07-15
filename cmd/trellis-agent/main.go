@@ -87,6 +87,7 @@ func run(config *models.AgentConfig) error {
 	serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr)
 
 	ag := agent.NewAgent(runtime, healthMgr, restartCtl, portMgr, volumeMgr, registry, serverClient, id)
+	ag.Init(ctx)
 
 	e := echo.New()
 	e.Use(middleware.Recover())
