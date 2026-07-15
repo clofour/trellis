@@ -1,20 +1,14 @@
 #!/usr/bin/env bash
 
 cat > /etc/consul.d/server.hcl <<EOF
-    server = true
+    server = false
 
     datacenter = "dc1"
 
     bind_addr = ""
-    client_addr = ""
+    retry_join = ""
 
     data_dir = "/opt/consul"
-
-    bootstrap_expect = 1
-
-    ui_config = {
-        enabled = true
-    }
 EOF
 
 systemctl enable consul
