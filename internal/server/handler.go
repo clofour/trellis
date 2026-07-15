@@ -23,19 +23,19 @@ func (h *Handler) Register(e *echo.Echo) {
 }
 
 func (h *Handler) handleListNodes(c *echo.Context) error {
-	ctx := c.Request().Context()
+	// ctx := c.Request().Context()
 
 	return nil
 }
 
 func (h *Handler) handleRegisterNode(c *echo.Context) error {
-	ctx := c.Request().Context()
+	// ctx := c.Request().Context()
 
 	return nil
 }
 
 func (h *Handler) handleHeartbeat(c *echo.Context) error {
-	ctx := c.Request().Context()
+	// ctx := c.Request().Context()
 
 	return nil
 }
