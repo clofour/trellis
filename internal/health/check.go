@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 
 	"github.com/clofour/trellis/internal/runtime"
 )
@@ -28,7 +29,7 @@ func CheckHTTP(ctx context.Context, addr string, port int, path string) (bool, e
 }
 
 func CheckTCP(ctx context.Context, addr string, port int) (bool, error) {
-	url := fmt.Sprintf("http://%s:%d", addr, port)
+	url := net.JoinHostPort(addr, strconv.Itoa(port))
 
 	dialer := net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", url)

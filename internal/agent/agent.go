@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"time"
 
 	"github.com/clofour/trellis/internal/client"
@@ -17,8 +16,7 @@ import (
 )
 
 type Agent struct {
-	NodeID      uuid.UUID
-	nodeID      string
+	nodeID      uuid.UUID
 	allocations map[string]*Allocation
 
 	log *slog.Logger
@@ -48,7 +46,7 @@ type Allocation struct {
 
 const heartbeatInterval = 10 * time.Second
 
-func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID string) *Agent {
+func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID *uuid.UUID) *Agent {
 	agent := &Agent{
 		nodeID:      nodeID,
 		allocations: make(map[string]*Allocation),
@@ -157,11 +155,6 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	if !ok {
 		return fmt.Errorf("allocation %s not found", allocID)
 	}
-	delete(a.allocations, allocID)
-
-	a.health.DeregisterTask(allocID)
-
-	a.restart.Untrack(ctx, allocID)
 
 	containerID := alloc.ContainerID
 
@@ -175,16 +168,21 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 		return fmt.Errorf("remove container %s: %w", containerID, err)
 	}
 
-	for k, p := range alloc.Ports {
+	a.service.Deregister(ctx, allocID)
+
+	a.health.DeregisterTask(allocID)
+
+	a.restart.Untrack(ctx, allocID)
+
+	for _, p := range alloc.Ports {
 		err := a.ports.Release(p)
 		if err != nil {
 			return fmt.Errorf("release port %d: %w", p.HostPort, err)
 		}
-
-		slices.Delete(alloc.Ports, k, k+1)
 	}
+	alloc.Ports = nil
 
-	a.service.Deregister(ctx, allocID)
+	delete(a.allocations, allocID)
 
 	return nil
 }
@@ -222,8 +220,8 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.server.SendHeartbeat(ctx, &client.HeartbeatRequest{
-				NodeID:    a.NodeID,
+			a.server.SendHeartbeat(ctx, a.nodeID, &client.HeartbeatRequest{
+				NodeID:    a.nodeID,
 				Timestamp: time.Now(),
 			})
 		}

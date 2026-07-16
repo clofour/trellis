@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 cat > /etc/consul.d/server.hcl <<EOF
     server = true

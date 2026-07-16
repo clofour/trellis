@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 type ServerClient struct {
@@ -58,8 +60,10 @@ func (s *ServerClient) DeleteJob(ctx context.Context, placeholder string) {
 
 }
 
-func (s *ServerClient) SendHeartbeat(ctx context.Context, requestData *HeartbeatRequest) error {
-	err := s.request(ctx, http.MethodPost, "/v1/nodes/", requestData, nil)
+func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, requestData *HeartbeatRequest) error {
+	url := fmt.Sprintf("/v1/nodes/%s/heartbeat", id)
+
+	err := s.request(ctx, http.MethodPost, url, requestData, nil)
 	if err != nil {
 		return fmt.Errorf("register node: %w", err)
 	}

@@ -67,6 +67,10 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*models.Port, error) {
 
 		for {
 
+			if p.cursor > p.max {
+				return nil, fmt.Errorf("no free ports")
+			}
+
 			taken, err := p.Check(p.cursor)
 
 			if err != nil {

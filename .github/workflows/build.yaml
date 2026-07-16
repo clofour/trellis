@@ -18,7 +18,7 @@ jobs:
         with:
           go-version: 1.26.4
 
-      - name: Create build director
+      - name: Create build directory
         run: mkdir -p bin
 
       - name: Run build

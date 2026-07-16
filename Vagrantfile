@@ -1,5 +1,5 @@
 Vagrant.configure("2") do |config|
-    config.vm.box = " generic/debian12"
+    config.vm.box = "generic/debian12"
 
     config.hostmanager.enabled = true
     config.hostmanager.manage_guest = true

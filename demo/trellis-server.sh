@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 SHARE_DIR="/vagrant/bin"
 DATA_DIR="/var/lib/trellis/data"
