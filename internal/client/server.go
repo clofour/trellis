@@ -34,7 +34,7 @@ func (s *ServerClient) ListNodes(ctx context.Context, placeholder string) {
 func (s *ServerClient) RegisterNode(ctx context.Context, requestData *NodeRegistrationRequest) (*NodeRegistrationResponse, error) {
 	var responseData NodeRegistrationResponse
 
-	err := s.request(ctx, "/nodes", requestData, responseData)
+	err := s.request(ctx, http.MethodPost, "/v1/nodes", requestData, &responseData)
 	if err != nil {
 		return nil, fmt.Errorf("register node: %w", err)
 	}
@@ -59,7 +59,7 @@ func (s *ServerClient) DeleteJob(ctx context.Context, placeholder string) {
 }
 
 func (s *ServerClient) SendHeartbeat(ctx context.Context, requestData *HeartbeatRequest) error {
-	err := s.request(ctx, "/nodes", requestData, nil)
+	err := s.request(ctx, http.MethodPost, "/v1/nodes/", requestData, nil)
 	if err != nil {
 		return fmt.Errorf("register node: %w", err)
 	}
@@ -67,7 +67,7 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, requestData *Heartbeat
 	return nil
 }
 
-func (s *ServerClient) request(ctx context.Context, path string, requestData any, responseData any) error {
+func (s *ServerClient) request(ctx context.Context, method string, path string, requestData any, responseData any) error {
 	var requestBody *bytes.Reader
 	if requestData != nil {
 		requestBodyBytes, err := json.Marshal(requestData)
@@ -78,7 +78,7 @@ func (s *ServerClient) request(ctx context.Context, path string, requestData any
 	}
 
 	url := s.baseURL + path
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, requestBody)
+	request, err := http.NewRequestWithContext(ctx, method, url, requestBody)
 	if err != nil {
 		return fmt.Errorf("constructing request %s: %w", url, err)
 	}
@@ -97,7 +97,7 @@ func (s *ServerClient) request(ctx context.Context, path string, requestData any
 	}
 
 	if checkStatusCode(response.StatusCode) {
-		return fmt.Errorf("status %d: %w", response.StatusCode)
+		return fmt.Errorf("status %d", response.StatusCode)
 	}
 
 	if responseData != nil {

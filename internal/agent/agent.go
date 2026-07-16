@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -16,7 +17,11 @@ import (
 )
 
 type Agent struct {
-	NodeID uuid.UUID
+	NodeID      uuid.UUID
+	nodeID      string
+	allocations map[string]*Allocation
+
+	log *slog.Logger
 
 	runtime runtime.ContainerRuntime
 	health  *health.HealthManager
@@ -25,9 +30,6 @@ type Agent struct {
 	volumes *VolumeManager
 	service discovery.ServiceRegistry
 	server  *client.ServerClient
-
-	nodeID      string
-	allocations map[string]*Allocation
 }
 
 type Allocation struct {
@@ -44,8 +46,15 @@ type Allocation struct {
 	Mounts      []*models.Mount
 }
 
-func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID string) *Agent {
+const heartbeatInterval = 10 * time.Second
+
+func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID string) *Agent {
 	agent := &Agent{
+		nodeID:      nodeID,
+		allocations: make(map[string]*Allocation),
+
+		log: log,
+
 		runtime: runtime,
 		health:  health,
 		restart: restart,
@@ -53,9 +62,6 @@ func NewAgent(runtime runtime.ContainerRuntime, health *health.HealthManager, re
 		volumes: volumes,
 		service: service,
 		server:  server,
-
-		nodeID:      nodeID,
-		allocations: make(map[string]*Allocation),
 	}
 
 	return agent
@@ -128,10 +134,6 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 
 	a.restart.Track(ctx, allocID)
 
-	for _, p := range ports {
-		a.service.Register(ctx, allocID, taskName, "127.0.0.1", p.HostPort)
-	}
-
 	alloc := &Allocation{
 		ID: allocID,
 
@@ -187,8 +189,32 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	return nil
 }
 
+func (a *Agent) OnHealthy(ctx context.Context, allocID string) error {
+	alloc, ok := a.allocations[allocID]
+	if !ok {
+		return fmt.Errorf("alloc %s not found", allocID)
+	}
+
+	for _, p := range alloc.Ports {
+		a.service.Register(ctx, allocID, alloc.TaskName, "127.0.0.1", p.HostPort)
+	}
+
+	return nil
+}
+
+func (a *Agent) OnUnhealthy(ctx context.Context, allocID string) error {
+	a.service.Deregister(ctx, allocID)
+
+	return nil
+}
+
+func (a *Agent) OnFailed(allocID string) {
+	// mark allocation as failed
+	// where should state be stored? should heartbeat just gather state from all modules?
+}
+
 func (a *Agent) runHeartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(10)
+	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 
 	for {

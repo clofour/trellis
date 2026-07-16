@@ -86,7 +86,7 @@ func run(config *models.AgentConfig) error {
 
 	serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr)
 
-	ag := agent.NewAgent(runtime, healthMgr, restartCtl, portMgr, volumeMgr, registry, serverClient, id)
+	ag := agent.NewAgent(log, runtime, healthMgr, restartCtl, portMgr, volumeMgr, registry, serverClient, id)
 	ag.Init(ctx)
 
 	e := echo.New()
@@ -106,8 +106,8 @@ func run(config *models.AgentConfig) error {
 
 	<-ctx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTime)
-	defer cancel()
+	// shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTime)
+	// defer cancel()
 
 	return nil
 }

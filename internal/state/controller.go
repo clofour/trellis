@@ -30,6 +30,9 @@ func (s *StateController) GetCluster(ctx context.Context) (*models.Cluster, erro
 	if err != nil {
 		return nil, fmt.Errorf("get key %s: %w", key, err)
 	}
+	if value == nil {
+		return nil, nil
+	}
 
 	var cluster models.Cluster
 	err = json.Unmarshal(value, &cluster)

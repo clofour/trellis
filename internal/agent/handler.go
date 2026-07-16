@@ -50,9 +50,9 @@ func NewHandler(agent *Agent) *Handler {
 }
 
 func (h *Handler) Register(e *echo.Echo) {
-	e.GET("/allocations", h.handleList)
-	e.POST("/allocations", h.handleRun)
-	e.DELETE("/allocations/:id", h.handleDelete)
+	e.GET("/v1/allocations", h.handleList)
+	e.POST("/v1/allocations", h.handleRun)
+	e.DELETE("/v1/allocations/:id", h.handleDelete)
 }
 
 func (h *Handler) handleList(c *echo.Context) error {

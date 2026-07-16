@@ -16,8 +16,8 @@ const checkTimeout = 5 * time.Second
 const checkThreshold = 3
 
 type HealthSubscriber interface {
-	OnHealthy(allocID string)
-	OnUnhealthy(allocID string)
+	OnHealthy(ctx context.Context, allocID string) error
+	OnUnhealthy(ctx context.Context, allocID string) error
 }
 
 type HealthConfig struct {
@@ -117,9 +117,9 @@ func (h *HealthManager) runHealthCheckLoop(ctx context.Context, trackedTask *tra
 			if change {
 				switch status {
 				case StatusHealthy:
-					h.Subscriber.OnHealthy(trackedTask.allocID)
+					h.Subscriber.OnHealthy(ctx, trackedTask.allocID)
 				case StatusUnhealthy:
-					h.Subscriber.OnUnhealthy(trackedTask.allocID)
+					h.Subscriber.OnUnhealthy(ctx, trackedTask.allocID)
 				}
 			}
 		}

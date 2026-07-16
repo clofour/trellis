@@ -17,9 +17,9 @@ func NewHandler() *Handler {
 }
 
 func (h *Handler) Register(e *echo.Echo) {
-	e.GET("/nodes", h.handleListNodes)
-	e.POST("/nodes", h.handleRegisterNode)
-	e.POST("/heartbeats", h.handleHeartbeat)
+	e.GET("/v1/nodes", h.handleListNodes)
+	e.POST("/v1/nodes", h.handleRegisterNode)
+	e.POST("/v1/heartbeats", h.handleHeartbeat)
 }
 
 func (h *Handler) handleListNodes(c *echo.Context) error {

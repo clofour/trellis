@@ -29,6 +29,9 @@ func (c *ConsulStore) Get(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", key, err)
 	}
+	if data == nil {
+		return nil, nil
+	}
 
 	return data.Value, nil
 }
