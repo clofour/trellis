@@ -53,7 +53,7 @@ func (s *StateController) PutCluster(ctx context.Context, cluster *models.Cluste
 
 	err = s.store.Put(ctx, key, value)
 	if err != nil {
-		return fmt.Errorf("get key %s: %w", key, err)
+		return fmt.Errorf("put key %s: %w", key, err)
 	}
 
 	return nil

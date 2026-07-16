@@ -16,7 +16,7 @@ const windowSize = 10 * time.Minute
 type RestartController struct {
 	runtime runtime.ContainerRuntime
 
-	mtx    sync.Mutex
+	mu     sync.Mutex
 	states map[string]*restartState
 
 	subscriber RestartSubscriber
@@ -43,8 +43,8 @@ func NewRestartController(runtime runtime.ContainerRuntime, subscriber RestartSu
 }
 
 func (r *RestartController) Track(ctx context.Context, allocID string) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	r.states[allocID] = &restartState{
 		restarting: false,
@@ -54,8 +54,8 @@ func (r *RestartController) Track(ctx context.Context, allocID string) {
 }
 
 func (r *RestartController) Untrack(ctx context.Context, allocID string) error {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	_, ok := r.states[allocID]
 	if !ok {
@@ -77,12 +77,12 @@ func (r *RestartController) RunDetectionLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 
-			r.mtx.Lock()
+			r.mu.Lock()
 			allocIDs := make([]string, 0, len(r.states))
 			for allocID := range r.states {
 				allocIDs = append(allocIDs, allocID)
 			}
-			r.mtx.Unlock()
+			r.mu.Unlock()
 
 			for _, allocID := range allocIDs {
 				containerState, err := r.runtime.Inspect(ctx, allocID)
@@ -100,15 +100,15 @@ func (r *RestartController) RunDetectionLoop(ctx context.Context) {
 }
 
 func (r *RestartController) RequestRestart(ctx context.Context, allocID string) error {
-	r.mtx.Lock()
+	r.mu.Lock()
 	state, ok := r.states[allocID]
 	if !ok {
-		r.mtx.Unlock()
+		r.mu.Unlock()
 		return fmt.Errorf("alloc %s not tracked", allocID)
 	}
 
-	if state.restarting == true {
-		r.mtx.Unlock()
+	if state.restarting {
+		r.mu.Unlock()
 		return nil
 	}
 	state.restarting = true
@@ -121,7 +121,7 @@ func (r *RestartController) RequestRestart(ctx context.Context, allocID string) 
 
 	if state.attempts >= maxRestarts {
 		state.restarting = false
-		r.mtx.Unlock()
+		r.mu.Unlock()
 
 		r.subscriber.OnFailed(allocID)
 		return nil
@@ -129,19 +129,19 @@ func (r *RestartController) RequestRestart(ctx context.Context, allocID string) 
 
 	state.attempts++
 
-	r.mtx.Unlock()
+	r.mu.Unlock()
 	err := r.runtime.Restart(ctx, allocID)
 	if err != nil {
-		r.mtx.Lock()
+		r.mu.Lock()
 		state.restarting = false
-		r.mtx.Unlock()
+		r.mu.Unlock()
 
 		return fmt.Errorf("restart alloc %s: %w", allocID, err)
 	}
 
-	r.mtx.Lock()
+	r.mu.Lock()
 	state.restarting = false
-	r.mtx.Unlock()
+	r.mu.Unlock()
 
 	return nil
 }

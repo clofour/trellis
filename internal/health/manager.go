@@ -38,7 +38,7 @@ type trackedTask struct {
 }
 
 type HealthManager struct {
-	mtx        sync.Mutex
+	mu         sync.Mutex
 	runtime    runtime.ContainerRuntime
 	tasks      map[string]*trackedTask
 	Subscriber HealthSubscriber
@@ -53,8 +53,8 @@ func NewHealthManager(runtime runtime.ContainerRuntime, subscriber HealthSubscri
 }
 
 func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *spec.HealthCheckSpec) {
-	h.mtx.Lock()
-	defer h.mtx.Unlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -85,8 +85,8 @@ func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *s
 }
 
 func (h *HealthManager) DeregisterTask(allocID string) {
-	h.mtx.Lock()
-	defer h.mtx.Unlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	trackedTask, ok := h.tasks[allocID]
 	if ok {
@@ -110,9 +110,9 @@ func (h *HealthManager) runHealthCheckLoop(ctx context.Context, trackedTask *tra
 				result = false
 			}
 
-			h.mtx.Lock()
+			h.mu.Lock()
 			change, status := trackedTask.health.RecordResult(result)
-			h.mtx.Unlock()
+			h.mu.Unlock()
 
 			if change {
 				switch status {

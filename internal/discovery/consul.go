@@ -22,11 +22,11 @@ func NewConsulRegistry() (*ConsulRegistry, error) {
 	}, nil
 }
 
-func (c *ConsulRegistry) Register(ctx context.Context, ID string, name string, addr string, port int) error {
+func (c *ConsulRegistry) Register(ctx context.Context, id string, name string, addr string, port int) error {
 	agent := c.client.Agent()
 
 	registration := &api.AgentServiceRegistration{
-		ID:      ID,
+		ID:      id,
 		Name:    name,
 		Address: addr,
 		Port:    port,
@@ -34,18 +34,18 @@ func (c *ConsulRegistry) Register(ctx context.Context, ID string, name string, a
 
 	err := agent.ServiceRegister(registration)
 	if err != nil {
-		return fmt.Errorf("register %s: %w", ID, err)
+		return fmt.Errorf("register %s: %w", id, err)
 	}
 
 	return nil
 }
 
-func (c *ConsulRegistry) Deregister(ctx context.Context, ID string) error {
+func (c *ConsulRegistry) Deregister(ctx context.Context, id string) error {
 	agent := c.client.Agent()
 
-	err := agent.ServiceDeregister(ID)
+	err := agent.ServiceDeregister(id)
 	if err != nil {
-		return fmt.Errorf("deregister %s: %w", ID, err)
+		return fmt.Errorf("deregister %s: %w", id, err)
 	}
 
 	return nil
