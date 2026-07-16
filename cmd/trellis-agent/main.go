@@ -121,7 +121,7 @@ func initializeDataDir(path string) error {
 	return nil
 }
 
-func acquireNodeID(dataPath string) (*uuid.UUID, error) {
+func acquireNodeID(dataPath string) (uuid.UUID, error) {
 	path := filepath.Join(dataPath, "node-id")
 
 	data, err := os.ReadFile(path)
@@ -129,21 +129,21 @@ func acquireNodeID(dataPath string) (*uuid.UUID, error) {
 		processed := strings.TrimSpace(string(data))
 		id, err := uuid.Parse(processed)
 		if err != nil {
-			return nil, fmt.Errorf("invalid uuid %s", processed)
+			return uuid.Nil, fmt.Errorf("invalid uuid %s", processed)
 		}
 
 		return id, nil
 	}
 
 	if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("read node ID: %w", err)
+		return uuid.Nil, fmt.Errorf("read node ID: %w", err)
 	}
 
 	id := uuid.New()
 	err = os.WriteFile(path, []byte(id.String()), 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("write node ID %s: %w", id, err)
+		return uuid.Nil, fmt.Errorf("write node ID %s: %w", id, err)
 	}
 
-	return &id, nil
+	return id, nil
 }

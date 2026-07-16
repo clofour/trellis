@@ -46,7 +46,7 @@ type Allocation struct {
 
 const heartbeatInterval = 10 * time.Second
 
-func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID *uuid.UUID) *Agent {
+func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID uuid.UUID) *Agent {
 	agent := &Agent{
 		nodeID:      nodeID,
 		allocations: make(map[string]*Allocation),
