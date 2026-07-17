@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -38,14 +39,17 @@ type trackedTask struct {
 }
 
 type HealthManager struct {
-	mu         sync.Mutex
+	log        *slog.Logger
 	runtime    runtime.ContainerRuntime
-	tasks      map[string]*trackedTask
 	Subscriber HealthSubscriber
+
+	mu    sync.Mutex
+	tasks map[string]*trackedTask
 }
 
-func NewHealthManager(runtime runtime.ContainerRuntime, subscriber HealthSubscriber) *HealthManager {
+func NewHealthManager(log *slog.Logger, runtime runtime.ContainerRuntime, subscriber HealthSubscriber) *HealthManager {
 	return &HealthManager{
+		log:        log,
 		runtime:    runtime,
 		tasks:      make(map[string]*trackedTask),
 		Subscriber: subscriber,

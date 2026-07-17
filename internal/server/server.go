@@ -8,20 +8,26 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 
 	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/state"
+	"github.com/clofour/trellis/internal/storage"
 )
 
 type Server struct {
-	state *state.StateController
+	log     *slog.Logger
+	storage *storage.LocalStorage
+	state   *state.StateController
 
 	cluster *models.Cluster
 }
 
-func NewServer(state *state.StateController) *Server {
+func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *state.StateController) *Server {
 	return &Server{
-		state: state,
+		log:     log.With("component", "server"),
+		storage: storage,
+		state:   state,
 	}
 }
 
@@ -32,6 +38,8 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	}
 
 	if cluster != nil {
+		s.log.Info("cluster already initialized")
+
 		s.cluster = cluster
 		return "", nil
 	}
@@ -44,13 +52,18 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
 
+	err = s.storage.Put("token", hashHex)
+	if err != nil {
+		return "", fmt.Errorf("save cluster locally: %w", err)
+	}
+
 	cluster = &models.Cluster{
 		Hash: hashHex,
 	}
 
 	err = s.state.PutCluster(ctx, cluster)
 	if err != nil {
-		return "", fmt.Errorf("init cluster: %w", err)
+		return "", fmt.Errorf("save cluster remotely: %w", err)
 	}
 
 	s.cluster = cluster

@@ -71,7 +71,7 @@ func run(config *models.AgentConfig) error {
 		return fmt.Errorf("init runtime %s: %w", config.ContainerdSock, err)
 	}
 
-	healthMgr := health.NewHealthManager(runtime, nil)
+	healthMgr := health.NewHealthManager(log, runtime, nil)
 
 	restartCtl := agent.NewRestartController(runtime, nil)
 
