@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -61,5 +62,5 @@ func (s *Server) ValidateAPIToken(ctx context.Context, token string) bool {
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
 
-	return s.cluster.Hash == hashHex
+	return subtle.ConstantTimeCompare([]byte(token), []byte(hashHex)) == 1
 }
