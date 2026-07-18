@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/clofour/trellis/internal/api"
 	"github.com/google/uuid"
 )
 
@@ -33,8 +34,8 @@ func (s *ServerClient) ListNodes(ctx context.Context, placeholder string) {
 
 }
 
-func (s *ServerClient) RegisterNode(ctx context.Context, requestData *NodeRegistrationRequest) (*NodeRegistrationResponse, error) {
-	var responseData NodeRegistrationResponse
+func (s *ServerClient) RegisterNode(ctx context.Context, requestData *api.NodeRegistrationRequest) (*api.NodeRegistrationResponse, error) {
+	var responseData api.NodeRegistrationResponse
 
 	err := s.request(ctx, http.MethodPost, "/v1/nodes", requestData, &responseData)
 	if err != nil {
@@ -60,7 +61,7 @@ func (s *ServerClient) DeleteJob(ctx context.Context, placeholder string) {
 
 }
 
-func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, requestData *HeartbeatRequest) error {
+func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, requestData *api.HeartbeatRequest) error {
 	url := fmt.Sprintf("/v1/nodes/%s/heartbeat", id)
 
 	err := s.request(ctx, http.MethodPost, url, requestData, nil)

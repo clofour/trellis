@@ -3,44 +3,13 @@ package agent
 import (
 	"net/http"
 
+	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/labstack/echo/v5"
 )
 
 type Handler struct {
 	agent *Agent
-}
-
-type RunRequest struct {
-	JobName     string
-	GroupName   string
-	Allocations []AllocationRequest
-}
-
-type AllocationRequest struct {
-	Name        string
-	Image       string
-	Env         map[string]string
-	Ports       []PortRequest
-	Volumes     []VolumeRequest
-	HealthCheck HealthCheckRequest
-}
-
-type PortRequest struct {
-	HostPort      int
-	ContainerPort int
-}
-
-type VolumeRequest struct {
-	Name string
-	Path string
-}
-
-type HealthCheckRequest struct {
-	Type    string
-	Port    int
-	Path    string
-	Command []string
 }
 
 func NewHandler(agent *Agent) *Handler {
@@ -66,16 +35,16 @@ func (h *Handler) handleList(c *echo.Context) error {
 func (h *Handler) handleRun(c *echo.Context) error {
 	ctx := c.Request().Context()
 
-	var req RunRequest
-	err := c.Bind(&req)
+	var request api.RunRequest
+	err := c.Bind(&request)
 	if err != nil {
 		return err
 	}
 
-	for _, rawAlloc := range req.Allocations {
+	for _, rawAlloc := range request.Allocations {
 
 		alloc := convertAlloc(rawAlloc)
-		err := h.agent.RunAllocation(ctx, req.JobName, req.GroupName, alloc.Name, alloc)
+		err := h.agent.RunAllocation(ctx, request.JobName, request.GroupName, alloc.Name, alloc)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -98,24 +67,24 @@ func (h *Handler) handleDelete(c *echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func convertAlloc(req AllocationRequest) *spec.TaskSpec {
-	volumes := make([]spec.VolumeSpec, 0, len(req.Volumes))
-	for _, volume := range req.Volumes {
+func convertAlloc(request api.AllocationRequest) *spec.TaskSpec {
+	volumes := make([]spec.VolumeSpec, 0, len(request.Volumes))
+	for _, volume := range request.Volumes {
 		volumes = append(volumes, spec.VolumeSpec{
 			Name: volume.Name,
 			Path: volume.Path,
 		})
 	}
 
-	ports := make([]spec.PortSpec, 0, len(req.Volumes))
-	for _, port := range req.Ports {
+	ports := make([]spec.PortSpec, 0, len(request.Volumes))
+	for _, port := range request.Ports {
 		ports = append(ports, spec.PortSpec{
 			HostPort:      port.HostPort,
 			ContainerPort: port.ContainerPort,
 		})
 	}
 
-	healthCheckRequest := req.HealthCheck
+	healthCheckRequest := request.HealthCheck
 	healthCheck := &spec.HealthCheckSpec{
 		Type:    healthCheckRequest.Type,
 		Port:    healthCheckRequest.Port,
@@ -124,9 +93,9 @@ func convertAlloc(req AllocationRequest) *spec.TaskSpec {
 	}
 
 	return &spec.TaskSpec{
-		Name:        req.Name,
-		Image:       req.Image,
-		Env:         req.Env,
+		Name:        request.Name,
+		Image:       request.Image,
+		Env:         request.Env,
 		HealthCheck: healthCheck,
 		Ports:       ports,
 		Volumes:     volumes,

@@ -23,6 +23,11 @@ type Node struct {
 	Host          string
 	Port          int
 	Status        NodeStatus
-	Resources     []string
 	LastHeartbeat time.Time
+}
+
+type NodeSummary struct {
+	ID   uuid.UUID
+	Host string
+	Port int
 }
