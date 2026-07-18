@@ -14,4 +14,7 @@ type AgentConfig struct {
 	ConsulAddr     string
 }
 
-type CLIConfig struct{}
+type CLIConfig struct {
+	ServerAddr   string
+	ClusterToken string
+}

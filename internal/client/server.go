@@ -30,8 +30,15 @@ func (s *ServerClient) GetClusterStatus(ctx context.Context, placeholder string)
 
 }
 
-func (s *ServerClient) ListNodes(ctx context.Context, placeholder string) {
+func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, error) {
+	var responseData api.NodeListResponse
 
+	err := s.request(ctx, http.MethodGet, "/v1/nodes", nil, &responseData)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	return &responseData, nil
 }
 
 func (s *ServerClient) RegisterNode(ctx context.Context, requestData *api.NodeRegistrationRequest) (*api.NodeRegistrationResponse, error) {
