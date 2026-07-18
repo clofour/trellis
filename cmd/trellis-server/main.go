@@ -75,7 +75,7 @@ func run(config *models.ServerConfig) error {
 			return s.ValidateAPIToken(ctx, key), nil
 		},
 	}))
-	handler := server.NewHandler()
+	handler := server.NewHandler(s)
 	handler.Register(e)
 	startCfg := echo.StartConfig{
 		Address:         config.ListenAddr,
