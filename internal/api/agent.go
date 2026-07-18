@@ -1,33 +1,33 @@
 package api
 
 type RunRequest struct {
-	JobName     string
-	GroupName   string
-	Allocations []AllocationRequest
+	JobName     string              `json:"job_name"`
+	GroupName   string              `json:"group_name"`
+	Allocations []AllocationRequest `json:"allocations"`
 }
 
 type AllocationRequest struct {
-	Name        string
-	Image       string
-	Env         map[string]string
-	Ports       []PortRequest
-	Volumes     []VolumeRequest
-	HealthCheck HealthCheckRequest
+	Name        string             `json:"job_name"`
+	Image       string             `json:"image"`
+	Env         map[string]string  `json:"env"`
+	Ports       []PortRequest      `json:"ports"`
+	Volumes     []VolumeRequest    `json:"volumes"`
+	HealthCheck HealthCheckRequest `json:"health_check"`
 }
 
 type PortRequest struct {
-	HostPort      int
-	ContainerPort int
+	HostPort      int `json:"host_port"`
+	ContainerPort int `json:"container_port"`
 }
 
 type VolumeRequest struct {
-	Name string
-	Path string
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 type HealthCheckRequest struct {
-	Type    string
-	Port    int
-	Path    string
-	Command []string
+	Type    string   `json:"type"`
+	Port    int      `json:"port"`
+	Path    string   `json:"path"`
+	Command []string `json:"command"`
 }
