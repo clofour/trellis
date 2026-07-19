@@ -60,8 +60,13 @@ func (s *ServerClient) ListJobs(ctx context.Context, placeholder string) {
 
 }
 
-func (s *ServerClient) SubmitJob(ctx context.Context, placeholder string) {
+func (s *ServerClient) SubmitJob(ctx context.Context, requestData *api.JobRegistrationRequest) error {
+	err := s.request(ctx, http.MethodPost, "/v1/nodes", requestData, nil)
+	if err != nil {
+		return fmt.Errorf("register node: %w", err)
+	}
 
+	return nil
 }
 
 func (s *ServerClient) DeleteJob(ctx context.Context, placeholder string) {

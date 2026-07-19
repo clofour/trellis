@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
 
@@ -25,6 +26,7 @@ type Server struct {
 
 	cluster *models.Cluster
 	nodes   map[uuid.UUID]*models.Node
+	jobs    map[string]*spec.JobSpec
 }
 
 type NodeRegistration struct {
@@ -125,6 +127,17 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID) error {
 
 	node.Status = models.StatusHealthy
 	node.LastHeartbeat = time.Now()
+
+	return nil
+}
+
+func (s *Server) RegisterJob(ctx context.Context, job *spec.JobSpec) error {
+	err := s.state.PutJob(ctx, job.Name, job)
+	if err != nil {
+		return fmt.Errorf("save job remotely: %w", err)
+	}
+
+	s.jobs[job.Name] = job
 
 	return nil
 }

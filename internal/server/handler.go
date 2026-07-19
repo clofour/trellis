@@ -5,6 +5,7 @@ import (
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
@@ -20,9 +21,11 @@ func NewHandler(server *Server) *Handler {
 }
 
 func (h *Handler) Register(e *echo.Echo) {
-	e.GET("/v1/nodes", h.handleListNodes)
-	e.POST("/v1/nodes", h.handleRegisterNode)
-	e.POST("/v1/nodes/:id/heartbeat", h.handleHeartbeat)
+	v1 := e.Group("v1")
+	v1.GET("nodes", h.handleListNodes)
+	v1.POST("nodes", h.handleRegisterNode)
+	v1.POST("nodes/:id/heartbeat", h.handleHeartbeat)
+	v1.POST("jobs", h.handleRegisterJob)
 }
 
 func (h *Handler) handleListNodes(c *echo.Context) error {
@@ -77,6 +80,23 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 	return nil
 }
 
+func (h *Handler) handleRegisterJob(c *echo.Context) error {
+	ctx := c.Request().Context()
+
+	var request api.JobRegistrationRequest
+	err := c.Bind(&request)
+	if err != nil {
+		return err
+	}
+
+	err = h.server.RegisterJob(ctx, h.convertJob(&request))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return nil
+}
+
 func (h *Handler) convertNode(node *models.Node) *api.NodeResponse {
 	return &api.NodeResponse{
 		ID:            node.ID,
@@ -84,5 +104,62 @@ func (h *Handler) convertNode(node *models.Node) *api.NodeResponse {
 		Port:          node.Port,
 		Status:        api.NodeStatusResponse(node.Status),
 		LastHeartbeat: node.LastHeartbeat,
+	}
+}
+
+func (h *Handler) convertJob(jobRequest *api.JobRegistrationRequest) *spec.JobSpec {
+
+	taskGroups := make([]spec.TaskGroupSpec, 0, len(jobRequest.TaskGroups))
+	for _, taskGroup := range jobRequest.TaskGroups {
+
+		tasks := make([]spec.TaskSpec, 0, len(taskGroup.Tasks))
+		for _, task := range taskGroup.Tasks {
+
+			ports := make([]spec.PortSpec, 0, len(task.Ports))
+			for _, port := range task.Ports {
+				ports = append(ports, spec.PortSpec{
+					HostPort:      port.HostPort,
+					ContainerPort: port.ContainerPort,
+				})
+			}
+			volumes := make([]spec.VolumeSpec, 0, len(task.Volumes))
+			for _, volume := range task.Volumes {
+				volumes = append(volumes, spec.VolumeSpec{
+					Name: volume.Name,
+					Path: volume.Path,
+				})
+			}
+			resources := spec.ResourcesSpec{
+				CPU:    task.Resources.CPU,
+				Memory: task.Resources.Memory,
+			}
+			healthCheck := spec.HealthCheckSpec{
+				Type:    task.HealthCheck.Type,
+				Port:    task.HealthCheck.Port,
+				Path:    task.HealthCheck.Path,
+				Command: task.HealthCheck.Command,
+			}
+
+			tasks = append(tasks, spec.TaskSpec{
+				Name:        task.Name,
+				Image:       task.Image,
+				Env:         task.Env,
+				Ports:       ports,
+				Volumes:     volumes,
+				Resources:   &resources,
+				HealthCheck: &healthCheck,
+			})
+		}
+
+		taskGroups = append(taskGroups, spec.TaskGroupSpec{
+			Name:  taskGroup.Name,
+			Count: taskGroup.Count,
+			Tasks: tasks,
+		})
+	}
+
+	return &spec.JobSpec{
+		Name:       jobRequest.Name,
+		TaskGroups: taskGroups,
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func ParseSpec(raw []byte) (*JobSpec, error) {
+func ParseYAML(raw []byte) (*JobSpec, error) {
 	var data map[string]interface{}
 	err := yaml.Unmarshal(raw, &data)
 	if err != nil {

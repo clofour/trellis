@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/spec"
 )
 
 type StateController struct {
@@ -55,6 +56,17 @@ func (s *StateController) PutNode(ctx context.Context, id string, node *models.N
 	err := s.put(ctx, key, node)
 	if err != nil {
 		return fmt.Errorf("put node: %w", err)
+	}
+
+	return nil
+}
+
+func (s *StateController) PutJob(ctx context.Context, id string, job *spec.JobSpec) error {
+	key := fmt.Sprintf("%s/cluster/%s/jobs/%s/spec", trellisNamespace, s.cluster, id)
+
+	err := s.put(ctx, key, job)
+	if err != nil {
+		return fmt.Errorf("put job: %w", err)
 	}
 
 	return nil
