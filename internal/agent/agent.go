@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
@@ -67,7 +66,7 @@ func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health
 }
 
 func (a *Agent) Init(ctx context.Context) {
-	a.server.RegisterNode(ctx, &api.NodeRegistrationRequest{})
+	a.server.RegisterNode(ctx, &client.NodeInfo{})
 
 	a.health.Subscriber = a
 	a.restart.subscriber = a
@@ -221,7 +220,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.server.SendHeartbeat(ctx, a.nodeID, &api.HeartbeatRequest{
+			a.server.SendHeartbeat(ctx, a.nodeID, &client.Heartbeat{
 				NodeID:    a.nodeID,
 				Timestamp: time.Now(),
 			})

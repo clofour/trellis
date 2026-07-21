@@ -55,33 +55,16 @@ type TaskGroupRegistrationRequest struct {
 }
 
 type TaskRegistrationRequest struct {
-	Name        string                          `json:"name"`
-	Image       string                          `json:"image"`
-	Env         map[string]string               `json:"env"`
-	Ports       []PortRegistrationRequest       `json:"ports"`
-	Volumes     []VolumeRegistrationRequest     `json:"volumes"`
-	Resources   *ResourcesRegistrationRequest   `json:"resources"`
-	HealthCheck *HealthCheckRegistrationRequest `json:"health_check"`
+	Name        string              `json:"name"`
+	Image       string              `json:"image"`
+	Env         map[string]string   `json:"env"`
+	Ports       []PortRequest       `json:"ports"`
+	Volumes     []VolumeRequest     `json:"volumes"`
+	Resources   *ResourcesRequest   `json:"resources"`
+	HealthCheck *HealthCheckRequest `json:"health_check"`
 }
 
-type PortRegistrationRequest struct {
-	HostPort      int `json:"host_port"`
-	ContainerPort int `json:"container_port"`
-}
-
-type ResourcesRegistrationRequest struct {
+type ResourcesRequest struct {
 	CPU    int `json:"cpu"`
 	Memory int `json:"memory"`
-}
-
-type HealthCheckRegistrationRequest struct {
-	Type    string   `json:"type"`
-	Port    int      `json:"port"`
-	Path    string   `json:"path"`
-	Command []string `json:"command"`
-}
-
-type VolumeRegistrationRequest struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
 }

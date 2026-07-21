@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
 
@@ -16,6 +18,21 @@ type ServerClient struct {
 	baseURL string
 	token   string
 	client  *http.Client
+}
+
+type NodeInfo struct {
+	ID     uuid.UUID
+	Host   string
+	Port   int
+	CPU    int
+	Memory int64
+	OS     string
+	Arch   string
+}
+
+type Heartbeat struct {
+	NodeID    uuid.UUID `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 func NewServerClient(token string, addr string) *ServerClient {
@@ -41,7 +58,16 @@ func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, er
 	return &responseData, nil
 }
 
-func (s *ServerClient) RegisterNode(ctx context.Context, requestData *api.NodeRegistrationRequest) (*api.NodeRegistrationResponse, error) {
+func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*api.NodeRegistrationResponse, error) {
+	requestData := &api.NodeRegistrationRequest{
+		ID:     nodeInfo.ID,
+		Host:   nodeInfo.Host,
+		Port:   nodeInfo.Port,
+		CPU:    nodeInfo.CPU,
+		Memory: nodeInfo.Memory,
+		OS:     nodeInfo.OS,
+		Arch:   nodeInfo.Arch,
+	}
 	var responseData api.NodeRegistrationResponse
 
 	err := s.request(ctx, http.MethodPost, "/v1/nodes", requestData, &responseData)
@@ -60,8 +86,8 @@ func (s *ServerClient) ListJobs(ctx context.Context, placeholder string) {
 
 }
 
-func (s *ServerClient) SubmitJob(ctx context.Context, requestData *api.JobRegistrationRequest) error {
-	err := s.request(ctx, http.MethodPost, "/v1/nodes", requestData, nil)
+func (s *ServerClient) SubmitJob(ctx context.Context, requestData *spec.JobSpec) error {
+	err := s.request(ctx, http.MethodPost, "/v1/nodes", convertJob(requestData), nil)
 	if err != nil {
 		return fmt.Errorf("register node: %w", err)
 	}
@@ -73,7 +99,11 @@ func (s *ServerClient) DeleteJob(ctx context.Context, placeholder string) {
 
 }
 
-func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, requestData *api.HeartbeatRequest) error {
+func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbeat *Heartbeat) error {
+	requestData := &api.HeartbeatRequest{
+		NodeID:    heartbeat.NodeID,
+		Timestamp: heartbeat.Timestamp,
+	}
 	url := fmt.Sprintf("/v1/nodes/%s/heartbeat", id)
 
 	err := s.request(ctx, http.MethodPost, url, requestData, nil)
@@ -129,4 +159,61 @@ func (s *ServerClient) request(ctx context.Context, method string, path string, 
 
 func checkStatusCode(statusCode int) bool {
 	return statusCode < 200 || statusCode >= 300
+}
+
+func convertJob(jobSpec *spec.JobSpec) *api.JobRegistrationRequest {
+
+	taskGroups := make([]api.TaskGroupRegistrationRequest, 0, len(jobSpec.TaskGroups))
+	for _, taskGroup := range jobSpec.TaskGroups {
+
+		tasks := make([]api.TaskRegistrationRequest, 0, len(taskGroup.Tasks))
+		for _, task := range taskGroup.Tasks {
+
+			ports := make([]api.PortRequest, 0, len(task.Ports))
+			for _, port := range task.Ports {
+				ports = append(ports, api.PortRequest{
+					HostPort:      port.HostPort,
+					ContainerPort: port.ContainerPort,
+				})
+			}
+			volumes := make([]api.VolumeRequest, 0, len(task.Volumes))
+			for _, volume := range task.Volumes {
+				volumes = append(volumes, api.VolumeRequest{
+					Name: volume.Name,
+					Path: volume.Path,
+				})
+			}
+			resources := api.ResourcesRequest{
+				CPU:    task.Resources.CPU,
+				Memory: task.Resources.Memory,
+			}
+			healthCheck := api.HealthCheckRequest{
+				Type:    task.HealthCheck.Type,
+				Port:    task.HealthCheck.Port,
+				Path:    task.HealthCheck.Path,
+				Command: task.HealthCheck.Command,
+			}
+
+			tasks = append(tasks, api.TaskRegistrationRequest{
+				Name:        task.Name,
+				Image:       task.Image,
+				Env:         task.Env,
+				Ports:       ports,
+				Volumes:     volumes,
+				Resources:   &resources,
+				HealthCheck: &healthCheck,
+			})
+		}
+
+		taskGroups = append(taskGroups, api.TaskGroupRegistrationRequest{
+			Name:  taskGroup.Name,
+			Count: taskGroup.Count,
+			Tasks: tasks,
+		})
+	}
+
+	return &api.JobRegistrationRequest{
+		Name:       jobSpec.Name,
+		TaskGroups: taskGroups,
+	}
 }
