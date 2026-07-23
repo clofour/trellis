@@ -19,14 +19,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const reconcileInterval = 10 * time.Second
+
 type Server struct {
 	log     *slog.Logger
 	storage *storage.LocalStorage
 	state   *state.StateController
 
-	cluster *models.Cluster
-	nodes   map[uuid.UUID]*models.Node
-	jobs    map[string]*spec.JobSpec
+	cluster     *models.Cluster
+	nodes       map[uuid.UUID]*models.Node
+	jobs        map[string]*Job
+	allocations []*Allocation
 }
 
 type NodeRegistration struct {
@@ -37,6 +40,37 @@ type NodeRegistration struct {
 	Memory int64
 	OS     string
 	Arch   string
+}
+
+type Job struct {
+	Spec       *spec.JobSpec
+	TaskGroups map[string]*TaskGroup
+	Revision   int
+}
+
+type TaskGroup struct {
+	Spec        *spec.TaskGroupSpec
+	Tasks       []*Task
+	Allocations []*Allocation
+}
+
+type Task struct {
+	Spec *spec.TaskSpec
+}
+
+type AllocationStatus string
+
+const (
+	StatusPending   AllocationStatus = "pending"
+	StatusHealthy   AllocationStatus = "healthy"
+	StatusUnhealthy AllocationStatus = "unhealthy"
+)
+
+type Allocation struct {
+	JobName       string
+	TaskGroupName string
+	Status        AllocationStatus
+	Revision      int
 }
 
 func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *state.StateController) *Server {
@@ -88,6 +122,10 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	return token, nil
 }
 
+func (s *Server) Run(ctx context.Context) {
+	go s.runReconcileLoop(ctx)
+}
+
 func (s *Server) ListNodes(ctx context.Context) []models.Node {
 	result := make([]models.Node, 0, len(s.nodes))
 
@@ -131,14 +169,25 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID) error {
 	return nil
 }
 
-func (s *Server) RegisterJob(ctx context.Context, job *spec.JobSpec) error {
-	err := s.state.PutJob(ctx, job.Name, job)
+func (s *Server) RegisterJob(ctx context.Context, jobSpec *spec.JobSpec) error {
+	err := s.state.PutJob(ctx, jobSpec.Name, jobSpec)
 	if err != nil {
 		return fmt.Errorf("save job remotely: %w", err)
 	}
 
-	s.jobs[job.Name] = job
+	s.jobs[jobSpec.Name] = &Job{
+		Spec:     jobSpec,
+		Revision: 0,
+	}
 
+	return nil
+}
+
+func (s *Server) RunAllocation(ctx context.Context, allocation *Allocation) error {
+	return nil
+}
+
+func (s *Server) StopAllocation(ctx context.Context, allocation *Allocation) error {
 	return nil
 }
 
@@ -147,4 +196,18 @@ func (s *Server) ValidateAPIToken(ctx context.Context, token string) bool {
 	hashHex := hex.EncodeToString(hash[:])
 
 	return subtle.ConstantTimeCompare([]byte(token), []byte(hashHex)) == 1
+}
+
+func (s *Server) runReconcileLoop(ctx context.Context) {
+	ticker := time.NewTicker(reconcileInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.Reconcile(ctx)
+		}
+	}
 }

@@ -61,6 +61,18 @@ func (s *StateController) PutNode(ctx context.Context, id string, node *models.N
 	return nil
 }
 
+func (s *StateController) ListJobs(ctx context.Context, id string, job *spec.JobSpec) ([]spec.JobSpec, error) {
+	prefix := fmt.Sprintf("%s/cluster/%s/jobs", trellisNamespace, s.cluster)
+
+	var jobs []spec.JobSpec
+	err := s.list(ctx, prefix, jobs)
+	if err != nil {
+		return nil, fmt.Errorf("list job: %w", err)
+	}
+
+	return jobs, nil
+}
+
 func (s *StateController) PutJob(ctx context.Context, id string, job *spec.JobSpec) error {
 	key := fmt.Sprintf("%s/cluster/%s/jobs/%s/spec", trellisNamespace, s.cluster, id)
 
@@ -87,6 +99,27 @@ func (s *StateController) get(ctx context.Context, key string, value any) (bool,
 	}
 
 	return true, nil
+}
+
+func (s *StateController) list(ctx context.Context, prefix string, value any) error {
+	rawArray, err := s.store.List(ctx, prefix)
+	if err != nil {
+		return fmt.Errorf("list prefix %s: %w", prefix, err)
+	}
+	if rawArray == nil {
+		return nil
+	}
+
+	rawText, err := json.Marshal(rawArray)
+	if err != nil {
+		return fmt.Errorf("marshal json: %w", err)
+	}
+	err = json.Unmarshal(rawText, value)
+	if err != nil {
+		return fmt.Errorf("unmarshal json: %w", err)
+	}
+
+	return nil
 }
 
 func (s *StateController) put(ctx context.Context, key string, value any) error {
