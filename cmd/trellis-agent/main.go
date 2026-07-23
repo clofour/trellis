@@ -15,7 +15,6 @@ import (
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
-	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
@@ -26,8 +25,17 @@ import (
 
 const shutdownTime = 10 * time.Second
 
+type AgentConfig struct {
+	ListenAddr     string
+	DataDir        string
+	ServerAddr     string
+	ClusterToken   string
+	ContainerdSock string
+	ConsulAddr     string
+}
+
 func main() {
-	config := &models.AgentConfig{}
+	config := &AgentConfig{}
 
 	root := &cobra.Command{
 		Use:   "trellis-agent",
@@ -51,7 +59,7 @@ func main() {
 	}
 }
 
-func run(config *models.AgentConfig) error {
+func run(config *AgentConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 

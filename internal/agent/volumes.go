@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/spec"
 )
 
@@ -19,7 +19,7 @@ func NewVolumeManager() *VolumeManager {
 	}
 }
 
-func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.VolumeSpec) (*models.Mount, error) {
+func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.VolumeSpec) (*runtime.Mount, error) {
 	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
 
 	err := os.MkdirAll(hostPath, 0755)
@@ -27,7 +27,7 @@ func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.Vol
 		return nil, fmt.Errorf("creating volume dir %s: %w", hostPath, err)
 	}
 
-	return &models.Mount{
+	return &runtime.Mount{
 		HostPath:      hostPath,
 		ContainerPath: volume.Path,
 	}, nil

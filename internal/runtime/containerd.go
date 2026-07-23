@@ -6,8 +6,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clofour/trellis/internal/models"
-
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/pkg/cio"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
@@ -21,6 +19,16 @@ const gracePeriod = 10 * time.Second
 
 type ContainerdRuntime struct {
 	client *containerd.Client
+}
+
+type Port struct {
+	HostPort      int
+	ContainerPort int
+}
+
+type Mount struct {
+	HostPath      string
+	ContainerPath string
 }
 
 func NewContainerdRuntime(socketPath string) (*ContainerdRuntime, error) {
@@ -279,7 +287,7 @@ func convertEnv(envMap map[string]string) []string {
 	return env
 }
 
-func convertMounts(mounts []*models.Mount) []specs.Mount {
+func convertMounts(mounts []*Mount) []specs.Mount {
 	result := make([]specs.Mount, len(mounts))
 
 	for i, m := range mounts {

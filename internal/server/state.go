@@ -1,33 +1,33 @@
-package state
+package server
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/spec"
+	"github.com/clofour/trellis/internal/state"
 )
 
 type StateController struct {
-	store StateStore
+	store state.StateStore
 
 	cluster string
 }
 
 const trellisNamespace = "trellis"
 
-func NewStateController(store StateStore, cluster string) *StateController {
+func NewStateController(store state.StateStore, cluster string) *StateController {
 	return &StateController{
 		store:   store,
 		cluster: cluster,
 	}
 }
 
-func (s *StateController) GetCluster(ctx context.Context) (*models.Cluster, error) {
+func (s *StateController) GetCluster(ctx context.Context) (*Cluster, error) {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
 
-	var cluster models.Cluster
+	var cluster Cluster
 	found, err := s.get(ctx, key, &cluster)
 	if err != nil {
 		return nil, fmt.Errorf("get cluster: %w", err)
@@ -39,7 +39,7 @@ func (s *StateController) GetCluster(ctx context.Context) (*models.Cluster, erro
 	return &cluster, nil
 }
 
-func (s *StateController) PutCluster(ctx context.Context, cluster *models.Cluster) error {
+func (s *StateController) PutCluster(ctx context.Context, cluster *Cluster) error {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
 
 	err := s.put(ctx, key, cluster)
@@ -50,7 +50,7 @@ func (s *StateController) PutCluster(ctx context.Context, cluster *models.Cluste
 	return nil
 }
 
-func (s *StateController) PutNode(ctx context.Context, id string, node *models.NodeSummary) error {
+func (s *StateController) PutNode(ctx context.Context, id string, node *NodeSummary) error {
 	key := fmt.Sprintf("%s/%s/nodes/%s", trellisNamespace, s.cluster, id)
 
 	err := s.put(ctx, key, node)

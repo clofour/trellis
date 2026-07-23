@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/server"
 	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
@@ -20,8 +19,13 @@ import (
 
 const shutdownTime = 10 * time.Second
 
+type ServerConfig struct {
+	ListenAddr string
+	DataDir    string
+}
+
 func main() {
-	config := &models.ServerConfig{}
+	config := &ServerConfig{}
 
 	root := &cobra.Command{
 		Use:   "trellis-server",
@@ -41,7 +45,7 @@ func main() {
 	}
 }
 
-func run(config *models.ServerConfig) error {
+func run(config *ServerConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
@@ -58,7 +62,7 @@ func run(config *models.ServerConfig) error {
 		return fmt.Errorf("init state store: %w", err)
 	}
 
-	stateCtl := state.NewStateController(stateStore, "default")
+	stateCtl := server.NewStateController(stateStore, "default")
 
 	s := server.NewServer(log, storage, stateCtl)
 

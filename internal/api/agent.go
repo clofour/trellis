@@ -1,16 +1,10 @@
 package api
 
-type RunRequest struct {
-	JobName     string              `json:"job_name"`
-	GroupName   string              `json:"group_name"`
-	Allocations []AllocationRequest `json:"allocations"`
-}
+import "github.com/clofour/trellis/internal/spec"
 
 type AllocationRequest struct {
-	Name        string             `json:"job_name"`
-	Image       string             `json:"image"`
-	Env         map[string]string  `json:"env"`
-	Ports       []PortRequest      `json:"ports"`
-	Volumes     []VolumeRequest    `json:"volumes"`
-	HealthCheck HealthCheckRequest `json:"health_check"`
+	JobName   string         `json:"job_name"`
+	GroupName string         `json:"group_name"`
+	Name      string         `json:"name"`
+	Task      *spec.TaskSpec `json:"task"`
 }

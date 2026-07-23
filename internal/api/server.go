@@ -3,6 +3,7 @@ package api
 import (
 	"time"
 
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
 
@@ -44,27 +45,5 @@ type HeartbeatRequest struct {
 }
 
 type JobRegistrationRequest struct {
-	Name       string                         `json:"name"`
-	TaskGroups []TaskGroupRegistrationRequest `json:"task_groups"`
-}
-
-type TaskGroupRegistrationRequest struct {
-	Name  string                    `json:"name"`
-	Count int                       `json:"count"`
-	Tasks []TaskRegistrationRequest `json:"tasks"`
-}
-
-type TaskRegistrationRequest struct {
-	Name        string              `json:"name"`
-	Image       string              `json:"image"`
-	Env         map[string]string   `json:"env"`
-	Ports       []PortRequest       `json:"ports"`
-	Volumes     []VolumeRequest     `json:"volumes"`
-	Resources   *ResourcesRequest   `json:"resources"`
-	HealthCheck *HealthCheckRequest `json:"health_check"`
-}
-
-type ResourcesRequest struct {
-	CPU    int `json:"cpu"`
-	Memory int `json:"memory"`
+	Spec spec.JobSpec `json:"spec"`
 }

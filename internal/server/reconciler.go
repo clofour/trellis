@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+
+	"github.com/clofour/trellis/internal/client"
 )
 
 type ActionType string
@@ -33,7 +35,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 		}
 
 		switch {
-		case allocation.Status == StatusUnhealthy:
+		case allocation.Status == AllocationStatusUnhealthy:
 			actions = append(actions, Action{
 				Type:       ActionStop,
 				Allocation: allocation,
@@ -53,7 +55,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 				Allocation: allocation,
 			})
 
-		case allocation.Status == StatusHealthy:
+		case allocation.Status == AllocationStatusHealthy:
 			if replicaCounts[allocation.JobName] == nil {
 				replicaCounts[allocation.JobName] = make(map[string]int)
 			}
@@ -73,7 +75,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 						Allocation: &Allocation{
 							JobName:       jobName,
 							TaskGroupName: taskGroupName,
-							Status:        StatusPending,
+							Status:        AllocationStatusPending,
 							Revision:      job.Revision,
 						},
 					})
@@ -99,5 +101,13 @@ func (s *Server) Reconcile(ctx context.Context) {
 }
 
 func (s *Server) Execute(ctx context.Context, action *Action) {
-	return
+	alloc := action.Allocation
+
+	switch {
+	case action.Type == ActionStart:
+		s.client.RunAllocation(ctx, alloc.Node.Host, &client.NodeInfo{})
+
+	case action.Type == ActionStop:
+		s.client.StopAllocation(ctx, alloc.Node.Host, alloc.Name)
+	}
 }

@@ -3,11 +3,15 @@ package main
 import (
 	"os"
 
-	"github.com/clofour/trellis/internal/models"
 	"github.com/spf13/cobra"
 )
 
-var config *models.CLIConfig
+type CLIConfig struct {
+	ServerAddr   string
+	ClusterToken string
+}
+
+var config *CLIConfig
 
 func main() {
 	root := &cobra.Command{

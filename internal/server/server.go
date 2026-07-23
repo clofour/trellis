@@ -11,9 +11,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/clofour/trellis/internal/models"
+	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/spec"
-	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
 
 	"github.com/google/uuid"
@@ -24,12 +23,17 @@ const reconcileInterval = 10 * time.Second
 type Server struct {
 	log     *slog.Logger
 	storage *storage.LocalStorage
-	state   *state.StateController
+	state   *StateController
+	client  *client.AgentClient
 
-	cluster     *models.Cluster
-	nodes       map[uuid.UUID]*models.Node
+	cluster     *Cluster
+	nodes       map[uuid.UUID]*Node
 	jobs        map[string]*Job
 	allocations []*Allocation
+}
+
+type Cluster struct {
+	Hash string
 }
 
 type NodeRegistration struct {
@@ -40,6 +44,28 @@ type NodeRegistration struct {
 	Memory int64
 	OS     string
 	Arch   string
+}
+
+type Node struct {
+	ID            uuid.UUID
+	Host          string
+	Port          int
+	Status        NodeStatus
+	LastHeartbeat time.Time
+}
+
+type NodeStatus string
+
+const (
+	NodeStatusHealthy   NodeStatus = "healthy"
+	NodeStatusUnhealthy NodeStatus = "unhealthy"
+	NodeStatusDraining  NodeStatus = "draining"
+)
+
+type NodeSummary struct {
+	ID   uuid.UUID
+	Host string
+	Port int
 }
 
 type Job struct {
@@ -61,24 +87,27 @@ type Task struct {
 type AllocationStatus string
 
 const (
-	StatusPending   AllocationStatus = "pending"
-	StatusHealthy   AllocationStatus = "healthy"
-	StatusUnhealthy AllocationStatus = "unhealthy"
+	AllocationStatusPending   AllocationStatus = "pending"
+	AllocationStatusHealthy   AllocationStatus = "healthy"
+	AllocationStatusUnhealthy AllocationStatus = "unhealthy"
 )
 
 type Allocation struct {
 	JobName       string
 	TaskGroupName string
+	Name          string
 	Status        AllocationStatus
+	Node          *Node
 	Revision      int
 }
 
-func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *state.StateController) *Server {
+func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController) *Server {
 	return &Server{
 		log:     log.With("component", "server"),
 		storage: storage,
 		state:   state,
-		nodes:   make(map[uuid.UUID]*models.Node),
+		client:  &client.AgentClient{},
+		nodes:   make(map[uuid.UUID]*Node),
 	}
 }
 
@@ -108,7 +137,7 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("save cluster locally: %w", err)
 	}
 
-	cluster = &models.Cluster{
+	cluster = &Cluster{
 		Hash: hashHex,
 	}
 
@@ -126,8 +155,8 @@ func (s *Server) Run(ctx context.Context) {
 	go s.runReconcileLoop(ctx)
 }
 
-func (s *Server) ListNodes(ctx context.Context) []models.Node {
-	result := make([]models.Node, 0, len(s.nodes))
+func (s *Server) ListNodes(ctx context.Context) []Node {
+	result := make([]Node, 0, len(s.nodes))
 
 	for _, node := range s.nodes {
 		result = append(result, *node)
@@ -137,7 +166,7 @@ func (s *Server) ListNodes(ctx context.Context) []models.Node {
 }
 
 func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistration) error {
-	err := s.state.PutNode(ctx, nodeRegistration.ID.String(), &models.NodeSummary{
+	err := s.state.PutNode(ctx, nodeRegistration.ID.String(), &NodeSummary{
 		ID:   nodeRegistration.ID,
 		Host: nodeRegistration.Host,
 		Port: nodeRegistration.Port,
@@ -146,11 +175,11 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		return fmt.Errorf("save node remotely: %w", err)
 	}
 
-	s.nodes[nodeRegistration.ID] = &models.Node{
+	s.nodes[nodeRegistration.ID] = &Node{
 		ID:            nodeRegistration.ID,
 		Host:          nodeRegistration.Host,
 		Port:          nodeRegistration.Port,
-		Status:        models.StatusHealthy,
+		Status:        NodeStatusHealthy,
 		LastHeartbeat: time.Now(),
 	}
 
@@ -163,7 +192,7 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID) error {
 		return fmt.Errorf("node not found")
 	}
 
-	node.Status = models.StatusHealthy
+	node.Status = NodeStatusHealthy
 	node.LastHeartbeat = time.Now()
 
 	return nil

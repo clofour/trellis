@@ -2,8 +2,6 @@ package runtime
 
 import (
 	"context"
-
-	"github.com/clofour/trellis/internal/models"
 )
 
 type ContainerStatus string
@@ -19,7 +17,7 @@ type CreateOptions struct {
 	ID     string
 	Image  string
 	Env    map[string]string
-	Mounts []*models.Mount
+	Mounts []*Mount
 }
 
 type ContainerInfo struct {

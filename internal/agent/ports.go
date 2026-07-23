@@ -6,7 +6,6 @@ import (
 	"net"
 	"syscall"
 
-	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/spec"
 )
@@ -14,7 +13,7 @@ import (
 type PortManager struct {
 	runtime runtime.ContainerRuntime
 
-	claims map[int]*models.Port
+	claims map[int]*runtime.Port
 
 	min    int
 	max    int
@@ -32,7 +31,7 @@ func NewPortManager(runtime runtime.ContainerRuntime, min int, max int, cursor i
 	return &PortManager{
 		runtime: runtime,
 
-		claims: make(map[int]*models.Port),
+		claims: make(map[int]*runtime.Port),
 
 		min:    min,
 		max:    max,
@@ -61,7 +60,7 @@ func (p *PortManager) Check(hostPort int) (bool, error) {
 	return false, nil
 }
 
-func (p *PortManager) Claim(portSpec spec.PortSpec) (*models.Port, error) {
+func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 	hostPort := portSpec.HostPort
 	if hostPort == 0 {
 
@@ -98,7 +97,7 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*models.Port, error) {
 
 	}
 
-	port := &models.Port{
+	port := &runtime.Port{
 		HostPort:      hostPort,
 		ContainerPort: portSpec.ContainerPort,
 	}
@@ -108,7 +107,7 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*models.Port, error) {
 	return port, nil
 }
 
-func (p *PortManager) Release(port *models.Port) error {
+func (p *PortManager) Release(port *runtime.Port) error {
 	hostPort := port.HostPort
 
 	_, ok := p.claims[hostPort]

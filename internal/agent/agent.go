@@ -9,7 +9,6 @@ import (
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
-	"github.com/clofour/trellis/internal/models"
 	"github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
@@ -40,8 +39,8 @@ type Allocation struct {
 
 	ContainerID string
 	ServiceID   string
-	Ports       []*models.Port
-	Mounts      []*models.Mount
+	Ports       []*runtime.Port
+	Mounts      []*runtime.Mount
 }
 
 const heartbeatInterval = 10 * time.Second
@@ -87,7 +86,7 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName string, taskName string, spec *spec.TaskSpec) error {
 	allocID := fmt.Sprintf("%s-%s-%s-%d", jobName, groupName, taskName, 0)
 
-	var ports []*models.Port
+	var ports []*runtime.Port
 	for _, p := range spec.Ports {
 		port, err := a.ports.Claim(p)
 		if err != nil {
@@ -97,7 +96,7 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 		ports = append(ports, port)
 	}
 
-	var mounts []*models.Mount
+	var mounts []*runtime.Mount
 	for _, v := range spec.Volumes {
 		mount, err := a.volumes.Create(jobName, taskName, v)
 		if err != nil {
