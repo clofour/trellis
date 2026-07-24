@@ -11,7 +11,7 @@ After=consul.service network-online.target
 Wants=consul.service network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/trellis-server --listen :9100 --data-dir ${DATA_DIR}
+ExecStart=/usr/local/bin/trellis-server --listen :8128 --data-dir ${DATA_DIR}
 Restart=on-failure
 
 [Install]
@@ -24,7 +24,7 @@ systemctl start trellis-server
 
 for _ in $(seq 1 30); do
     if [ -s "${DATA_DIR}/token" ]; then
-        install -m 0644 "${DATA_DIR}/token" "${SHARE_DIR}/share"
+        install -m 0644 "${DATA_DIR}/token" "${SHARE_DIR}/token"
         exit 0
     fi
     sleep 1

@@ -68,7 +68,7 @@ func (a *Agent) Init(ctx context.Context) {
 	a.server.RegisterNode(ctx, &client.NodeInfo{})
 
 	a.health.Subscriber = a
-	a.restart.subscriber = a
+	a.restart.Subscriber = a
 
 	go a.runHeartbeatLoop(ctx)
 	go a.restart.RunDetectionLoop(ctx)

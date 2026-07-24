@@ -15,7 +15,7 @@ type client struct {
 }
 
 func (c *client) request(ctx context.Context, method string, url string, requestData any, responseData any) error {
-	var requestBody *bytes.Reader
+	var requestBody io.Reader = http.NoBody
 	if requestData != nil {
 		requestBodyBytes, err := json.Marshal(requestData)
 		if err != nil {

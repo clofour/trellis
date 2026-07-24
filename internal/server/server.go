@@ -108,6 +108,7 @@ func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateCont
 		state:   state,
 		client:  &client.AgentClient{},
 		nodes:   make(map[uuid.UUID]*Node),
+		jobs:    make(map[string]*Job),
 	}
 }
 
@@ -132,7 +133,7 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
 
-	err = s.storage.Put("token", hashHex)
+	err = s.storage.Put("token", token)
 	if err != nil {
 		return "", fmt.Errorf("save cluster locally: %w", err)
 	}
@@ -224,7 +225,7 @@ func (s *Server) ValidateAPIToken(ctx context.Context, token string) bool {
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
 
-	return subtle.ConstantTimeCompare([]byte(token), []byte(hashHex)) == 1
+	return subtle.ConstantTimeCompare([]byte(hashHex), []byte(s.cluster.Hash)) == 1
 }
 
 func (s *Server) runReconcileLoop(ctx context.Context) {

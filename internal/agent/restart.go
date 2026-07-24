@@ -19,7 +19,7 @@ type RestartController struct {
 	mu     sync.Mutex
 	states map[string]*restartState
 
-	subscriber RestartSubscriber
+	Subscriber RestartSubscriber
 }
 
 type RestartSubscriber interface {
@@ -38,7 +38,7 @@ func NewRestartController(runtime runtime.ContainerRuntime, subscriber RestartSu
 
 		states: make(map[string]*restartState),
 
-		subscriber: subscriber,
+		Subscriber: subscriber,
 	}
 }
 
@@ -123,7 +123,7 @@ func (r *RestartController) RequestRestart(ctx context.Context, allocID string) 
 		state.restarting = false
 		r.mu.Unlock()
 
-		r.subscriber.OnFailed(allocID)
+		r.Subscriber.OnFailed(allocID)
 		return nil
 	}
 

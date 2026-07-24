@@ -18,7 +18,7 @@ After=containerd.service consul.service network-online.target
 Wants=containerd.service consul.service network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/trellis-agent --listen :9100 --data-dir ${DATA_DIR} --server-addr http://control.trellis.local:9100 --cluster-token $(cat ${SHARE_DIR}/token)
+ExecStart=/usr/local/bin/trellis-agent --listen :8127 --data-dir ${DATA_DIR} --server-addr http://control.trellis.local:8128 --cluster-token $(cat ${SHARE_DIR}/token)
 Restart=on-failure
 
 [Install]

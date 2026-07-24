@@ -46,7 +46,7 @@ func main() {
 	}
 
 	flags := root.Flags()
-	flags.StringVar(&config.ListenAddr, "listen", ":9100", "Agent HTTP API listen address")
+	flags.StringVar(&config.ListenAddr, "listen", ":8127", "Agent HTTP API listen address")
 	flags.StringVar(&config.DataDir, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
 	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8127", "Server HTTP API listen address")
 	flags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")

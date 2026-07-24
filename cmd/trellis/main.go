@@ -11,7 +11,7 @@ type CLIConfig struct {
 	ClusterToken string
 }
 
-var config *CLIConfig
+var config CLIConfig
 
 func main() {
 	root := &cobra.Command{
@@ -23,7 +23,8 @@ func main() {
 	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8127", "Server HTTP API listen address")
 	persistentFlags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
 
-	root.AddCommand()
+	root.AddCommand(NewJobsCmd())
+	root.AddCommand(NewNodesCmd())
 
 	err := root.Execute()
 	if err != nil {

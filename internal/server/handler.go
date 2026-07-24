@@ -19,11 +19,11 @@ func NewHandler(server *Server) *Handler {
 }
 
 func (h *Handler) Register(e *echo.Echo) {
-	v1 := e.Group("v1")
-	v1.GET("nodes", h.handleListNodes)
-	v1.POST("nodes", h.handleRegisterNode)
-	v1.POST("nodes/:id/heartbeat", h.handleHeartbeat)
-	v1.POST("jobs", h.handleRegisterJob)
+	v1 := e.Group("/v1")
+	v1.GET("/nodes", h.handleListNodes)
+	v1.POST("/nodes", h.handleRegisterNode)
+	v1.POST("/nodes/:id/heartbeat", h.handleHeartbeat)
+	v1.POST("/jobs", h.handleRegisterJob)
 }
 
 func (h *Handler) handleListNodes(c *echo.Context) error {

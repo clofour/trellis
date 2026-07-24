@@ -36,7 +36,7 @@ func main() {
 	}
 
 	flags := root.Flags()
-	flags.StringVar(&config.ListenAddr, "listen", ":9100", "HTTP API listen address")
+	flags.StringVar(&config.ListenAddr, "listen", ":8128", "HTTP API listen address")
 	flags.StringVar(&config.DataDir, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
 
 	err := root.Execute()
