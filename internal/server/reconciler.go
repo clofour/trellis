@@ -40,18 +40,10 @@ func (s *Server) Reconcile(ctx context.Context) {
 				Type:       ActionStop,
 				Allocation: allocation,
 			})
-			actions = append(actions, Action{
-				Type:       ActionStart,
-				Allocation: allocation,
-			})
 
 		case allocation.Revision < job.Revision:
 			actions = append(actions, Action{
 				Type:       ActionStop,
-				Allocation: allocation,
-			})
-			actions = append(actions, Action{
-				Type:       ActionStart,
 				Allocation: allocation,
 			})
 
@@ -64,20 +56,20 @@ func (s *Server) Reconcile(ctx context.Context) {
 	}
 
 	for jobName, job := range s.jobs {
-		for taskGroupName, taskGroup := range job.TaskGroups {
-			desiredCount := taskGroup.Spec.Count
+		spec := job.Spec
+		for _, taskGroup := range spec.TaskGroups {
+			taskGroupName := taskGroup.Name
+
+			desiredCount := taskGroup.Count
 			currentCount := replicaCounts[jobName][taskGroupName]
 
 			if desiredCount < currentCount {
-				for i := currentCount; i < desiredCount; i++ {
+				delta := currentCount - desiredCount
+
+				for i := 0; i < delta; i++ {
 					actions = append(actions, Action{
 						Type: ActionStop,
-						Allocation: &Allocation{
-							JobName:       jobName,
-							TaskGroupName: taskGroupName,
-							Status:        AllocationStatusPending,
-							Revision:      job.Revision,
-						},
+						Allocation: ,
 					})
 				}
 			}
@@ -85,10 +77,23 @@ func (s *Server) Reconcile(ctx context.Context) {
 			if desiredCount > currentCount {
 				delta := desiredCount - currentCount
 
-				for i := 0; i < delta; i++ {
+				placements := Schedule(&PlacementIntent{
+						JobName: jobName,
+						TaskGroupName: taskGroupName,
+						Count: delta,
+						Nodes: s.Nodes,
+						Allocations: s.Allocations,
+				})
+
+				for _, placement := range placements {
 					actions = append(actions, Action{
 						Type:       ActionStart,
-						Allocation: taskGroup.Allocations[i],
+						Allocation: &Allocation{
+							JobName:       jobName,
+							TaskGroupName: taskGroupName,
+							Status:        AllocationStatusPending,
+							Revision:      job.Revision,
+						},
 					})
 				}
 			}

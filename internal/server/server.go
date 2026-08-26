@@ -69,19 +69,8 @@ type NodeSummary struct {
 }
 
 type Job struct {
-	Spec       *spec.JobSpec
-	TaskGroups map[string]*TaskGroup
-	Revision   int
-}
-
-type TaskGroup struct {
-	Spec        *spec.TaskGroupSpec
-	Tasks       []*Task
-	Allocations []*Allocation
-}
-
-type Task struct {
-	Spec *spec.TaskSpec
+	Spec     *spec.JobSpec
+	Revision int
 }
 
 type AllocationStatus string
