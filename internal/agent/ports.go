@@ -20,7 +20,7 @@ type PortManager struct {
 	cursor int
 }
 
-func NewPortManager(runtime runtime.ContainerRuntime, min int, max int, cursor int) *PortManager {
+func NewPortManager(containerRuntime runtime.ContainerRuntime, min int, max int, cursor int) *PortManager {
 	if min == 0 {
 		min = 20000
 	}
@@ -29,7 +29,7 @@ func NewPortManager(runtime runtime.ContainerRuntime, min int, max int, cursor i
 	}
 
 	return &PortManager{
-		runtime: runtime,
+		runtime: containerRuntime,
 
 		claims: make(map[int]*runtime.Port),
 

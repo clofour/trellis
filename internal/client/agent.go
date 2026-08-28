@@ -23,22 +23,18 @@ func NewAgentClient(token string) *AgentClient {
 	}
 }
 
-func (s *AgentClient) RunAllocation(ctx context.Context, address string, allocation *NodeInfo) (*api.NodeRegistrationResponse, error) {
-	requestData := &api.AllocationRequest{}
-	var responseData api.NodeRegistrationResponse
-
-	err := s.client.request(ctx, http.MethodPost, "/v1/nodes", requestData, &responseData)
+func (s *AgentClient) RunAllocation(ctx context.Context, address string, allocation *api.AllocationRequest) error {
+	err := s.client.request(ctx, http.MethodPost, normalizeBaseURL(address)+"/v1/allocations", allocation, nil)
 	if err != nil {
-		return nil, fmt.Errorf("register node: %w", err)
+		return fmt.Errorf("run allocation: %w", err)
 	}
-
-	return &responseData, nil
+	return nil
 }
 
 func (s *AgentClient) StopAllocation(ctx context.Context, address string, allocId string) error {
-	err := s.client.request(ctx, http.MethodPost, address+"/v1/allocations/"+allocId, nil, nil)
+	err := s.client.request(ctx, http.MethodDelete, normalizeBaseURL(address)+"/v1/allocations/"+allocId, nil, nil)
 	if err != nil {
-		return fmt.Errorf("register node: %w", err)
+		return fmt.Errorf("stop allocation: %w", err)
 	}
 
 	return nil

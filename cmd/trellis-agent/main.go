@@ -48,7 +48,7 @@ func main() {
 	flags := root.Flags()
 	flags.StringVar(&config.ListenAddr, "listen", ":8127", "Agent HTTP API listen address")
 	flags.StringVar(&config.DataDir, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
-	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8127", "Server HTTP API listen address")
+	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "Server HTTP API address")
 	flags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
 	flags.StringVar(&config.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
 	flags.StringVar(&config.ConsulAddr, "consul-addr", "127.0.0.1:8500", "Consul agent address")
@@ -95,7 +95,9 @@ func run(config *AgentConfig) error {
 	serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr)
 
 	ag := agent.NewAgent(log, runtime, healthMgr, restartCtl, portMgr, volumeMgr, registry, serverClient, id)
-	ag.Init(ctx)
+	if err := ag.Init(ctx); err != nil {
+		return fmt.Errorf("initialize agent: %w", err)
+	}
 
 	e := echo.New()
 	e.Use(middleware.Recover())

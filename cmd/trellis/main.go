@@ -20,7 +20,7 @@ func main() {
 	}
 
 	persistentFlags := root.PersistentFlags()
-	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8127", "Server HTTP API listen address")
+	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "Server HTTP API address")
 	persistentFlags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
 
 	root.AddCommand(NewJobsCmd())

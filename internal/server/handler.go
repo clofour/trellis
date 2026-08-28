@@ -48,7 +48,7 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 		return err
 	}
 
-	h.server.RegisterNode(ctx, &NodeRegistration{
+	err = h.server.RegisterNode(ctx, &NodeRegistration{
 		ID:     request.ID,
 		Host:   request.Host,
 		Port:   request.Port,
@@ -57,8 +57,11 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 		OS:     request.OS,
 		Arch:   request.Arch,
 	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
 
-	return nil
+	return c.JSON(http.StatusCreated, api.NodeRegistrationResponse{ID: request.ID})
 }
 
 func (h *Handler) handleHeartbeat(c *echo.Context) error {
@@ -75,7 +78,7 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	return nil
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handler) handleRegisterJob(c *echo.Context) error {
@@ -92,7 +95,7 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	return nil
+	return c.NoContent(http.StatusAccepted)
 }
 
 func (h *Handler) convertNode(node *Node) *api.NodeResponse {
