@@ -85,6 +85,7 @@ type Allocation struct {
 	JobName       string
 	TaskGroupName string
 	Name          string
+	Task          *spec.TaskSpec
 	Status        AllocationStatus
 	Node          *Node
 	Revision      int
@@ -189,14 +190,21 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID) error {
 }
 
 func (s *Server) RegisterJob(ctx context.Context, jobSpec *spec.JobSpec) error {
+	if err := spec.Validate(jobSpec); err != nil {
+		return fmt.Errorf("validate job: %w", err)
+	}
 	err := s.state.PutJob(ctx, jobSpec.Name, jobSpec)
 	if err != nil {
 		return fmt.Errorf("save job remotely: %w", err)
 	}
 
+	revision := 1
+	if existing := s.jobs[jobSpec.Name]; existing != nil {
+		revision = existing.Revision + 1
+	}
 	s.jobs[jobSpec.Name] = &Job{
 		Spec:     jobSpec,
-		Revision: 0,
+		Revision: revision,
 	}
 
 	return nil

@@ -87,7 +87,7 @@ func (r *RestartController) RunDetectionLoop(ctx context.Context) {
 			for _, allocID := range allocIDs {
 				containerState, err := r.runtime.Inspect(ctx, allocID)
 				if err != nil {
-					// error?
+					continue
 				}
 
 				if containerState.Status == runtime.StatusStopped {
@@ -123,7 +123,9 @@ func (r *RestartController) RequestRestart(ctx context.Context, allocID string) 
 		state.restarting = false
 		r.mu.Unlock()
 
-		r.Subscriber.OnFailed(allocID)
+		if r.Subscriber != nil {
+			r.Subscriber.OnFailed(allocID)
+		}
 		return nil
 	}
 

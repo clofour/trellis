@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
@@ -32,13 +33,14 @@ type Heartbeat struct {
 }
 
 func NewServerClient(token string, addr string) *ServerClient {
+	baseURL := normalizeBaseURL(addr)
 	client := &client{
 		token:  token,
 		client: &http.Client{},
 	}
 
 	return &ServerClient{
-		baseURL: addr,
+		baseURL: baseURL,
 		client:  client,
 	}
 }
@@ -50,7 +52,7 @@ func (s *ServerClient) GetClusterStatus(ctx context.Context, placeholder string)
 func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, error) {
 	var responseData api.NodeListResponse
 
-	err := s.client.request(ctx, http.MethodGet, "/v1/nodes", nil, &responseData)
+	err := s.client.request(ctx, http.MethodGet, s.baseURL+"/v1/nodes", nil, &responseData)
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
@@ -70,7 +72,7 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 	}
 	var responseData api.NodeRegistrationResponse
 
-	err := s.client.request(ctx, http.MethodPost, "/v1/nodes", requestData, &responseData)
+	err := s.client.request(ctx, http.MethodPost, s.baseURL+"/v1/nodes", requestData, &responseData)
 	if err != nil {
 		return nil, fmt.Errorf("register node: %w", err)
 	}
@@ -91,7 +93,7 @@ func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error 
 		Spec: *spec,
 	}
 
-	err := s.client.request(ctx, http.MethodPost, "/v1/nodes", requestData, nil)
+	err := s.client.request(ctx, http.MethodPost, s.baseURL+"/v1/jobs", requestData, nil)
 	if err != nil {
 		return fmt.Errorf("register node: %w", err)
 	}
@@ -108,7 +110,7 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbea
 		NodeID:    heartbeat.NodeID,
 		Timestamp: heartbeat.Timestamp,
 	}
-	url := fmt.Sprintf("/v1/nodes/%s/heartbeat", id)
+	url := fmt.Sprintf("%s/v1/nodes/%s/heartbeat", s.baseURL, id)
 
 	err := s.client.request(ctx, http.MethodPost, url, requestData, nil)
 	if err != nil {
@@ -116,4 +118,12 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbea
 	}
 
 	return nil
+}
+
+func normalizeBaseURL(addr string) string {
+	addr = strings.TrimRight(strings.TrimSpace(addr), "/")
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		addr = "http://" + addr
+	}
+	return addr
 }

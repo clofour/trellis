@@ -66,10 +66,14 @@ func run(config *ServerConfig) error {
 
 	s := server.NewServer(log, storage, stateCtl)
 
-	_, err = s.Init(ctx)
+	token, err := s.Init(ctx)
 	if err != nil {
 		return fmt.Errorf("initalize server: %w", err)
 	}
+	if token != "" {
+		log.Info("cluster initialized", "token", token)
+	}
+	s.Run(ctx)
 
 	e := echo.New()
 	e.Use(middleware.Recover())

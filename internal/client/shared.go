@@ -43,11 +43,15 @@ func (c *client) request(ctx context.Context, method string, url string, request
 	}
 
 	if checkStatusCode(response.StatusCode) {
-		return fmt.Errorf("status %d", response.StatusCode)
+		message := string(bytes.TrimSpace(responseBody))
+		if message == "" {
+			return fmt.Errorf("status %d", response.StatusCode)
+		}
+		return fmt.Errorf("status %d: %s", response.StatusCode, message)
 	}
 
 	if responseData != nil {
-		err = json.Unmarshal(responseBody, &responseData)
+		err = json.Unmarshal(responseBody, responseData)
 		if err != nil {
 			return fmt.Errorf("unmarshal json: %w", err)
 		}

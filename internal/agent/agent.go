@@ -64,14 +64,18 @@ func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health
 	return agent
 }
 
-func (a *Agent) Init(ctx context.Context) {
-	a.server.RegisterNode(ctx, &client.NodeInfo{})
+func (a *Agent) Init(ctx context.Context) error {
+	_, err := a.server.RegisterNode(ctx, &client.NodeInfo{ID: a.nodeID, Host: "127.0.0.1", Port: 8127})
+	if err != nil {
+		return fmt.Errorf("register node: %w", err)
+	}
 
 	a.health.Subscriber = a
 	a.restart.Subscriber = a
 
 	go a.runHeartbeatLoop(ctx)
 	go a.restart.RunDetectionLoop(ctx)
+	return nil
 }
 
 func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
@@ -83,8 +87,16 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName string, taskName string, spec *spec.TaskSpec) error {
-	allocID := fmt.Sprintf("%s-%s-%s-%d", jobName, groupName, taskName, 0)
+func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName string, groupName string, taskName string, spec *spec.TaskSpec) error {
+	if spec == nil {
+		return fmt.Errorf("task spec is required")
+	}
+	if allocID == "" {
+		return fmt.Errorf("allocation ID is required")
+	}
+	if _, exists := a.allocations[allocID]; exists {
+		return fmt.Errorf("allocation %s already exists", allocID)
+	}
 
 	var ports []*runtime.Port
 	for _, p := range spec.Ports {
@@ -127,7 +139,9 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 		return fmt.Errorf("start container %s: %w", containerID, err)
 	}
 
-	a.health.RegisterTask(allocID, containerID, spec.HealthCheck)
+	if spec.HealthCheck != nil {
+		a.health.RegisterTask(allocID, containerID, spec.HealthCheck)
+	}
 
 	a.restart.Track(ctx, allocID)
 
@@ -136,7 +150,7 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 
 		JobName:   jobName,
 		GroupName: groupName,
-		TaskName:  taskName,
+		TaskName:  spec.Name,
 		Spec:      spec,
 
 		ContainerID: containerID,
@@ -145,6 +159,11 @@ func (a *Agent) RunAllocation(ctx context.Context, jobName string, groupName str
 		Mounts:      mounts,
 	}
 	a.allocations[allocID] = alloc
+	if spec.HealthCheck == nil {
+		if err := a.OnHealthy(ctx, allocID); err != nil {
+			return fmt.Errorf("register allocation service: %w", err)
+		}
+	}
 
 	return nil
 }
