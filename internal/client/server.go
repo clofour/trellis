@@ -28,8 +28,9 @@ type NodeInfo struct {
 }
 
 type Heartbeat struct {
-	NodeID    uuid.UUID `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
+	NodeID      uuid.UUID              `json:"id"`
+	Timestamp   time.Time              `json:"timestamp"`
+	Allocations []api.AllocationStatus `json:"allocations,omitempty"`
 }
 
 func NewServerClient(token string, addr string) *ServerClient {
@@ -43,10 +44,6 @@ func NewServerClient(token string, addr string) *ServerClient {
 		baseURL: baseURL,
 		client:  client,
 	}
-}
-
-func (s *ServerClient) GetClusterStatus(ctx context.Context, placeholder string) {
-
 }
 
 func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, error) {
@@ -80,12 +77,12 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 	return &responseData, nil
 }
 
-func (s *ServerClient) GetJob(ctx context.Context, placeholder string) {
-
-}
-
-func (s *ServerClient) ListJobs(ctx context.Context, placeholder string) {
-
+func (s *ServerClient) GetJob(ctx context.Context, name string) (*api.JobStatusResponse, error) {
+	var response api.JobStatusResponse
+	if err := s.client.request(ctx, http.MethodGet, s.baseURL+"/v1/jobs/"+name, nil, &response); err != nil {
+		return nil, fmt.Errorf("get job: %w", err)
+	}
+	return &response, nil
 }
 
 func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error {
@@ -101,14 +98,18 @@ func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error 
 	return nil
 }
 
-func (s *ServerClient) DeleteJob(ctx context.Context, placeholder string) {
-
+func (s *ServerClient) DeleteJob(ctx context.Context, name string) error {
+	if err := s.client.request(ctx, http.MethodDelete, s.baseURL+"/v1/jobs/"+name, nil, nil); err != nil {
+		return fmt.Errorf("delete job: %w", err)
+	}
+	return nil
 }
 
 func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbeat *Heartbeat) error {
 	requestData := &api.HeartbeatRequest{
-		NodeID:    heartbeat.NodeID,
-		Timestamp: heartbeat.Timestamp,
+		NodeID:      heartbeat.NodeID,
+		Timestamp:   heartbeat.Timestamp,
+		Allocations: heartbeat.Allocations,
 	}
 	url := fmt.Sprintf("%s/v1/nodes/%s/heartbeat", s.baseURL, id)
 

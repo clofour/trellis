@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
+	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
@@ -27,6 +29,7 @@ type Agent struct {
 	volumes *VolumeManager
 	service discovery.ServiceRegistry
 	server  *client.ServerClient
+	mu      sync.RWMutex
 }
 
 type Allocation struct {
@@ -39,8 +42,10 @@ type Allocation struct {
 
 	ContainerID string
 	ServiceID   string
+	ServiceIDs  []string
 	Ports       []*runtime.Port
 	Mounts      []*runtime.Mount
+	Status      string
 }
 
 const heartbeatInterval = 10 * time.Second
@@ -79,6 +84,8 @@ func (a *Agent) Init(ctx context.Context) error {
 }
 
 func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	result := make([]*Allocation, 0, len(a.allocations))
 	for _, alloc := range a.allocations {
 		result = append(result, alloc)
@@ -94,7 +101,10 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 	if allocID == "" {
 		return fmt.Errorf("allocation ID is required")
 	}
-	if _, exists := a.allocations[allocID]; exists {
+	a.mu.RLock()
+	_, exists := a.allocations[allocID]
+	a.mu.RUnlock()
+	if exists {
 		return fmt.Errorf("allocation %s already exists", allocID)
 	}
 
@@ -140,7 +150,14 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 	}
 
 	if spec.HealthCheck != nil {
-		a.health.RegisterTask(allocID, containerID, spec.HealthCheck)
+		check := *spec.HealthCheck
+		for _, p := range ports {
+			if p.ContainerPort == check.Port {
+				check.Port = p.HostPort
+				break
+			}
+		}
+		a.health.RegisterTask(allocID, containerID, &check)
 	}
 
 	a.restart.Track(ctx, allocID)
@@ -157,8 +174,11 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 		ServiceID:   "0",
 		Ports:       ports,
 		Mounts:      mounts,
+		Status:      "running",
 	}
+	a.mu.Lock()
 	a.allocations[allocID] = alloc
+	a.mu.Unlock()
 	if spec.HealthCheck == nil {
 		if err := a.OnHealthy(ctx, allocID); err != nil {
 			return fmt.Errorf("register allocation service: %w", err)
@@ -169,7 +189,9 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 }
 
 func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
+	a.mu.RLock()
 	alloc, ok := a.allocations[allocID]
+	a.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("allocation %s not found", allocID)
 	}
@@ -186,7 +208,9 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 		return fmt.Errorf("remove container %s: %w", containerID, err)
 	}
 
-	a.service.Deregister(ctx, allocID)
+	for _, id := range alloc.ServiceIDs {
+		_ = a.service.Deregister(ctx, id)
+	}
 
 	a.health.DeregisterTask(allocID)
 
@@ -200,33 +224,61 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	}
 	alloc.Ports = nil
 
+	a.mu.Lock()
 	delete(a.allocations, allocID)
+	a.mu.Unlock()
 
 	return nil
 }
 
 func (a *Agent) OnHealthy(ctx context.Context, allocID string) error {
+	a.mu.Lock()
 	alloc, ok := a.allocations[allocID]
+	if ok {
+		alloc.Status = "healthy"
+	}
+	a.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("alloc %s not found", allocID)
 	}
 
 	for _, p := range alloc.Ports {
-		a.service.Register(ctx, allocID, alloc.TaskName, "127.0.0.1", p.HostPort)
+		id := fmt.Sprintf("%s-%d", allocID, p.HostPort)
+		if err := a.service.Register(ctx, id, alloc.TaskName, "127.0.0.1", p.HostPort); err != nil {
+			return err
+		}
+		a.mu.Lock()
+		alloc.ServiceIDs = append(alloc.ServiceIDs, id)
+		a.mu.Unlock()
 	}
 
 	return nil
 }
 
 func (a *Agent) OnUnhealthy(ctx context.Context, allocID string) error {
-	a.service.Deregister(ctx, allocID)
+	a.mu.Lock()
+	if alloc := a.allocations[allocID]; alloc != nil {
+		alloc.Status = "unhealthy"
+	}
+	a.mu.Unlock()
+	a.mu.RLock()
+	alloc := a.allocations[allocID]
+	a.mu.RUnlock()
+	if alloc != nil {
+		for _, id := range alloc.ServiceIDs {
+			_ = a.service.Deregister(ctx, id)
+		}
+	}
 
 	return nil
 }
 
 func (a *Agent) OnFailed(allocID string) {
-	// mark allocation as failed
-	// where should state be stored? should heartbeat just gather state from all modules?
+	a.mu.Lock()
+	if alloc := a.allocations[allocID]; alloc != nil {
+		alloc.Status = "unhealthy"
+	}
+	a.mu.Unlock()
 }
 
 func (a *Agent) runHeartbeatLoop(ctx context.Context) {
@@ -238,9 +290,16 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			a.mu.RLock()
+			actual := make([]api.AllocationStatus, 0, len(a.allocations))
+			for _, alloc := range a.allocations {
+				actual = append(actual, api.AllocationStatus{ID: alloc.ID, Status: alloc.Status})
+			}
+			a.mu.RUnlock()
 			a.server.SendHeartbeat(ctx, a.nodeID, &client.Heartbeat{
-				NodeID:    a.nodeID,
-				Timestamp: time.Now(),
+				NodeID:      a.nodeID,
+				Timestamp:   time.Now(),
+				Allocations: actual,
 			})
 		}
 	}

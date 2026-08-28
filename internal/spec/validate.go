@@ -43,6 +43,19 @@ func Validate(spec *JobSpec) error {
 			if strings.TrimSpace(task.Image) == "" {
 				return fmt.Errorf("task group %q task %q: image is required", group.Name, task.Name)
 			}
+			if task.Resources != nil && (task.Resources.CPU < 0 || task.Resources.Memory < 0) {
+				return fmt.Errorf("task group %q task %q: resources cannot be negative", group.Name, task.Name)
+			}
+			volumes := make(map[string]struct{})
+			for _, volume := range task.Volumes {
+				if strings.TrimSpace(volume.Name) == "" || strings.TrimSpace(volume.Path) == "" || !strings.HasPrefix(volume.Path, "/") {
+					return fmt.Errorf("task group %q task %q: volume name and absolute path are required", group.Name, task.Name)
+				}
+				if _, exists := volumes[volume.Name]; exists {
+					return fmt.Errorf("task group %q task %q: duplicate volume %q", group.Name, task.Name, volume.Name)
+				}
+				volumes[volume.Name] = struct{}{}
+			}
 			for _, port := range task.Ports {
 				if port.HostPort < 0 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
 					return fmt.Errorf("task group %q task %q: invalid port mapping %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)

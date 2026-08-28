@@ -13,9 +13,13 @@ type VolumeManager struct {
 	dataRootPath string
 }
 
-func NewVolumeManager() *VolumeManager {
+func NewVolumeManager(dataRoot ...string) *VolumeManager {
+	root := "/var/lib/trellis/data"
+	if len(dataRoot) > 0 && dataRoot[0] != "" {
+		root = dataRoot[0]
+	}
 	return &VolumeManager{
-		dataRootPath: "/var/lib/trellis/data",
+		dataRootPath: root,
 	}
 }
 
