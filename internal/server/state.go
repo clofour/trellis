@@ -84,6 +84,14 @@ func (s *StateController) PutJob(ctx context.Context, id string, job *spec.JobSp
 	return nil
 }
 
+func (s *StateController) DeleteJob(ctx context.Context, id string) error {
+	key := fmt.Sprintf("%s/cluster/%s/jobs/%s/spec", trellisNamespace, s.cluster, id)
+	if err := s.store.Delete(ctx, key); err != nil {
+		return fmt.Errorf("delete job: %w", err)
+	}
+	return nil
+}
+
 func (s *StateController) get(ctx context.Context, key string, value any) (bool, error) {
 	raw, err := s.store.Get(ctx, key)
 	if err != nil {

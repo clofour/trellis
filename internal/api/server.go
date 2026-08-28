@@ -40,10 +40,33 @@ type NodeRegistrationResponse struct {
 }
 
 type HeartbeatRequest struct {
-	NodeID    uuid.UUID `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
+	NodeID      uuid.UUID          `json:"id"`
+	Timestamp   time.Time          `json:"timestamp"`
+	Allocations []AllocationStatus `json:"allocations,omitempty"`
+}
+
+type AllocationStatus struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 type JobRegistrationRequest struct {
 	Spec spec.JobSpec `json:"spec"`
+}
+
+type JobStatusResponse struct {
+	Name        string               `json:"name"`
+	Revision    int                  `json:"revision"`
+	Desired     int                  `json:"desired"`
+	Running     int                  `json:"running"`
+	Healthy     int                  `json:"healthy"`
+	Allocations []AllocationResponse `json:"allocations"`
+}
+
+type AllocationResponse struct {
+	ID     string    `json:"id"`
+	Group  string    `json:"group"`
+	Task   string    `json:"task"`
+	NodeID uuid.UUID `json:"node_id"`
+	Status string    `json:"status"`
 }

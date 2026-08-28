@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/google/uuid"
@@ -22,11 +23,17 @@ type Action struct {
 
 // Reconcile converges the in-memory allocation set on the latest job specs.
 func (s *Server) Reconcile(ctx context.Context) {
+	s.mu.Lock()
+	for _, node := range s.nodes {
+		if node.Status == NodeStatusHealthy && time.Since(node.LastHeartbeat) > 3*heartbeatInterval {
+			node.Status = NodeStatusUnhealthy
+		}
+	}
 	var actions []Action
 	valid := make([]*Allocation, 0, len(s.allocations))
 	for _, allocation := range s.allocations {
 		job := s.jobs[allocation.JobName]
-		if job == nil || allocation.Status == AllocationStatusUnhealthy || allocation.Revision < job.Revision {
+		if job == nil || allocation.Status == AllocationStatusUnhealthy || allocation.Revision < job.Revision || allocation.Node == nil || allocation.Node.Status != NodeStatusHealthy {
 			actions = append(actions, Action{Type: ActionStop, Allocation: allocation})
 			continue
 		}
@@ -48,7 +55,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 					current = current[:len(current)-1]
 				}
 				missing := group.Count - len(current)
-				placements := Schedule(&PlacementIntent{JobName: jobName, TaskGroupName: group.Name, Count: missing, Nodes: s.nodePointers(), Allocations: append(valid, s.allocations...)})
+				placements := Schedule(&PlacementIntent{JobName: jobName, TaskGroupName: group.Name, Count: missing, Nodes: s.nodePointers(), Allocations: valid, Task: task})
 				for _, placement := range placements {
 					node := s.nodes[placement.NodeID]
 					name := fmt.Sprintf("%s-%s-%s-%s", jobName, group.Name, task.Name, uuid.NewString()[:8])
@@ -57,6 +64,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 			}
 		}
 	}
+	s.mu.Unlock()
 
 	for i := range actions {
 		if err := s.Execute(ctx, &actions[i]); err != nil {
@@ -82,11 +90,17 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		if err := s.client.RunAllocation(ctx, address, request); err != nil {
 			return err
 		}
+		s.mu.Lock()
 		s.allocations = append(s.allocations, alloc)
+		s.mu.Unlock()
 	case ActionStop:
-		if err := s.client.StopAllocation(ctx, address, alloc.Name); err != nil {
-			return err
+		if alloc.Node.Status == NodeStatusHealthy {
+			if err := s.client.StopAllocation(ctx, address, alloc.Name); err != nil {
+				return err
+			}
 		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		for i, existing := range s.allocations {
 			if existing == alloc {
 				s.allocations = append(s.allocations[:i], s.allocations[i+1:]...)

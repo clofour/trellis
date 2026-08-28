@@ -24,6 +24,8 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/nodes", h.handleRegisterNode)
 	v1.POST("/nodes/:id/heartbeat", h.handleHeartbeat)
 	v1.POST("/jobs", h.handleRegisterJob)
+	v1.GET("/jobs/:name", h.handleGetJob)
+	v1.DELETE("/jobs/:name", h.handleDeleteJob)
 }
 
 func (h *Handler) handleListNodes(c *echo.Context) error {
@@ -73,11 +75,30 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	err = h.server.Heartbeat(ctx, uuid)
+	var request api.HeartbeatRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	err = h.server.Heartbeat(ctx, uuid, request.Allocations)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *Handler) handleGetJob(c *echo.Context) error {
+	status, ok := h.server.GetJob(c.Param("name"))
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotFound, "job not found")
+	}
+	return c.JSON(http.StatusOK, status)
+}
+
+func (h *Handler) handleDeleteJob(c *echo.Context) error {
+	if err := h.server.DeleteJob(c.Request().Context(), c.Param("name")); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"os"
@@ -83,7 +84,7 @@ func run(config *AgentConfig) error {
 
 	restartCtl := agent.NewRestartController(runtime, nil)
 
-	volumeMgr := agent.NewVolumeManager()
+	volumeMgr := agent.NewVolumeManager(config.DataDir)
 
 	portMgr := agent.NewPortManager(runtime, 0, 0, 0)
 
@@ -101,6 +102,9 @@ func run(config *AgentConfig) error {
 
 	e := echo.New()
 	e.Use(middleware.Recover())
+	e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{KeyLookup: "header:Authorization:Bearer ", Validator: func(c *echo.Context, key string, source middleware.ExtractorSource) (bool, error) {
+		return subtle.ConstantTimeCompare([]byte(key), []byte(config.ClusterToken)) == 1, nil
+	}}))
 	handler := agent.NewHandler(ag)
 	handler.Register(e)
 	startCfg := echo.StartConfig{

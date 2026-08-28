@@ -9,8 +9,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"os"
+	"sync"
 	"time"
 
+	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/storage"
@@ -19,6 +22,7 @@ import (
 )
 
 const reconcileInterval = 10 * time.Second
+const heartbeatInterval = 10 * time.Second
 
 type Server struct {
 	log     *slog.Logger
@@ -30,6 +34,7 @@ type Server struct {
 	nodes       map[uuid.UUID]*Node
 	jobs        map[string]*Job
 	allocations []*Allocation
+	mu          sync.RWMutex
 }
 
 type Cluster struct {
@@ -52,6 +57,8 @@ type Node struct {
 	Port          int
 	Status        NodeStatus
 	LastHeartbeat time.Time
+	CPU           int
+	Memory        int64
 }
 
 type NodeStatus string
@@ -112,6 +119,11 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 		s.log.Info("cluster already initialized")
 
 		s.cluster = cluster
+		var token string
+		if err := s.storage.Get("token", &token); err != nil && !os.IsNotExist(unwrapPathError(err)) {
+			return "", fmt.Errorf("load local cluster token: %w", err)
+		}
+		s.client = client.NewAgentClient(token)
 		return "", nil
 	}
 
@@ -138,6 +150,7 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	}
 
 	s.cluster = cluster
+	s.client = client.NewAgentClient(token)
 
 	return token, nil
 }
@@ -147,6 +160,8 @@ func (s *Server) Run(ctx context.Context) {
 }
 
 func (s *Server) ListNodes(ctx context.Context) []Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	result := make([]Node, 0, len(s.nodes))
 
 	for _, node := range s.nodes {
@@ -166,18 +181,23 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		return fmt.Errorf("save node remotely: %w", err)
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.nodes[nodeRegistration.ID] = &Node{
 		ID:            nodeRegistration.ID,
 		Host:          nodeRegistration.Host,
 		Port:          nodeRegistration.Port,
 		Status:        NodeStatusHealthy,
 		LastHeartbeat: time.Now(),
+		CPU:           nodeRegistration.CPU, Memory: nodeRegistration.Memory,
 	}
 
 	return nil
 }
 
-func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID) error {
+func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	node, ok := s.nodes[nodeID]
 	if !ok {
 		return fmt.Errorf("node not found")
@@ -185,6 +205,17 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID) error {
 
 	node.Status = NodeStatusHealthy
 	node.LastHeartbeat = time.Now()
+	statuses := make(map[string]AllocationStatus, len(actual))
+	for _, a := range actual {
+		statuses[a.ID] = AllocationStatus(a.Status)
+	}
+	for _, a := range s.allocations {
+		if a.Node == node {
+			if status, ok := statuses[a.Name]; ok {
+				a.Status = status
+			}
+		}
+	}
 
 	return nil
 }
@@ -198,6 +229,8 @@ func (s *Server) RegisterJob(ctx context.Context, jobSpec *spec.JobSpec) error {
 		return fmt.Errorf("save job remotely: %w", err)
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	revision := 1
 	if existing := s.jobs[jobSpec.Name]; existing != nil {
 		revision = existing.Revision + 1
@@ -210,6 +243,54 @@ func (s *Server) RegisterJob(ctx context.Context, jobSpec *spec.JobSpec) error {
 	return nil
 }
 
+func (s *Server) GetJob(name string) (*api.JobStatusResponse, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, ok := s.jobs[name]
+	if !ok {
+		return nil, false
+	}
+	r := &api.JobStatusResponse{Name: name, Revision: job.Revision}
+	for _, g := range job.Spec.TaskGroups {
+		r.Desired += g.Count * len(g.Tasks)
+	}
+	for _, a := range s.allocations {
+		if a.JobName != name {
+			continue
+		}
+		ar := api.AllocationResponse{ID: a.Name, Group: a.TaskGroupName, Status: string(a.Status)}
+		if a.Task != nil {
+			ar.Task = a.Task.Name
+		}
+		if a.Node != nil {
+			ar.NodeID = a.Node.ID
+		}
+		r.Allocations = append(r.Allocations, ar)
+		r.Running++
+		if a.Status == AllocationStatusHealthy {
+			r.Healthy++
+		}
+	}
+	return r, true
+}
+
+func (s *Server) DeleteJob(ctx context.Context, name string) error {
+	s.mu.Lock()
+	_, ok := s.jobs[name]
+	if ok {
+		delete(s.jobs, name)
+	}
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("job %s not found", name)
+	}
+	if err := s.state.DeleteJob(ctx, name); err != nil {
+		return err
+	}
+	s.Reconcile(ctx)
+	return nil
+}
+
 func (s *Server) RunAllocation(ctx context.Context, allocation *Allocation) error {
 	return nil
 }
@@ -219,10 +300,23 @@ func (s *Server) StopAllocation(ctx context.Context, allocation *Allocation) err
 }
 
 func (s *Server) ValidateAPIToken(ctx context.Context, token string) bool {
+	if s.cluster == nil {
+		return false
+	}
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
 
 	return subtle.ConstantTimeCompare([]byte(hashHex), []byte(s.cluster.Hash)) == 1
+}
+
+func unwrapPathError(err error) error {
+	for {
+		u, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return err
+		}
+		err = u.Unwrap()
+	}
 }
 
 func (s *Server) runReconcileLoop(ctx context.Context) {

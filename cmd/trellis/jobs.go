@@ -16,8 +16,34 @@ func NewJobsCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(NewJobsApplyCmd())
+	cmd.AddCommand(NewJobsStatusCmd())
+	cmd.AddCommand(NewJobsDestroyCmd())
 
 	return cmd
+}
+
+func NewJobsStatusCmd() *cobra.Command {
+	return &cobra.Command{Use: "status NAME", Args: cobra.ExactArgs(1), Short: "Show desired and actual job state", RunE: func(cmd *cobra.Command, args []string) error {
+		status, err := client.NewServerClient(config.ClusterToken, config.ServerAddr).GetJob(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Job: %s\nRevision: %d\nDesired: %d\nRunning: %d\nHealthy: %d\n", status.Name, status.Revision, status.Desired, status.Running, status.Healthy)
+		for _, a := range status.Allocations {
+			fmt.Printf("%s\t%s/%s\t%s\t%s\n", a.ID, a.Group, a.Task, a.NodeID, a.Status)
+		}
+		return nil
+	}}
+}
+
+func NewJobsDestroyCmd() *cobra.Command {
+	return &cobra.Command{Use: "destroy NAME", Args: cobra.ExactArgs(1), Short: "Destroy a job and its allocations", RunE: func(cmd *cobra.Command, args []string) error {
+		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr).DeleteJob(cmd.Context(), args[0]); err != nil {
+			return err
+		}
+		fmt.Println("Job destroyed successfully.")
+		return nil
+	}}
 }
 
 func NewJobsApplyCmd() *cobra.Command {
