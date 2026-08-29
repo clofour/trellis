@@ -14,10 +14,13 @@ type NetworkSpec struct {
 }
 
 type TaskGroupSpec struct {
-	Name    string     `yaml:"name" json:"name"`
-	Count   int        `yaml:"count" json:"count"`
-	Runtime string     `yaml:"runtime,omitempty" json:"runtime,omitempty"`
-	Tasks   []TaskSpec `yaml:"tasks" json:"tasks"`
+	Name        string            `yaml:"name" json:"name"`
+	Count       int               `yaml:"count" json:"count"`
+	Runtime     string            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Tasks       []TaskSpec        `yaml:"tasks" json:"tasks"`
+	Labels      map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
+	NetworkMode string            `yaml:"network_mode,omitempty" json:"network_mode,omitempty"`
+	APIAccess   bool              `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 }
 
 type TaskSpec struct {

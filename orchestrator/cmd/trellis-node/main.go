@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +20,8 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/agent"
+	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/auth"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/election"
@@ -35,10 +41,10 @@ const shutdownTime = 10 * time.Second
 
 type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
-	DataDir, Cluster, ClusterToken, ContainerdSock, ConsulAddr string
-	ElectionTTL                                                time.Duration
-	WireGuardPool, WireGuardEndpoint                           string
-	WireGuardPort                                              int
+	RaftListen, RaftAdvertise, Join                           string
+	DataDir, Cluster, ClusterToken, ContainerdSock            string
+	WireGuardPool, WireGuardEndpoint                          string
+	WireGuardPort                                             int
 }
 
 func main() {
@@ -49,12 +55,13 @@ func main() {
 	f.StringVar(&cfg.AgentAdvertise, "agent-advertise", "", "Agent address advertised to the cluster")
 	f.StringVar(&cfg.ServerListen, "server-listen", ":8128", "Leader API listen address")
 	f.StringVar(&cfg.ServerAdvertise, "server-advertise", "", "Leader API address advertised to the cluster")
+	f.StringVar(&cfg.RaftListen, "raft-listen", ":8129", "Raft consensus transport listen address")
+	f.StringVar(&cfg.RaftAdvertise, "raft-advertise", "", "Raft consensus transport advertised address")
+	f.StringVar(&cfg.Join, "join", "", "Address of an existing cluster member to join (server API address)")
 	f.StringVar(&cfg.DataDir, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
 	f.StringVar(&cfg.Cluster, "cluster", "default", "Cluster name")
 	f.StringVar(&cfg.ClusterToken, "cluster-token", "", "Shared cluster token")
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
-	f.StringVar(&cfg.ConsulAddr, "consul-addr", "127.0.0.1:8500", "Consul address")
-	f.DurationVar(&cfg.ElectionTTL, "election-ttl", 15*time.Second, "Leader election session TTL")
 	f.StringVar(&cfg.WireGuardPool, "wireguard-pool", "10.64.0.0/10", "Cluster address pool used for automatic namespace networking")
 	f.StringVar(&cfg.WireGuardEndpoint, "wireguard-endpoint", "", "Externally reachable WireGuard host or host:port")
 	f.IntVar(&cfg.WireGuardPort, "wireguard-port", 51820, "WireGuard UDP listen port")
@@ -89,27 +96,57 @@ func run(parent context.Context, cfg *config) error {
 	if cfg.ServerAdvertise == "" {
 		cfg.ServerAdvertise = net.JoinHostPort(hostname, "8128")
 	}
+	if cfg.RaftAdvertise == "" {
+		cfg.RaftAdvertise = net.JoinHostPort(hostname, "8129")
+	}
 	agentHost, agentPort, err := splitAddress(cfg.AgentAdvertise)
 	if err != nil {
 		return fmt.Errorf("agent advertise address: %w", err)
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	store, err := state.NewConsulStoreWithAddress(cfg.ConsulAddr)
+
+	raftStore, err := state.NewRaftStore(state.RaftConfig{
+		DataDir:   cfg.DataDir,
+		BindAddr:  cfg.RaftListen,
+		Advertise: cfg.RaftAdvertise,
+		ServerID:  cfg.ServerAdvertise,
+		Bootstrap: cfg.Join == "",
+	})
 	if err != nil {
-		return fmt.Errorf("init Consul: %w", err)
+		return fmt.Errorf("init raft store: %w", err)
 	}
+	defer raftStore.Close()
+
+	if cfg.Join != "" && !raftStore.HadExistingState() {
+		log.Info("joining cluster", "address", cfg.Join)
+		if err := joinCluster(ctx, log, cfg.Join, cfg.ClusterToken, cfg.ServerAdvertise, raftStore.LocalAddr()); err != nil {
+			return fmt.Errorf("join cluster: %w", err)
+		}
+	}
+
 	local := storage.NewLocalStorage(cfg.DataDir)
 	if err := local.Init(); err != nil {
 		return fmt.Errorf("init local storage: %w", err)
 	}
-	stateCtl := server.NewStateController(store, cfg.Cluster)
-	control := server.NewServer(log, local, stateCtl)
+	stateCtl := server.NewStateController(raftStore, cfg.Cluster)
+	control := server.NewServer(log, local, stateCtl, raftStore, cfg.Cluster, cfg.ServerAdvertise)
+	control.SetClusterJoiner(raftStore)
 	if err := control.SetNetworkPool(cfg.WireGuardPool); err != nil {
 		return err
 	}
-	if _, err := control.InitWithToken(ctx, cfg.ClusterToken); err != nil {
-		return fmt.Errorf("initialize control plane: %w", err)
+
+	for i := 0; ; i++ {
+		if _, err := control.InitWithToken(ctx, cfg.ClusterToken); err == nil {
+			break
+		} else if i >= 30 {
+			return fmt.Errorf("initialize control plane: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
 	runtimeClient, err := containerruntime.NewContainerdRuntime(cfg.ContainerdSock)
@@ -123,10 +160,7 @@ func run(parent context.Context, cfg *config) error {
 	}()
 	healthMgr := health.NewHealthManager(log, runtimeClient, nil)
 	restartCtl := agent.NewRestartController(runtimeClient, nil)
-	registry, err := discovery.NewConsulRegistryWithAddress(cfg.ConsulAddr)
-	if err != nil {
-		return fmt.Errorf("init service registry: %w", err)
-	}
+	registry := discovery.NoopRegistry{}
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "")
 	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), registry, leaderClient, id)
 	networkManager, err := network.NewAutomatedWireGuardManager(filepath.Join(cfg.DataDir, "network"), cfg.WireGuardPort)
@@ -155,7 +189,7 @@ func run(parent context.Context, cfg *config) error {
 	ag.Init(ctx)
 
 	agentHTTP := echo.New()
-	agentHTTP.Use(middleware.Recover(), authMiddleware(cfg.ClusterToken))
+	agentHTTP.Use(middleware.Recover(), clusterAuthMiddleware(cfg.ClusterToken))
 	agent.NewHandler(ag).Register(agentHTTP)
 	go func() {
 		if err := (echo.StartConfig{Address: cfg.AgentListen, GracefulTimeout: shutdownTime}).Start(ctx, agentHTTP); err != nil && ctx.Err() == nil {
@@ -164,7 +198,7 @@ func run(parent context.Context, cfg *config) error {
 		}
 	}()
 
-	elector := election.New(store.Client(), cfg.Cluster, election.Leader{NodeID: id, Address: cfg.ServerAdvertise}, cfg.ElectionTTL)
+	elector := election.NewRaftElector(raftStore.Raft(), election.Leader{NodeID: id, Address: cfg.ServerAdvertise})
 	events := make(chan election.Event)
 	go func() {
 		if err := elector.Run(ctx, events); err != nil {
@@ -198,7 +232,7 @@ func run(parent context.Context, cfg *config) error {
 				log.Info("leadership acquired", "node_id", id, "address", cfg.ServerAdvertise)
 				control.Run(termCtx)
 				leaderHTTP := echo.New()
-				leaderHTTP.Use(middleware.Recover(), authMiddleware(cfg.ClusterToken))
+				leaderHTTP.Use(middleware.Recover(), leaderAuthMiddleware(cfg.ClusterToken, control.TokenManager()))
 				server.NewHandler(control).Register(leaderHTTP)
 				done := make(chan struct{})
 				leaderDone = done
@@ -226,7 +260,42 @@ func run(parent context.Context, cfg *config) error {
 	}
 }
 
-func watchLeader(ctx context.Context, log *slog.Logger, elector *election.Elector, target *client.ServerClient) {
+func joinCluster(ctx context.Context, log *slog.Logger, joinAddr, clusterToken, serverID, raftAddr string) error {
+	body, err := json.Marshal(api.RaftJoinRequest{ID: serverID, RaftAddress: raftAddr})
+	if err != nil {
+		return err
+	}
+	base := joinAddr
+	if !strings.Contains(base, "://") {
+		base = "http://" + base
+	}
+	for i := 0; ; i++ {
+		req, _ := http.NewRequestWithContext(ctx, "POST", base+"/v1/raft/join", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+clusterToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				log.Info("joined cluster successfully")
+				return nil
+			}
+			err = fmt.Errorf("join returned status %d", resp.StatusCode)
+		}
+		if i >= 30 {
+			return err
+		}
+		log.Warn("join attempt failed, retrying", "error", err, "attempt", i+1)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(min(i+1, 5)) * time.Second):
+		}
+	}
+}
+
+func watchLeader(ctx context.Context, log *slog.Logger, elector election.Elector, target *client.ServerClient) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -246,9 +315,27 @@ func watchLeader(ctx context.Context, log *slog.Logger, elector *election.Electo
 	}
 }
 
-func authMiddleware(token string) echo.MiddlewareFunc {
+func clusterAuthMiddleware(token string) echo.MiddlewareFunc {
 	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{KeyLookup: "header:Authorization:Bearer ", Validator: func(_ *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
 		return subtle.ConstantTimeCompare([]byte(key), []byte(token)) == 1, nil
+	}})
+}
+
+func leaderAuthMiddleware(clusterToken string, tokenManager *auth.TokenManager) echo.MiddlewareFunc {
+	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{KeyLookup: "header:Authorization:Bearer ", Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
+		if subtle.ConstantTimeCompare([]byte(key), []byte(clusterToken)) == 1 {
+			return true, nil
+		}
+		scope, err := tokenManager.ValidateToken(c.Request().Context(), key)
+		if err != nil {
+			return false, nil
+		}
+		if scope != nil {
+			ctx := context.WithValue(c.Request().Context(), server.NamespaceContextKey, scope.Namespace)
+			c.SetRequest(c.Request().WithContext(ctx))
+			return true, nil
+		}
+		return false, nil
 	}})
 }
 

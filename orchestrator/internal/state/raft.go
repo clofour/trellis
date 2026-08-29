@@ -1,0 +1,235 @@
+package state
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/raft"
+	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
+)
+
+var _ StateStore = (*RaftStore)(nil)
+
+type RaftStore struct {
+	raft             *raft.Raft
+	fsm              *fsm
+	transport        raft.Transport
+	logStore         *raftboltdb.BoltStore
+	hadExistingState bool
+}
+
+type RaftConfig struct {
+	DataDir   string
+	BindAddr  string
+	Advertise string
+	ServerID  string
+	Bootstrap bool
+}
+
+func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
+	raftDir := filepath.Join(cfg.DataDir, "raft")
+	if err := os.MkdirAll(raftDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create raft dir: %w", err)
+	}
+
+	fsmStore, err := NewBoltStore(filepath.Join(raftDir, "fsm.db"))
+	if err != nil {
+		return nil, fmt.Errorf("create FSM store: %w", err)
+	}
+	f := &fsm{store: fsmStore}
+
+	logStore, err := raftboltdb.NewBoltStore(filepath.Join(raftDir, "log.db"))
+	if err != nil {
+		return nil, fmt.Errorf("create raft log store: %w", err)
+	}
+
+	snapshotStore, err := raft.NewFileSnapshotStore(raftDir, 2, io.Discard)
+	if err != nil {
+		return nil, fmt.Errorf("create snapshot store: %w", err)
+	}
+
+	hadState, err := raft.HasExistingState(logStore, logStore, snapshotStore)
+	if err != nil {
+		return nil, fmt.Errorf("check existing raft state: %w", err)
+	}
+
+	advertise := cfg.Advertise
+	if advertise == "" {
+		advertise = cfg.BindAddr
+	}
+	advAddr, err := net.ResolveTCPAddr("tcp", advertise)
+	if err != nil {
+		return nil, fmt.Errorf("resolve raft advertise address: %w", err)
+	}
+
+	transport, err := raft.NewTCPTransport(cfg.BindAddr, advAddr, 3, 10*time.Second, io.Discard)
+	if err != nil {
+		return nil, fmt.Errorf("create raft transport: %w", err)
+	}
+
+	raftCfg := raft.DefaultConfig()
+	raftCfg.LocalID = raft.ServerID(cfg.ServerID)
+	raftCfg.Logger = hclog.New(&hclog.LoggerOptions{
+		Name:   "raft",
+		Level:  hclog.Warn,
+		Output: os.Stderr,
+	})
+
+	r, err := raft.NewRaft(raftCfg, f, logStore, logStore, snapshotStore, transport)
+	if err != nil {
+		return nil, fmt.Errorf("create raft: %w", err)
+	}
+
+	if cfg.Bootstrap && !hadState {
+		config := raft.Configuration{
+			Servers: []raft.Server{{
+				ID:      raft.ServerID(cfg.ServerID),
+				Address: transport.LocalAddr(),
+			}},
+		}
+		if fut := r.BootstrapCluster(config); fut.Error() != nil {
+			return nil, fmt.Errorf("bootstrap raft cluster: %w", fut.Error())
+		}
+	}
+
+	return &RaftStore{
+		raft:             r,
+		fsm:              f,
+		transport:        transport,
+		logStore:         logStore,
+		hadExistingState: hadState,
+	}, nil
+}
+
+func (r *RaftStore) Raft() *raft.Raft        { return r.raft }
+func (r *RaftStore) LocalAddr() string        { return string(r.transport.LocalAddr()) }
+func (r *RaftStore) HadExistingState() bool   { return r.hadExistingState }
+
+func (r *RaftStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return r.fsm.store.Get(ctx, key)
+}
+
+func (r *RaftStore) List(ctx context.Context, prefix string) (map[string][]byte, error) {
+	return r.fsm.store.List(ctx, prefix)
+}
+
+func (r *RaftStore) Put(_ context.Context, key string, value []byte) error {
+	cmd := fsmCommand{Op: "put", Key: key, Value: value}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+	fut := r.raft.Apply(data, 10*time.Second)
+	if err := fut.Error(); err != nil {
+		return err
+	}
+	if resp, ok := fut.Response().(error); ok && resp != nil {
+		return resp
+	}
+	return nil
+}
+
+func (r *RaftStore) Delete(_ context.Context, key string) error {
+	cmd := fsmCommand{Op: "delete", Key: key}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+	fut := r.raft.Apply(data, 10*time.Second)
+	if err := fut.Error(); err != nil {
+		return err
+	}
+	if resp, ok := fut.Response().(error); ok && resp != nil {
+		return resp
+	}
+	return nil
+}
+
+func (r *RaftStore) AddVoter(id, address string) error {
+	fut := r.raft.AddVoter(raft.ServerID(id), raft.ServerAddress(address), 0, 30*time.Second)
+	return fut.Error()
+}
+
+func (r *RaftStore) RemoveServer(id string) error {
+	fut := r.raft.RemoveServer(raft.ServerID(id), 0, 10*time.Second)
+	return fut.Error()
+}
+
+func (r *RaftStore) Close() error {
+	if fut := r.raft.Shutdown(); fut.Error() != nil {
+		return fut.Error()
+	}
+	if err := r.logStore.Close(); err != nil {
+		return err
+	}
+	return r.fsm.store.Close()
+}
+
+type fsm struct {
+	store *BoltStore
+}
+
+type fsmCommand struct {
+	Op    string `json:"op"`
+	Key   string `json:"key"`
+	Value []byte `json:"value,omitempty"`
+}
+
+func (f *fsm) Apply(log *raft.Log) interface{} {
+	var cmd fsmCommand
+	if err := json.Unmarshal(log.Data, &cmd); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	switch cmd.Op {
+	case "put":
+		return f.store.Put(ctx, cmd.Key, cmd.Value)
+	case "delete":
+		return f.store.Delete(ctx, cmd.Key)
+	default:
+		return fmt.Errorf("unknown FSM command: %s", cmd.Op)
+	}
+}
+
+func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
+	data, err := f.store.List(context.Background(), "")
+	if err != nil {
+		return nil, err
+	}
+	return &fsmSnapshot{data: data}, nil
+}
+
+func (f *fsm) Restore(rc io.ReadCloser) error {
+	defer rc.Close()
+	var data map[string][]byte
+	if err := json.NewDecoder(rc).Decode(&data); err != nil {
+		return err
+	}
+	return f.store.Restore(data)
+}
+
+type fsmSnapshot struct {
+	data map[string][]byte
+}
+
+func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
+	data, err := json.Marshal(s.data)
+	if err != nil {
+		sink.Cancel()
+		return err
+	}
+	if _, err := sink.Write(data); err != nil {
+		sink.Cancel()
+		return err
+	}
+	return sink.Close()
+}
+
+func (s *fsmSnapshot) Release() {}

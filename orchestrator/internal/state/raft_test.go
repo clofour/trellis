@@ -1,0 +1,219 @@
+package state
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port
+}
+
+func newTestRaftStore(t *testing.T, bootstrap bool) *RaftStore {
+	t.Helper()
+	dir := t.TempDir()
+	port := freePort(t)
+	bind := fmt.Sprintf("127.0.0.1:%d", port)
+	store, err := NewRaftStore(RaftConfig{
+		DataDir:   dir,
+		BindAddr:  bind,
+		Advertise: bind,
+		ServerID:  bind,
+		Bootstrap: bootstrap,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
+}
+
+func waitLeader(t *testing.T, store *RaftStore) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if leader, _ := store.Raft().LeaderWithID(); leader != "" {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for leader")
+}
+
+func TestRaftStore_PutGetDelete(t *testing.T) {
+	store := newTestRaftStore(t, true)
+	waitLeader(t, store)
+	ctx := context.Background()
+
+	if err := store.Put(ctx, "key1", []byte("value1")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(ctx, "key1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "value1" {
+		t.Fatalf("got %q, want %q", got, "value1")
+	}
+
+	if err := store.Delete(ctx, "key1"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.Get(ctx, "key1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil after delete, got %q", got)
+	}
+}
+
+func TestRaftStore_List(t *testing.T) {
+	store := newTestRaftStore(t, true)
+	waitLeader(t, store)
+	ctx := context.Background()
+
+	store.Put(ctx, "prefix/a", []byte("1"))
+	store.Put(ctx, "prefix/b", []byte("2"))
+	store.Put(ctx, "other/c", []byte("3"))
+
+	entries, err := store.List(ctx, "prefix/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+}
+
+func TestRaftStore_Replication(t *testing.T) {
+	leader := newTestRaftStore(t, true)
+	waitLeader(t, leader)
+
+	followerDir := t.TempDir()
+	followerPort := freePort(t)
+	followerBind := fmt.Sprintf("127.0.0.1:%d", followerPort)
+	follower, err := NewRaftStore(RaftConfig{
+		DataDir:   followerDir,
+		BindAddr:  followerBind,
+		Advertise: followerBind,
+		ServerID:  followerBind,
+		Bootstrap: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { follower.Close() })
+
+	if err := leader.AddVoter(followerBind, follower.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := leader.Put(ctx, "replicated", []byte("data")); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		got, _ := follower.Get(ctx, "replicated")
+		if string(got) == "data" {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("data did not replicate to follower within timeout")
+}
+
+func TestRaftStore_Snapshot(t *testing.T) {
+	store := newTestRaftStore(t, true)
+	waitLeader(t, store)
+	ctx := context.Background()
+
+	for i := 0; i < 20; i++ {
+		store.Put(ctx, fmt.Sprintf("key-%d", i), []byte(fmt.Sprintf("val-%d", i)))
+	}
+
+	snap := store.Raft().Snapshot()
+	if err := snap.Error(); err != nil {
+		t.Fatal(err)
+	}
+
+	followerDir := t.TempDir()
+	followerPort := freePort(t)
+	followerBind := fmt.Sprintf("127.0.0.1:%d", followerPort)
+	follower, err := NewRaftStore(RaftConfig{
+		DataDir:   followerDir,
+		BindAddr:  followerBind,
+		Advertise: followerBind,
+		ServerID:  followerBind,
+		Bootstrap: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { follower.Close() })
+
+	if err := store.AddVoter(followerBind, follower.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		entries, _ := follower.List(ctx, "key-")
+		if len(entries) == 20 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	entries, _ := follower.List(ctx, "key-")
+	t.Fatalf("expected 20 entries on follower, got %d", len(entries))
+}
+
+func TestRaftStore_RejoinExistingState(t *testing.T) {
+	dir := t.TempDir()
+	port := freePort(t)
+	bind := fmt.Sprintf("127.0.0.1:%d", port)
+
+	store1, err := NewRaftStore(RaftConfig{DataDir: dir, BindAddr: bind, Advertise: bind, ServerID: bind, Bootstrap: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitLeader(t, store1)
+	store1.Put(context.Background(), "persist", []byte("yes"))
+	store1.Close()
+
+	store2, err := NewRaftStore(RaftConfig{DataDir: dir, BindAddr: bind, Advertise: bind, ServerID: bind, Bootstrap: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store2.Close()
+	waitLeader(t, store2)
+
+	if !store2.HadExistingState() {
+		t.Fatal("expected HadExistingState to be true")
+	}
+
+	got, _ := store2.Get(context.Background(), "persist")
+	if string(got) != "yes" {
+		t.Fatalf("expected persisted data after restart, got %q", got)
+	}
+
+	raftDir := filepath.Join(dir, "raft")
+	files, _ := filepath.Glob(filepath.Join(raftDir, "*.db"))
+	if len(files) < 2 {
+		t.Fatalf("expected raft db files in %s, found %d", raftDir, len(files))
+	}
+}

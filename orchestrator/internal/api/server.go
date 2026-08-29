@@ -50,8 +50,14 @@ type HeartbeatRequest struct {
 }
 
 type AllocationStatus struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID     string        `json:"id"`
+	Status string        `json:"status"`
+	Ports  []PortMapping `json:"ports,omitempty"`
+}
+
+type PortMapping struct {
+	HostPort      int `json:"host_port"`
+	ContainerPort int `json:"container_port"`
 }
 
 type JobRegistrationRequest struct {
@@ -76,3 +82,21 @@ type AllocationResponse struct {
 }
 
 type JobListResponse = []JobStatusResponse
+
+type ServiceEntry struct {
+	ID        string            `json:"id"`
+	Job       string            `json:"job"`
+	Group     string            `json:"group"`
+	Namespace string            `json:"namespace"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	Address   string            `json:"address"`
+	Ports     []PortMapping     `json:"ports,omitempty"`
+	Status    string            `json:"status"`
+}
+
+type ServiceListResponse = []ServiceEntry
+
+type RaftJoinRequest struct {
+	ID          string `json:"id"`
+	RaftAddress string `json:"raft_address"`
+}
