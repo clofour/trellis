@@ -37,6 +37,10 @@ func (s *ServerClient) address() string {
 	return s.baseURL
 }
 
+func (s *ServerClient) Ready() bool {
+	return s.address() != ""
+}
+
 type NodeInfo struct {
 	ID                 uuid.UUID
 	Host               string
@@ -159,6 +163,9 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbea
 
 func normalizeBaseURL(addr string) string {
 	addr = strings.TrimRight(strings.TrimSpace(addr), "/")
+	if addr == "" {
+		return ""
+	}
 	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
 		addr = "http://" + addr
 	}

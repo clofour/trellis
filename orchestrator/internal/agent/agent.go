@@ -437,16 +437,21 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 
 	for {
 		if !registered {
-			if _, err := a.server.RegisterNode(ctx, &a.nodeInfo); err != nil {
-				a.log.Error("register node failed", "error", err)
-			} else {
-				registered = true
+			if a.server.Ready() {
+				if _, err := a.server.RegisterNode(ctx, &a.nodeInfo); err != nil {
+					a.log.Error("register node failed", "error", err)
+				} else {
+					registered = true
+				}
 			}
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if !a.server.Ready() {
+				continue
+			}
 			a.mu.RLock()
 			actual := make([]api.AllocationStatus, 0, len(a.allocations))
 			for _, alloc := range a.allocations {
