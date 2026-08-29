@@ -35,7 +35,9 @@ func (c *client) request(ctx context.Context, method string, url string, request
 	if err != nil {
 		return fmt.Errorf("executing request %s: %w", url, err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {

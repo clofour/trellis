@@ -3,7 +3,6 @@ package health
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"sync"
 	"time"
@@ -110,7 +109,7 @@ func (h *HealthManager) runHealthCheckLoop(ctx context.Context, trackedTask *tra
 		case <-ticker.C:
 			result, err := h.runHealthCheck(ctx, trackedTask)
 			if err != nil {
-				log.Print(fmt.Errorf("health check: %w", err))
+				h.log.Error("health check failed", "error", err)
 				result = false
 			}
 
@@ -119,11 +118,15 @@ func (h *HealthManager) runHealthCheckLoop(ctx context.Context, trackedTask *tra
 			h.mu.Unlock()
 
 			if change {
+				var err error
 				switch status {
 				case StatusHealthy:
-					h.Subscriber.OnHealthy(ctx, trackedTask.allocID)
+					err = h.Subscriber.OnHealthy(ctx, trackedTask.allocID)
 				case StatusUnhealthy:
-					h.Subscriber.OnUnhealthy(ctx, trackedTask.allocID)
+					err = h.Subscriber.OnUnhealthy(ctx, trackedTask.allocID)
+				}
+				if err != nil {
+					h.log.Error("health status callback failed", "status", status, "error", err)
 				}
 			}
 		}

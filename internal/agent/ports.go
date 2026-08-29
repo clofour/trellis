@@ -55,7 +55,7 @@ func (p *PortManager) Check(hostPort int) (bool, error) {
 
 		return true, err
 	}
-	listener.Close()
+	_ = listener.Close()
 
 	return false, nil
 }

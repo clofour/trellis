@@ -98,7 +98,7 @@ func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error
 
 	err = task.Start(ctx)
 	if err != nil {
-		task.Delete(ctx)
+		_, _ = task.Delete(ctx)
 		return fmt.Errorf("starting task for %s: %w", containerID, err)
 	}
 
