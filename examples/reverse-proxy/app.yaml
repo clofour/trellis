@@ -1,0 +1,41 @@
+namespace: acme
+name: web-app
+task_groups:
+  - name: frontend
+    count: 2
+    labels:
+      trellis.expose: "true"
+      trellis/domain: app.example.com
+    tasks:
+      - name: server
+        image: docker.io/library/nginx:alpine
+        resources:
+          cpu: 250
+          memory: 134217728
+        ports:
+          - host_port: 0
+            container_port: 80
+        health_check:
+          type: http
+          port: 80
+          path: /
+
+  - name: api
+    count: 2
+    labels:
+      trellis.expose: "true"
+      trellis/domain: app.example.com
+      trellis/path-prefix: /api
+    tasks:
+      - name: server
+        image: docker.io/library/httpbin:latest
+        resources:
+          cpu: 500
+          memory: 268435456
+        ports:
+          - host_port: 0
+            container_port: 80
+        health_check:
+          type: http
+          port: 80
+          path: /health

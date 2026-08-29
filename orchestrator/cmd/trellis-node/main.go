@@ -23,7 +23,7 @@ import (
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/auth"
 	"github.com/clofour/trellis/internal/client"
-	"github.com/clofour/trellis/internal/discovery"
+	trellisdns "github.com/clofour/trellis/internal/dns"
 	"github.com/clofour/trellis/internal/election"
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/network"
@@ -45,6 +45,7 @@ type config struct {
 	DataDir, Cluster, ClusterToken, ContainerdSock            string
 	WireGuardPool, WireGuardEndpoint                          string
 	WireGuardPort                                             int
+	DNSListen                                                 string
 }
 
 func main() {
@@ -65,6 +66,7 @@ func main() {
 	f.StringVar(&cfg.WireGuardPool, "wireguard-pool", "10.64.0.0/10", "Cluster address pool used for automatic namespace networking")
 	f.StringVar(&cfg.WireGuardEndpoint, "wireguard-endpoint", "", "Externally reachable WireGuard host or host:port")
 	f.IntVar(&cfg.WireGuardPort, "wireguard-port", 51820, "WireGuard UDP listen port")
+	f.StringVar(&cfg.DNSListen, "dns-listen", ":8053", "DNS resolver listen address")
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -160,13 +162,20 @@ func run(parent context.Context, cfg *config) error {
 	}()
 	healthMgr := health.NewHealthManager(log, runtimeClient, nil)
 	restartCtl := agent.NewRestartController(runtimeClient, nil)
-	registry := discovery.NoopRegistry{}
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "")
-	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), registry, leaderClient, id)
+	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), leaderClient, id)
 	networkManager, err := network.NewAutomatedWireGuardManager(filepath.Join(cfg.DataDir, "network"), cfg.WireGuardPort)
 	if err != nil {
 		return fmt.Errorf("initialize WireGuard identity: %w", err)
 	}
+	dnsHost, dnsPort, err := splitAddress(cfg.DNSListen)
+	if err != nil {
+		return fmt.Errorf("dns listen address: %w", err)
+	}
+	if dnsHost == "" || dnsHost == "0.0.0.0" {
+		dnsHost = "127.0.0.1"
+	}
+	ag.SetDNSServers([]string{net.JoinHostPort(dnsHost, strconv.Itoa(dnsPort))})
 	ag.SetNetworkManager(networkManager)
 	endpoint := cfg.WireGuardEndpoint
 	if endpoint == "" {
@@ -187,6 +196,13 @@ func run(parent context.Context, cfg *config) error {
 	}
 	ag.SetResources(goruntime.NumCPU()*1000, memory, goruntime.GOOS, goruntime.GOARCH)
 	ag.Init(ctx)
+
+	dnsResolver := trellisdns.NewResolver(log, leaderClient, trellisdns.DefaultDomain)
+	go func() {
+		if err := dnsResolver.Run(ctx, cfg.DNSListen); err != nil && ctx.Err() == nil {
+			log.Error("dns resolver stopped", "error", err)
+		}
+	}()
 
 	agentHTTP := echo.New()
 	agentHTTP.Use(middleware.Recover(), clusterAuthMiddleware(cfg.ClusterToken))

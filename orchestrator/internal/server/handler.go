@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/catalog"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
@@ -173,7 +174,13 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 }
 
 func (h *Handler) handleListServices(c *echo.Context) error {
-	services := h.server.ListServices(requestNamespace(c))
+	var filter *catalog.ListFilter
+	job := c.QueryParam("job")
+	label := c.QueryParam("label")
+	if job != "" || label != "" {
+		filter = &catalog.ListFilter{Job: job, Label: label}
+	}
+	services := h.server.ListServices(requestNamespace(c), filter)
 	if services == nil {
 		services = api.ServiceListResponse{}
 	}

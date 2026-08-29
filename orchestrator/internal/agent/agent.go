@@ -7,13 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
-	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/network"
 	"github.com/clofour/trellis/internal/runtime"
@@ -27,16 +25,16 @@ type Agent struct {
 
 	log *slog.Logger
 
-	runtime  runtime.ContainerRuntime
-	health   *health.HealthManager
-	restart  *RestartController
-	ports    *PortManager
-	volumes  *VolumeManager
-	service  discovery.ServiceRegistry
-	network  network.Manager
-	server   *client.ServerClient
-	nodeInfo client.NodeInfo
-	mu       sync.RWMutex
+	runtime    runtime.ContainerRuntime
+	health     *health.HealthManager
+	restart    *RestartController
+	ports      *PortManager
+	volumes    *VolumeManager
+	network    network.Manager
+	server     *client.ServerClient
+	nodeInfo   client.NodeInfo
+	dnsServers []string
+	mu         sync.RWMutex
 }
 
 type Allocation struct {
@@ -49,7 +47,6 @@ type Allocation struct {
 	Spec      *spec.TaskSpec
 
 	ContainerID string
-	ServiceIDs  []string
 	Ports       []*runtime.Port
 	Mounts      []*runtime.Mount
 	Network     *network.Attachment
@@ -63,21 +60,20 @@ var (
 	ErrAllocationExists   = errors.New("allocation already exists")
 )
 
-func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID uuid.UUID) *Agent {
+func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, server *client.ServerClient, nodeID uuid.UUID) *Agent {
 	agent := &Agent{
 		nodeID:      nodeID,
 		allocations: make(map[string]*Allocation),
 
 		log: log,
 
-		runtime:  runtime,
-		health:   health,
-		restart:  restart,
-		ports:    ports,
-		volumes:  volumes,
-		service:  service,
-		network:  network.DisabledManager{},
-		server:   server,
+		runtime: runtime,
+		health:  health,
+		restart: restart,
+		ports:   ports,
+		volumes: volumes,
+		network: network.DisabledManager{},
+		server:  server,
 		nodeInfo: client.NodeInfo{ID: nodeID, Host: "127.0.0.1", Port: 8127},
 	}
 
@@ -92,6 +88,10 @@ func (a *Agent) SetNetworkManager(manager network.Manager) {
 
 func (a *Agent) SetWireGuardIdentity(publicKey, endpoint string) {
 	a.nodeInfo.WireGuardPublicKey, a.nodeInfo.WireGuardEndpoint = publicKey, endpoint
+}
+
+func (a *Agent) SetDNSServers(servers []string) {
+	a.dnsServers = servers
 }
 
 func (a *Agent) SetAdvertiseAddress(host string, port int) {
@@ -120,7 +120,6 @@ func (a *Agent) GetAllocations() []*Allocation {
 		copy := *alloc
 		copy.Ports = append([]*runtime.Port(nil), alloc.Ports...)
 		copy.Mounts = append([]*runtime.Mount(nil), alloc.Mounts...)
-		copy.ServiceIDs = append([]string(nil), alloc.ServiceIDs...)
 		result = append(result, &copy)
 	}
 
@@ -242,6 +241,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 			}
 			return ""
 		}(),
+		DNSServers: a.dnsServers,
 	})
 	if err != nil {
 		return fmt.Errorf("create container %s: %w", containerID, err)
@@ -314,7 +314,6 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	if ok {
 		alloc = *stored
 		alloc.Ports = append([]*runtime.Port(nil), stored.Ports...)
-		alloc.ServiceIDs = append([]string(nil), stored.ServiceIDs...)
 	}
 	a.mu.RUnlock()
 	if !ok {
@@ -332,12 +331,6 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	}
 	if err := a.runtime.Remove(ctx, containerID); err != nil {
 		errs = append(errs, fmt.Errorf("remove container %s: %w", containerID, err))
-	}
-
-	for _, id := range alloc.ServiceIDs {
-		if err := a.service.Deregister(ctx, id); err != nil {
-			errs = append(errs, err)
-		}
 	}
 
 	a.health.DeregisterTask(allocID)
@@ -359,69 +352,26 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	return errors.Join(errs...)
 }
 
-func (a *Agent) OnHealthy(ctx context.Context, allocID string) error {
+func (a *Agent) OnHealthy(_ context.Context, allocID string) error {
 	a.mu.Lock()
 	alloc, ok := a.allocations[allocID]
 	if ok {
 		alloc.Status = "healthy"
 	}
-	var ports []*runtime.Port
-	var taskName string
-	if ok {
-		ports = append(ports, alloc.Ports...)
-		taskName = alloc.TaskName
-	}
 	a.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("alloc %s not found", allocID)
 	}
-
-	var registered []string
-	for _, p := range ports {
-		id := fmt.Sprintf("%s-%d", allocID, p.HostPort)
-		a.mu.RLock()
-		alreadyRegistered := currentServiceRegistered(a.allocations[allocID], id)
-		a.mu.RUnlock()
-		if alreadyRegistered {
-			continue
-		}
-		if err := a.service.Register(ctx, id, taskName, "127.0.0.1", p.HostPort); err != nil {
-			for _, registeredID := range registered {
-				_ = a.service.Deregister(ctx, registeredID)
-			}
-			return err
-		}
-		registered = append(registered, id)
-		a.mu.Lock()
-		if current := a.allocations[allocID]; current != nil {
-			current.ServiceIDs = append(current.ServiceIDs, id)
-		}
-		a.mu.Unlock()
-	}
-
 	return nil
 }
 
-func currentServiceRegistered(alloc *Allocation, id string) bool {
-	return alloc != nil && slices.Contains(alloc.ServiceIDs, id)
-}
-
-func (a *Agent) OnUnhealthy(ctx context.Context, allocID string) error {
+func (a *Agent) OnUnhealthy(_ context.Context, allocID string) error {
 	a.mu.Lock()
 	alloc := a.allocations[allocID]
-	var serviceIDs []string
 	if alloc != nil {
 		alloc.Status = "unhealthy"
-		serviceIDs = append(serviceIDs, alloc.ServiceIDs...)
-		alloc.ServiceIDs = nil
 	}
 	a.mu.Unlock()
-	if alloc != nil {
-		for _, id := range serviceIDs {
-			_ = a.service.Deregister(ctx, id)
-		}
-	}
-
 	return nil
 }
 

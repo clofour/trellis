@@ -6,17 +6,15 @@ Linux host with root access.
 
 ## Prerequisites
 
-- Consul and containerd, managed as system services
+- containerd, managed as a system service
 - Go 1.26.4 or later when building from source
 - Node.js 20 or later and npm for the optional dashboard
 - at least 2 CPU cores and 4 GB RAM for an evaluation deployment
 
-For installation details, follow the upstream Consul and containerd
-documentation for your distribution. Verify both services before starting
-Trellis:
+For installation details, follow the upstream containerd documentation for
+your distribution. Verify the service before starting Trellis:
 
 ```sh
-consul members
 sudo systemctl status containerd
 ```
 
@@ -58,8 +56,8 @@ sudo install -d -m 0750 /var/lib/trellis/data
 ```ini
 [Unit]
 Description=Trellis node
-After=containerd.service consul.service network-online.target
-Wants=containerd.service consul.service network-online.target
+After=containerd.service network-online.target
+Wants=containerd.service network-online.target
 
 [Service]
 EnvironmentFile=/etc/trellis/trellis.env
@@ -92,12 +90,14 @@ sudo journalctl -u trellis-node -f
 | `--agent-advertise` | `<hostname>:8127` | Agent address advertised to the cluster. |
 | `--server-listen` | `:8128` | Leader API listen address. |
 | `--server-advertise` | `<hostname>:8128` | Leader address advertised to the cluster. |
+| `--raft-listen` | `:8129` | Raft consensus transport listen address. |
+| `--raft-advertise` | `<hostname>:8129` | Raft transport advertised address. |
+| `--join` | none | Address of an existing cluster member to join. |
 | `--data-dir` | `/var/lib/trellis/data` | Local state and volume directory. |
-| `--cluster` | `default` | Cluster name and Consul state scope. |
+| `--cluster` | `default` | Cluster name. |
 | `--cluster-token` | none | Required shared API and cluster token. |
 | `--containerd-sock` | `/run/containerd/containerd.sock` | containerd socket. |
-| `--consul-addr` | `127.0.0.1:8500` | Consul HTTP address. |
-| `--election-ttl` | `15s` | Leadership session TTL. |
+| `--dns-listen` | `:8053` | DNS resolver listen address for service discovery. |
 | `--wireguard-pool` | `10.64.0.0/10` | Cluster namespace address pool. |
 | `--wireguard-endpoint` | automatic | Reachable WireGuard host or host:port. |
 | `--wireguard-port` | `51820` | WireGuard UDP port. |

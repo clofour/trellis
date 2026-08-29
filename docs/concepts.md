@@ -3,14 +3,14 @@
 ## Cluster and leadership
 
 Every machine runs the same `trellis-node` process. Each process hosts an agent
-API, registers its capacity and heartbeat, and runs local allocations. Consul
-elects one node as leader. Only that node serves the control-plane API and
-reconciles desired jobs with actual allocations.
+API, registers its capacity and heartbeat, and runs local allocations. Raft
+consensus elects one node as leader. Only that node serves the control-plane
+API and reconciles desired jobs with actual allocations.
 
-Leadership is held through a renewable Consul session. If the session is lost,
-the former leader stops its leader API and reconciliation loop. Another node
-can then acquire the lock. Agents watch the lock and direct registrations and
-updates to the current leader.
+Leadership is held through the Raft log. If a leader becomes unreachable, the
+remaining nodes elect a new leader. The former leader stops its leader API and
+reconciliation loop when it detects it has lost leadership. Agents direct
+registrations and updates to the current leader.
 
 ## Resource model
 
@@ -73,6 +73,39 @@ Tasks may use HTTP, TCP, or script health checks. The agent evaluates health,
 reports it to the leader, and participates in restart handling. Desired,
 running, and healthy counts are available through `jobs status` and the
 dashboard.
+
+## Service discovery
+
+Every container receives automatic DNS-based service discovery. Each node runs
+a built-in DNS resolver that resolves names of the form
+`<job>.<namespace>.trellis` to the host addresses of healthy allocations for
+that job. Containers' `/etc/resolv.conf` is configured to use this resolver
+automatically.
+
+For example, a backend container can reach a database job named `postgres` in
+namespace `acme` at `postgres.acme.trellis`. When the database has multiple
+healthy replicas, the DNS response includes all of their addresses.
+
+The resolver polls the leader's service catalog and caches results locally on
+each node, so DNS lookups are fast and do not depend on the leader being
+reachable for every query.
+
+### API access
+
+Task groups with `api_access: true` receive `TRELLIS_TOKEN` and `TRELLIS_ADDR`
+environment variables. The token is scoped to the job's namespace and allows
+the container to query the control-plane API directly.
+
+The `GET /v1/services` endpoint returns all healthy allocations in the
+namespace, including their labels, host addresses, and port mappings. It
+supports optional `?job=<name>` and `?label=<key>:<value>` query parameters
+for filtering. This enables richer service-discovery patterns beyond DNS, such
+as building dynamic reverse-proxy configurations.
+
+Labels on task groups are arbitrary key-value metadata carried through to the
+services API. They are the recommended mechanism for building conventions such
+as reverse-proxy routing rules. See the [reverse proxy example](../examples/reverse-proxy/)
+for a complete walkthrough.
 
 ## Network model
 

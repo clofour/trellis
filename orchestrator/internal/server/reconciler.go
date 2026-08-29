@@ -75,6 +75,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 			s.log.Error("reconcile action failed", "action", actions[i].Type, "allocation", actions[i].Allocation.Name, "error", err)
 		}
 	}
+	s.refreshCatalog()
 }
 
 func (s *Server) nodePointers() []*Node {

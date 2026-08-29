@@ -56,6 +56,9 @@ include `_`, `.`, and `-`.
 | `count` | Yes | Replica count; must be at least 1. |
 | `runtime` | No | `runc` or `runsc`; an omitted value uses `runc`. |
 | `tasks` | Yes | One or more tasks colocated in each replica. |
+| `labels` | No | Key-value string map. Labels are returned by the services API and can be used for service discovery conventions. |
+| `network_mode` | No | Set to `host` to give the group's containers direct access to the host's network namespace instead of an isolated one. |
+| `api_access` | No | When `true`, Trellis injects `TRELLIS_TOKEN` and `TRELLIS_ADDR` environment variables into the group's containers. The token is scoped to the job's namespace and can be used to call the Trellis control-plane API (e.g. listing services). |
 
 Each replica is one scheduling and colocation unit. Resource requests for all
 tasks in a group are therefore multiplied by `count` across the job.
