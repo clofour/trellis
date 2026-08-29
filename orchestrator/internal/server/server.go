@@ -427,6 +427,33 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *Server) ListJobs(tenant string) api.JobListResponse {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make(api.JobListResponse, 0, len(s.jobs))
+	for key, job := range s.jobs {
+		if job.Spec.Tenant != tenant {
+			continue
+		}
+		name := job.Spec.Name
+		r := api.JobStatusResponse{Name: name, Revision: job.Revision}
+		for _, g := range job.Spec.TaskGroups {
+			r.Desired += g.Count * len(g.Tasks)
+		}
+		for _, a := range s.allocations {
+			if jobKey(a.Tenant, a.JobName) != key {
+				continue
+			}
+			r.Running++
+			if a.Status == AllocationStatusHealthy {
+				r.Healthy++
+			}
+		}
+		result = append(result, r)
+	}
+	return result
+}
+
 func (s *Server) GetJob(tenant, name string) (*api.JobStatusResponse, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

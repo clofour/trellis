@@ -74,3 +74,5 @@ type AllocationResponse struct {
 	NodeID uuid.UUID `json:"node_id"`
 	Status string    `json:"status"`
 }
+
+type JobListResponse = []JobStatusResponse
