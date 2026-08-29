@@ -27,7 +27,7 @@ type Agent struct {
 
 	runtime    runtime.ContainerRuntime
 	health     *health.HealthManager
-	restart    *RestartController
+	reconciler *AllocationReconciler
 	ports      *PortManager
 	volumes    *VolumeManager
 	network    network.Manager
@@ -60,21 +60,21 @@ var (
 	ErrAllocationExists   = errors.New("allocation already exists")
 )
 
-func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, server *client.ServerClient, nodeID uuid.UUID) *Agent {
+func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, reconciler *AllocationReconciler, ports *PortManager, volumes *VolumeManager, server *client.ServerClient, nodeID uuid.UUID) *Agent {
 	agent := &Agent{
 		nodeID:      nodeID,
 		allocations: make(map[string]*Allocation),
 
 		log: log,
 
-		runtime:  runtime,
-		health:   health,
-		restart:  restart,
-		ports:    ports,
-		volumes:  volumes,
-		network:  network.DisabledManager{},
-		server:   server,
-		nodeInfo: client.NodeInfo{ID: nodeID, Host: "127.0.0.1", Port: 8127},
+		runtime:    runtime,
+		health:     health,
+		reconciler: reconciler,
+		ports:      ports,
+		volumes:    volumes,
+		network:    network.DisabledManager{},
+		server:     server,
+		nodeInfo:   client.NodeInfo{ID: nodeID, Host: "127.0.0.1", Port: 8127},
 	}
 
 	return agent
@@ -106,10 +106,10 @@ func (a *Agent) SetResources(cpu int, memory int64, osName, arch string) {
 func (a *Agent) Init(ctx context.Context) {
 	a.health.Subscriber = a
 	a.health.SetContext(ctx)
-	a.restart.Subscriber = a
+	a.reconciler.Subscriber = a
 
 	go a.runHeartbeatLoop(ctx)
-	go a.restart.RunDetectionLoop(ctx)
+	go a.reconciler.Run(ctx)
 }
 
 func (a *Agent) GetAllocations() []*Allocation {
@@ -158,7 +158,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 			a.health.DeregisterTask(allocID)
 		}
 		if tracked {
-			_ = a.restart.Untrack(allocID)
+			_ = a.reconciler.Untrack(allocID)
 		}
 		if containerStarted {
 			_ = a.runtime.Stop(context.WithoutCancel(ctx), allocID)
@@ -266,7 +266,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 		healthRegistered = true
 	}
 
-	a.restart.Track(allocID)
+	a.reconciler.Track(allocID, spec.HealthCheck != nil)
 	tracked = true
 
 	ready := &Allocation{
@@ -288,8 +288,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 	a.allocations[allocID] = ready
 	a.mu.Unlock()
 	if spec.HealthCheck == nil {
-		if err := a.OnHealthy(ctx, allocID); err != nil {
-			return fmt.Errorf("register allocation service: %w", err)
+		if err := a.reconciler.ObserveHealth(allocID, true); err != nil {
+			return fmt.Errorf("mark allocation healthy: %w", err)
 		}
 	}
 	committed = true
@@ -335,7 +335,7 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 
 	a.health.DeregisterTask(allocID)
 
-	if err := a.restart.Untrack(allocID); err != nil {
+	if err := a.reconciler.Untrack(allocID); err != nil {
 		errs = append(errs, fmt.Errorf("untrack allocation %s: %w", allocID, err))
 	}
 
@@ -352,33 +352,21 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	return errors.Join(errs...)
 }
 
+// OnHealthy and OnUnhealthy are observation callbacks from the health manager.
+// They intentionally do not mutate allocation status directly; lifecycle state
+// transitions are centralized in the allocation reconciler.
 func (a *Agent) OnHealthy(_ context.Context, allocID string) error {
-	a.mu.Lock()
-	alloc, ok := a.allocations[allocID]
-	if ok {
-		alloc.Status = "healthy"
-	}
-	a.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("alloc %s not found", allocID)
-	}
-	return nil
+	return a.reconciler.ObserveHealth(allocID, true)
 }
 
 func (a *Agent) OnUnhealthy(_ context.Context, allocID string) error {
-	a.mu.Lock()
-	alloc := a.allocations[allocID]
-	if alloc != nil {
-		alloc.Status = "unhealthy"
-	}
-	a.mu.Unlock()
-	return nil
+	return a.reconciler.ObserveHealth(allocID, false)
 }
 
-func (a *Agent) OnFailed(allocID string) {
+func (a *Agent) OnReconciledStatus(allocID, status string) {
 	a.mu.Lock()
 	if alloc := a.allocations[allocID]; alloc != nil {
-		alloc.Status = "unhealthy"
+		alloc.Status = status
 	}
 	a.mu.Unlock()
 }
