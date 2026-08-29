@@ -32,7 +32,7 @@ func TestWireGuardAttachBuildsIsolatedNamespace(t *testing.T) {
 	manager := NewWireGuardManager(dir)
 	manager.run = runner
 	manager.stateDir = t.TempDir()
-	a, err := manager.Attach(context.Background(), "acme", "blue", "alloc-1")
+	a, err := manager.Attach(context.Background(), AttachRequest{Tenant: "acme", Network: "blue", AllocationID: "alloc-1"})
 	if err != nil {
 		t.Fatalf("Attach() error = %v", err)
 	}
@@ -49,7 +49,37 @@ func TestWireGuardAttachBuildsIsolatedNamespace(t *testing.T) {
 
 func TestWireGuardRejectsUntrustedNetworkName(t *testing.T) {
 	m := NewWireGuardManager(t.TempDir())
-	if _, err := m.Attach(context.Background(), "tenant", "../escape", "alloc"); err == nil {
+	if _, err := m.Attach(context.Background(), AttachRequest{Tenant: "tenant", Network: "../escape", AllocationID: "alloc"}); err == nil {
 		t.Fatal("Attach accepted path traversal")
+	}
+}
+
+func TestAutomatedIdentityPersists(t *testing.T) {
+	dir := t.TempDir()
+	first, err := NewAutomatedWireGuardManager(dir, 51820)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public1, err := first.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewAutomatedWireGuardManager(dir, 51820)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public2, err := second.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public1 == "" || public1 != public2 {
+		t.Fatalf("identity was not stable: %q != %q", public1, public2)
+	}
+	info, err := os.Stat(filepath.Join(dir, "identity.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("private key mode = %o", info.Mode().Perm())
 	}
 }

@@ -28,13 +28,15 @@ type NodeResponse struct {
 type NodeListResponse = []NodeResponse
 
 type NodeRegistrationRequest struct {
-	ID     uuid.UUID `json:"id"`
-	Host   string    `json:"host"`
-	Port   int       `json:"port"`
-	CPU    int       `json:"cpu"`
-	Memory int64     `json:"memory"`
-	OS     string    `json:"os"`
-	Arch   string    `json:"arch"`
+	ID                 uuid.UUID `json:"id"`
+	Host               string    `json:"host"`
+	Port               int       `json:"port"`
+	CPU                int       `json:"cpu"`
+	Memory             int64     `json:"memory"`
+	OS                 string    `json:"os"`
+	Arch               string    `json:"arch"`
+	WireGuardPublicKey string    `json:"wireguard_public_key,omitempty"`
+	WireGuardEndpoint  string    `json:"wireguard_endpoint,omitempty"`
 }
 
 type NodeRegistrationResponse struct {

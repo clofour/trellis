@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ type Server struct {
 	nodes       map[uuid.UUID]*Node
 	jobs        map[string]*Job
 	allocations []*Allocation
+	networkPool netip.Prefix
 	mu          sync.RWMutex
 }
 
@@ -65,23 +67,27 @@ type Cluster struct {
 }
 
 type NodeRegistration struct {
-	ID     uuid.UUID
-	Host   string
-	Port   int
-	CPU    int
-	Memory int64
-	OS     string
-	Arch   string
+	ID                 uuid.UUID
+	Host               string
+	Port               int
+	CPU                int
+	Memory             int64
+	OS                 string
+	Arch               string
+	WireGuardPublicKey string
+	WireGuardEndpoint  string
 }
 
 type Node struct {
-	ID            uuid.UUID
-	Host          string
-	Port          int
-	Status        NodeStatus
-	LastHeartbeat time.Time
-	CPU           int
-	Memory        int64
+	ID                 uuid.UUID
+	Host               string
+	Port               int
+	Status             NodeStatus
+	LastHeartbeat      time.Time
+	CPU                int
+	Memory             int64
+	WireGuardPublicKey string
+	WireGuardEndpoint  string
 }
 
 type NodeStatus string
@@ -93,12 +99,14 @@ const (
 )
 
 type NodeSummary struct {
-	ID     uuid.UUID
-	Host   string
-	Port   int
-	CPU    int
-	Memory int64
-	Status NodeStatus
+	ID                 uuid.UUID
+	Host               string
+	Port               int
+	CPU                int
+	Memory             int64
+	Status             NodeStatus
+	WireGuardPublicKey string
+	WireGuardEndpoint  string
 }
 
 type Job struct {
@@ -126,14 +134,25 @@ type Allocation struct {
 }
 
 func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController) *Server {
+	pool := netip.MustParsePrefix("10.64.0.0/10")
 	return &Server{
-		log:     log.With("component", "server"),
-		storage: storage,
-		state:   state,
-		client:  &client.AgentClient{},
-		nodes:   make(map[uuid.UUID]*Node),
-		jobs:    make(map[string]*Job),
+		log:         log.With("component", "server"),
+		storage:     storage,
+		state:       state,
+		client:      &client.AgentClient{},
+		nodes:       make(map[uuid.UUID]*Node),
+		jobs:        make(map[string]*Job),
+		networkPool: pool,
 	}
+}
+
+func (s *Server) SetNetworkPool(pool string) error {
+	p, err := netip.ParsePrefix(pool)
+	if err != nil || !p.Addr().Is4() || p.Bits() > 16 {
+		return fmt.Errorf("WireGuard pool must be an IPv4 prefix of /16 or larger")
+	}
+	s.networkPool = p.Masked()
+	return nil
 }
 
 func (s *Server) Init(ctx context.Context) (string, error) {
@@ -229,6 +248,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		Host: nodeRegistration.Host,
 		Port: nodeRegistration.Port,
 		CPU:  nodeRegistration.CPU, Memory: nodeRegistration.Memory, Status: status,
+		WireGuardPublicKey: nodeRegistration.WireGuardPublicKey, WireGuardEndpoint: nodeRegistration.WireGuardEndpoint,
 	})
 	if err != nil {
 		return fmt.Errorf("save node remotely: %w", err)
@@ -247,6 +267,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 	}
 	node.LastHeartbeat = time.Now()
 	node.CPU, node.Memory = nodeRegistration.CPU, nodeRegistration.Memory
+	node.WireGuardPublicKey, node.WireGuardEndpoint = nodeRegistration.WireGuardPublicKey, nodeRegistration.WireGuardEndpoint
 
 	return nil
 }
@@ -362,7 +383,7 @@ func (s *Server) Reload(ctx context.Context) error {
 		if summary.Status == NodeStatusDraining {
 			status = NodeStatusDraining
 		}
-		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, Status: status}
+		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, Status: status, WireGuardPublicKey: summary.WireGuardPublicKey, WireGuardEndpoint: summary.WireGuardEndpoint}
 	}
 	allocations := make([]*Allocation, 0, len(allocationMap))
 	for _, allocation := range allocationMap {

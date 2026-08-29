@@ -103,7 +103,6 @@ isolation:
   runtime: runsc
   network:
     enabled: true
-    network: tenant-acme
   quota:
     cpu: 2000
     memory: 2147483648
@@ -126,27 +125,24 @@ overlay. The API never resolves jobs, allocations, logs, or volumes outside the
 request's tenant scope.
 
 Each node needs `ip`, `wg`, `iptables`, kernel WireGuard support, and an
-`io.containerd.runsc.v1` shim. Define the network selected by a job in
-`/etc/trellis/networks/NETWORK.json` (or change `--network-config-dir`):
+`io.containerd.runsc.v1` shim. Trellis generates and persists the node's
+WireGuard identity, publishes its public key and endpoint during registration,
+and derives non-overlapping node subnets from the cluster pool. Configure only
+the cluster-wide pool and, when automatic discovery is unsuitable, the node's
+reachable endpoint:
 
-```json
-{
-  "cidr": "10.42.1.0/24",
-  "gateway": "10.42.1.1",
-  "wireguard_address": "10.42.255.1/32",
-  "private_key_file": "/etc/trellis/keys/tenant-acme.key",
-  "listen_port": 51820,
-  "peers": [{
-    "public_key": "NODE_B_PUBLIC_KEY",
-    "endpoint": "node-b.example:51820",
-    "allowed_ips": ["10.42.2.0/24"]
-  }]
-}
+```sh
+trellis-node --wireguard-pool 10.64.0.0/10 \
+  --wireguard-endpoint node-a.example:51820 \
+  --wireguard-port 51820
 ```
 
-Use a different allocation subnet, key, UDP port, and peer configuration on
-each node. Private-key files should be owned by root with mode `0600`. Trellis
-creates a tenant bridge and WireGuard interface, installs peer routes and
-cross-network forwarding guards, and places each allocation in its own network
-namespace. Starting an isolated allocation fails closed if any setup step does
-not succeed.
+All nodes in a cluster must use the same pool. The pool must not overlap host or
+datacenter routes, and UDP traffic on the configured port must be permitted
+between nodes. Private keys and IP leases live below the node data directory.
+The leader builds peer and `AllowedIPs` plans from registered node identities;
+the agent creates tenant bridges and WireGuard interfaces, installs routes and
+forwarding guards, and places each allocation in its own network namespace.
+Starting an isolated allocation fails closed if any setup step does not
+succeed. A detected deterministic subnet collision also fails closed rather
+than replacing another tenant route.

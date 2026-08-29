@@ -87,13 +87,15 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 	}
 
 	err = h.server.RegisterNode(ctx, &NodeRegistration{
-		ID:     request.ID,
-		Host:   request.Host,
-		Port:   request.Port,
-		CPU:    request.CPU,
-		Memory: request.Memory,
-		OS:     request.OS,
-		Arch:   request.Arch,
+		ID:                 request.ID,
+		Host:               request.Host,
+		Port:               request.Port,
+		CPU:                request.CPU,
+		Memory:             request.Memory,
+		OS:                 request.OS,
+		Arch:               request.Arch,
+		WireGuardPublicKey: request.WireGuardPublicKey,
+		WireGuardEndpoint:  request.WireGuardEndpoint,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())

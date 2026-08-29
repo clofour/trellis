@@ -16,7 +16,9 @@ type IsolationSpec struct {
 }
 
 type WireGuardSpec struct {
-	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Network is retained for manifest compatibility. Trellis derives the
+	// effective network from Tenant and never trusts this user-supplied value.
 	Network string `yaml:"network,omitempty" json:"network,omitempty"`
 }
 

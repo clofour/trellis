@@ -29,7 +29,7 @@ func Validate(spec *JobSpec) error {
 		if spec.Isolation.Runtime != "runsc" {
 			return fmt.Errorf("isolation runtime must be %q", "runsc")
 		}
-		if spec.Isolation.Network == nil || !spec.Isolation.Network.Enabled || strings.TrimSpace(spec.Isolation.Network.Network) == "" {
+		if spec.Isolation.Network == nil || !spec.Isolation.Network.Enabled {
 			return errors.New("an enabled WireGuard network is required when isolation is enabled")
 		}
 		if spec.Isolation.Quota == nil || spec.Isolation.Quota.CPU <= 0 || spec.Isolation.Quota.Memory <= 0 {

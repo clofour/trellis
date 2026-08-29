@@ -2,7 +2,10 @@ package network
 
 import (
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -43,10 +46,43 @@ func (execRunner) Run(ctx context.Context, name string, args ...string) error {
 }
 
 type WireGuardManager struct {
-	configDir string
-	stateDir  string
-	run       commandRunner
-	mu        sync.Mutex
+	configDir  string
+	stateDir   string
+	run        commandRunner
+	mu         sync.Mutex
+	listenPort int
+}
+
+func NewAutomatedWireGuardManager(stateDir string, listenPort int) (*WireGuardManager, error) {
+	m := &WireGuardManager{stateDir: stateDir, run: execRunner{}, listenPort: listenPort}
+	if _, err := m.Identity(); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (m *WireGuardManager) Identity() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := os.MkdirAll(m.stateDir, 0o700); err != nil {
+		return "", err
+	}
+	privatePath, publicPath := filepath.Join(m.stateDir, "identity.key"), filepath.Join(m.stateDir, "identity.pub")
+	if raw, err := os.ReadFile(publicPath); err == nil {
+		return strings.TrimSpace(string(raw)), nil
+	}
+	key, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return "", err
+	}
+	private, public := base64.StdEncoding.EncodeToString(key.Bytes()), base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
+	if err := os.WriteFile(privatePath, []byte(private+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(publicPath, []byte(public+"\n"), 0o644); err != nil {
+		return "", err
+	}
+	return public, nil
 }
 
 func NewWireGuardManager(configDir string) *WireGuardManager {
@@ -129,13 +165,24 @@ func allocationAddress(cidr, allocation string) (string, error) {
 	return fmt.Sprintf("%d.%d.%d.%d/%d", byte(b>>24), byte(b>>16), byte(b>>8), byte(b), p.Bits()), nil
 }
 
-func (m *WireGuardManager) Attach(ctx context.Context, tenant, networkName, allocation string) (_ *Attachment, retErr error) {
+func (m *WireGuardManager) Attach(ctx context.Context, request AttachRequest) (_ *Attachment, retErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	tenant, networkName, allocation := request.Tenant, request.Network, request.AllocationID
 	if !safeName.MatchString(tenant) || !safeAllocation.MatchString(allocation) {
 		return nil, fmt.Errorf("tenant and allocation must be safe identifiers")
 	}
-	cfg, err := m.load(networkName)
+	var cfg *Config
+	var err error
+	if request.Plan.CIDR == "" {
+		cfg, err = m.load(networkName)
+	} else {
+		cfg = &Config{CIDR: request.Plan.CIDR, Gateway: request.Plan.Gateway, WireGuardAddress: request.Plan.WireGuardAddress,
+			PrivateKeyFile: filepath.Join(m.stateDir, "identity.key"), ListenPort: m.listenPort}
+		for _, peer := range request.Plan.Peers {
+			cfg.Peers = append(cfg.Peers, Peer{PublicKey: peer.PublicKey, Endpoint: peer.Endpoint, AllowedIPs: peer.AllowedIPs})
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

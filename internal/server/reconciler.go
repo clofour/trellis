@@ -2,10 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/network"
 	"github.com/google/uuid"
 )
 
@@ -88,8 +92,22 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 	address := fmt.Sprintf("%s:%d", alloc.Node.Host, alloc.Node.Port)
 	switch action.Type {
 	case ActionStart:
+		s.mu.RLock()
 		job := s.jobs[jobKey(alloc.Tenant, alloc.JobName)]
+		if job == nil {
+			s.mu.RUnlock()
+			return fmt.Errorf("job %s was deleted before allocation start", alloc.JobName)
+		}
 		request := &api.AllocationRequest{Tenant: alloc.Tenant, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Task: alloc.Task, Isolation: job.Spec.Isolation}
+		if job.Spec.Isolation != nil {
+			plan, err := s.networkPlan(alloc.Tenant, alloc.Node)
+			if err != nil {
+				s.mu.RUnlock()
+				return err
+			}
+			request.NetworkPlan = plan
+		}
+		s.mu.RUnlock()
 		if err := s.state.PutAllocation(ctx, alloc); err != nil {
 			return fmt.Errorf("persist allocation: %w", err)
 		}
@@ -119,4 +137,47 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		}
 	}
 	return nil
+}
+
+func (s *Server) networkPlan(tenant string, target *Node) (*network.Plan, error) {
+	local := tenantNodeSubnet(s.networkPool, tenant, target.ID)
+	plan := &network.Plan{CIDR: local.String(), Gateway: local.Addr().Next().String(), WireGuardAddress: wireGuardAddress(tenant, target.ID)}
+	seen := map[string]uuid.UUID{local.String(): target.ID}
+	for _, node := range s.nodes {
+		if node.ID == target.ID || node.WireGuardPublicKey == "" || node.WireGuardEndpoint == "" {
+			continue
+		}
+		subnet := tenantNodeSubnet(s.networkPool, tenant, node.ID)
+		if previous, ok := seen[subnet.String()]; ok && previous != node.ID {
+			return nil, fmt.Errorf("automatic network subnet collision between nodes %s and %s", previous, node.ID)
+		}
+		seen[subnet.String()] = node.ID
+		plan.Peers = append(plan.Peers, network.PeerPlan{PublicKey: node.WireGuardPublicKey, Endpoint: node.WireGuardEndpoint, AllowedIPs: []string{subnet.String()}})
+	}
+	for _, job := range s.jobs {
+		if job.Spec.Isolation == nil || job.Spec.Tenant == tenant {
+			continue
+		}
+		for _, node := range s.nodes {
+			other := tenantNodeSubnet(s.networkPool, job.Spec.Tenant, node.ID)
+			if owner, exists := seen[other.String()]; exists {
+				return nil, fmt.Errorf("automatic network subnet %s for tenant %q conflicts with tenant %q on node %s", other, job.Spec.Tenant, tenant, owner)
+			}
+		}
+	}
+	return plan, nil
+}
+
+func tenantNodeSubnet(pool netip.Prefix, tenant string, node uuid.UUID) netip.Prefix {
+	h := sha256.Sum256(append([]byte(tenant+"\x00"), node[:]...))
+	base := binary.BigEndian.Uint32(pool.Addr().AsSlice())
+	available := uint32(1) << uint32(24-pool.Bits())
+	index := binary.BigEndian.Uint32(h[:4]) % available
+	b := base + index*256
+	return netip.PrefixFrom(netip.AddrFrom4([4]byte{byte(b >> 24), byte(b >> 16), byte(b >> 8), byte(b)}), 24)
+}
+
+func wireGuardAddress(tenant string, node uuid.UUID) string {
+	h := sha256.Sum256(append([]byte(tenant+"wg"), node[:]...))
+	return fmt.Sprintf("169.254.%d.%d/32", h[0], max(byte(1), h[1]))
 }

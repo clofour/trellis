@@ -84,6 +84,10 @@ func (a *Agent) SetNetworkManager(manager network.Manager) {
 	}
 }
 
+func (a *Agent) SetWireGuardIdentity(publicKey, endpoint string) {
+	a.nodeInfo.WireGuardPublicKey, a.nodeInfo.WireGuardEndpoint = publicKey, endpoint
+}
+
 func (a *Agent) SetAdvertiseAddress(host string, port int) {
 	a.nodeInfo.Host = host
 	a.nodeInfo.Port = port
@@ -113,7 +117,7 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, isolation *spec.IsolationSpec) error {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, isolation *spec.IsolationSpec, networkPlan *network.Plan) error {
 	spec := taskSpec
 	if spec == nil {
 		return fmt.Errorf("task spec is required")
@@ -156,7 +160,10 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 	containerID := allocID
 	var netAttachment *network.Attachment
 	if isolation != nil && isolation.Network != nil {
-		netAttachment, err = a.network.Attach(ctx, tenant, isolation.Network.Network, allocID)
+		if networkPlan == nil {
+			return fmt.Errorf("automatic WireGuard network plan is required")
+		}
+		netAttachment, err = a.network.Attach(ctx, network.AttachRequest{AllocationID: allocID, Tenant: tenant, Network: tenant, Plan: *networkPlan})
 		if err != nil {
 			return fmt.Errorf("attach WireGuard network: %w", err)
 		}

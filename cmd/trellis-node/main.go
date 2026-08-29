@@ -37,7 +37,8 @@ type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
 	DataDir, Cluster, ClusterToken, ContainerdSock, ConsulAddr string
 	ElectionTTL                                                time.Duration
-	NetworkConfigDir                                           string
+	WireGuardPool, WireGuardEndpoint                           string
+	WireGuardPort                                              int
 }
 
 func main() {
@@ -54,7 +55,9 @@ func main() {
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
 	f.StringVar(&cfg.ConsulAddr, "consul-addr", "127.0.0.1:8500", "Consul address")
 	f.DurationVar(&cfg.ElectionTTL, "election-ttl", 15*time.Second, "Leader election session TTL")
-	f.StringVar(&cfg.NetworkConfigDir, "network-config-dir", "/etc/trellis/networks", "Directory containing administrator-managed WireGuard network definitions")
+	f.StringVar(&cfg.WireGuardPool, "wireguard-pool", "10.64.0.0/10", "Cluster address pool used for automatic tenant networking")
+	f.StringVar(&cfg.WireGuardEndpoint, "wireguard-endpoint", "", "Externally reachable WireGuard host or host:port")
+	f.IntVar(&cfg.WireGuardPort, "wireguard-port", 51820, "WireGuard UDP listen port")
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -65,6 +68,9 @@ func run(parent context.Context, cfg *config) error {
 	defer stop()
 	if cfg.ClusterToken == "" {
 		return fmt.Errorf("--cluster-token is required")
+	}
+	if cfg.WireGuardPort < 1 || cfg.WireGuardPort > 65535 {
+		return fmt.Errorf("--wireguard-port must be between 1 and 65535")
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
@@ -99,6 +105,9 @@ func run(parent context.Context, cfg *config) error {
 	}
 	stateCtl := server.NewStateController(store, cfg.Cluster)
 	control := server.NewServer(log, local, stateCtl)
+	if err := control.SetNetworkPool(cfg.WireGuardPool); err != nil {
+		return err
+	}
 	if _, err := control.InitWithToken(ctx, cfg.ClusterToken); err != nil {
 		return fmt.Errorf("initialize control plane: %w", err)
 	}
@@ -115,7 +124,22 @@ func run(parent context.Context, cfg *config) error {
 	}
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "")
 	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), registry, leaderClient, id)
-	ag.SetNetworkManager(network.NewWireGuardManager(cfg.NetworkConfigDir))
+	networkManager, err := network.NewAutomatedWireGuardManager(filepath.Join(cfg.DataDir, "network"), cfg.WireGuardPort)
+	if err != nil {
+		return fmt.Errorf("initialize WireGuard identity: %w", err)
+	}
+	ag.SetNetworkManager(networkManager)
+	endpoint := cfg.WireGuardEndpoint
+	if endpoint == "" {
+		endpoint = net.JoinHostPort(agentHost, strconv.Itoa(cfg.WireGuardPort))
+	} else if _, _, err := net.SplitHostPort(endpoint); err != nil {
+		endpoint = net.JoinHostPort(endpoint, strconv.Itoa(cfg.WireGuardPort))
+	}
+	publicKey, err := networkManager.Identity()
+	if err != nil {
+		return err
+	}
+	ag.SetWireGuardIdentity(publicKey, endpoint)
 	ag.SetAdvertiseAddress(agentHost, agentPort)
 	var sysinfo syscall.Sysinfo_t
 	memory := int64(0)
