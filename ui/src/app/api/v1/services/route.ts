@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { orchestratorHeaders, TRELLIS_URL } from "@/lib/orchestrator";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const res = await fetch(`${TRELLIS_URL}/v1/nodes`, {
+    const query = new URL(request.url).search;
+    const res = await fetch(`${TRELLIS_URL}/v1/services${query}`, {
       headers: orchestratorHeaders(),
     });
 

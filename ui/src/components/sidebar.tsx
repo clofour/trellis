@@ -37,9 +37,21 @@ const navigation = [
       </svg>
     ),
   },
+  {
+    name: "Services",
+    href: "/services",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="4" cy="9" r="2.5" />
+        <circle cx="14" cy="4" r="2.5" />
+        <circle cx="14" cy="14" r="2.5" />
+        <path d="m6.2 7.8 5.6-2.6M6.2 10.2l5.6 2.6" />
+      </svg>
+    ),
+  },
 ];
 
-export function Sidebar() {
+export function Sidebar({ namespace }: { namespace: string }) {
   const pathname = usePathname();
 
   return (
@@ -81,6 +93,14 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-border p-4">
+        <div className="mb-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Namespace
+          </p>
+          <p className="mt-1 truncate font-mono text-xs text-foreground" title={namespace}>
+            {namespace}
+          </p>
+        </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
