@@ -13,6 +13,7 @@ import (
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
+	"github.com/clofour/trellis/internal/network"
 	"github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
@@ -30,6 +31,7 @@ type Agent struct {
 	ports    *PortManager
 	volumes  *VolumeManager
 	service  discovery.ServiceRegistry
+	network  network.Manager
 	server   *client.ServerClient
 	nodeInfo client.NodeInfo
 	mu       sync.RWMutex
@@ -49,6 +51,7 @@ type Allocation struct {
 	ServiceIDs  []string
 	Ports       []*runtime.Port
 	Mounts      []*runtime.Mount
+	Network     *network.Attachment
 	Status      string
 }
 
@@ -67,11 +70,18 @@ func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health
 		ports:    ports,
 		volumes:  volumes,
 		service:  service,
+		network:  network.DisabledManager{},
 		server:   server,
 		nodeInfo: client.NodeInfo{ID: nodeID, Host: "127.0.0.1", Port: 8127},
 	}
 
 	return agent
+}
+
+func (a *Agent) SetNetworkManager(manager network.Manager) {
+	if manager != nil {
+		a.network = manager
+	}
 }
 
 func (a *Agent) SetAdvertiseAddress(host string, port int) {
@@ -144,6 +154,13 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 	}
 
 	containerID := allocID
+	var netAttachment *network.Attachment
+	if isolation != nil && isolation.Network != nil {
+		netAttachment, err = a.network.Attach(ctx, tenant, isolation.Network.Network, allocID)
+		if err != nil {
+			return fmt.Errorf("attach WireGuard network: %w", err)
+		}
+	}
 	_, err = a.runtime.Create(ctx, runtime.CreateOptions{
 		ID:     containerID,
 		Image:  spec.Image,
@@ -167,19 +184,22 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 			}
 			return ""
 		}(),
-		Network: func() string {
-			if isolation != nil && isolation.Network != nil {
-				return isolation.Network.Network
+		NetworkNamespace: func() string {
+			if netAttachment != nil {
+				return netAttachment.Namespace
 			}
 			return ""
 		}(),
 	})
 	if err != nil {
+		_ = a.network.Detach(ctx, netAttachment)
 		return fmt.Errorf("create container %s: %w", containerID, err)
 	}
 
 	err = a.runtime.Start(ctx, containerID)
 	if err != nil {
+		_ = a.runtime.Remove(ctx, containerID)
+		_ = a.network.Detach(ctx, netAttachment)
 		return fmt.Errorf("start container %s: %w", containerID, err)
 	}
 
@@ -209,6 +229,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 		ServiceID:   "0",
 		Ports:       ports,
 		Mounts:      mounts,
+		Network:     netAttachment,
 		Status:      "running",
 	}
 	a.mu.Lock()
@@ -248,6 +269,9 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 		return fmt.Errorf("stop container %s: %w", containerID, err)
 	}
 
+	if err = a.network.Detach(ctx, alloc.Network); err != nil {
+		return fmt.Errorf("detach allocation network: %w", err)
+	}
 	err = a.runtime.Remove(ctx, containerID)
 	if err != nil {
 		return fmt.Errorf("remove container %s: %w", containerID, err)

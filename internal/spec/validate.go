@@ -45,6 +45,9 @@ func Validate(spec *JobSpec) error {
 		if strings.TrimSpace(group.Name) == "" {
 			return fmt.Errorf("task group %d: name is required", i)
 		}
+		if !identifierPattern.MatchString(group.Name) {
+			return fmt.Errorf("task group %q: name must be a safe identifier", group.Name)
+		}
 		if _, exists := groups[group.Name]; exists {
 			return fmt.Errorf("duplicate task group %q", group.Name)
 		}
@@ -59,6 +62,9 @@ func Validate(spec *JobSpec) error {
 		for j, task := range group.Tasks {
 			if strings.TrimSpace(task.Name) == "" {
 				return fmt.Errorf("task group %q task %d: name is required", group.Name, j)
+			}
+			if !identifierPattern.MatchString(task.Name) {
+				return fmt.Errorf("task group %q task %q: name must be a safe identifier", group.Name, task.Name)
 			}
 			if _, exists := tasks[task.Name]; exists {
 				return fmt.Errorf("task group %q: duplicate task %q", group.Name, task.Name)

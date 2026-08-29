@@ -75,12 +75,9 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 		oci.WithEnv(convertEnv(options.Env)),
 		oci.WithMounts(convertMounts(options.Mounts)),
 	}
-	if options.Network != "" {
-		// The runsc shim consumes this annotation through the node's configured
-		// WireGuard/CNI hook. Keeping the network name in the OCI spec also makes
-		// the isolation choice auditable through containerd.
-		ociSpecOpts = append(ociSpecOpts, oci.WithAnnotations(map[string]string{
-			"dev.trellis.wireguard.network": options.Network,
+	if options.NetworkNamespace != "" {
+		ociSpecOpts = append(ociSpecOpts, oci.WithLinuxNamespace(specs.LinuxNamespace{
+			Type: specs.NetworkNamespace, Path: options.NetworkNamespace,
 		}))
 	}
 	if options.CPU > 0 {

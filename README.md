@@ -121,7 +121,32 @@ task_groups:
 Isolated jobs require explicit per-task limits. Trellis enforces the tenant's
 aggregate CPU and memory quota before accepting a job, selects the configured
 gVisor `runsc` containerd shim, stores volumes below a tenant-specific path, and
-adds `dev.trellis.wireguard.network` to the OCI specification. Nodes must have
-the `io.containerd.runsc.v1` shim and a CNI/OCI hook which attaches that named
-WireGuard network installed. The API never resolves jobs, allocations, logs, or
-volumes outside the request's tenant scope.
+creates a network namespace connected to an administrator-defined WireGuard
+overlay. The API never resolves jobs, allocations, logs, or volumes outside the
+request's tenant scope.
+
+Each node needs `ip`, `wg`, `iptables`, kernel WireGuard support, and an
+`io.containerd.runsc.v1` shim. Define the network selected by a job in
+`/etc/trellis/networks/NETWORK.json` (or change `--network-config-dir`):
+
+```json
+{
+  "cidr": "10.42.1.0/24",
+  "gateway": "10.42.1.1",
+  "wireguard_address": "10.42.255.1/32",
+  "private_key_file": "/etc/trellis/keys/tenant-acme.key",
+  "listen_port": 51820,
+  "peers": [{
+    "public_key": "NODE_B_PUBLIC_KEY",
+    "endpoint": "node-b.example:51820",
+    "allowed_ips": ["10.42.2.0/24"]
+  }]
+}
+```
+
+Use a different allocation subnet, key, UDP port, and peer configuration on
+each node. Private-key files should be owned by root with mode `0600`. Trellis
+creates a tenant bridge and WireGuard interface, installs peer routes and
+cross-network forwarding guards, and places each allocation in its own network
+namespace. Starting an isolated allocation fails closed if any setup step does
+not succeed.

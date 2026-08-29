@@ -20,6 +20,7 @@ import (
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/election"
 	"github.com/clofour/trellis/internal/health"
+	"github.com/clofour/trellis/internal/network"
 	containerruntime "github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/server"
 	"github.com/clofour/trellis/internal/state"
@@ -36,6 +37,7 @@ type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
 	DataDir, Cluster, ClusterToken, ContainerdSock, ConsulAddr string
 	ElectionTTL                                                time.Duration
+	NetworkConfigDir                                           string
 }
 
 func main() {
@@ -52,6 +54,7 @@ func main() {
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
 	f.StringVar(&cfg.ConsulAddr, "consul-addr", "127.0.0.1:8500", "Consul address")
 	f.DurationVar(&cfg.ElectionTTL, "election-ttl", 15*time.Second, "Leader election session TTL")
+	f.StringVar(&cfg.NetworkConfigDir, "network-config-dir", "/etc/trellis/networks", "Directory containing administrator-managed WireGuard network definitions")
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -112,6 +115,7 @@ func run(parent context.Context, cfg *config) error {
 	}
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "")
 	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), registry, leaderClient, id)
+	ag.SetNetworkManager(network.NewWireGuardManager(cfg.NetworkConfigDir))
 	ag.SetAdvertiseAddress(agentHost, agentPort)
 	var sysinfo syscall.Sysinfo_t
 	memory := int64(0)
