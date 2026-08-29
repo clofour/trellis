@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -64,7 +65,22 @@ func (h *Handler) handleRun(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	err = h.agent.RunAllocation(ctx, request.Name, request.Tenant, request.JobName, request.GroupName, request.Name, request.Task, request.Isolation, request.NetworkPlan)
+	if len(request.Tasks) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "allocation tasks are required")
+	}
+	started := make([]string, 0, len(request.Tasks))
+	for i := range request.Tasks {
+		task := &request.Tasks[i]
+		id := request.Name + "-" + task.Name
+		err = h.agent.RunAllocation(ctx, id, request.Namespace, request.JobName, request.GroupName, task.Name, task, request.Runtime, request.WireGuard, request.NetworkPlan)
+		if err != nil {
+			for _, startedID := range started {
+				_ = h.agent.StopAllocation(context.WithoutCancel(ctx), startedID)
+			}
+			break
+		}
+		started = append(started, id)
+	}
 	if err != nil {
 		if errors.Is(err, ErrAllocationExists) {
 			return echo.NewHTTPError(http.StatusConflict, "allocation already exists")

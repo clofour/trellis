@@ -19,22 +19,11 @@ func Validate(spec *JobSpec) error {
 	if !identifierPattern.MatchString(spec.Name) {
 		return errors.New("job name must be a safe identifier")
 	}
-	if spec.Tenant != "" && !identifierPattern.MatchString(spec.Tenant) {
-		return errors.New("tenant must be a safe identifier")
+	if strings.TrimSpace(spec.Namespace) == "" {
+		return errors.New("job namespace is required")
 	}
-	if spec.Isolation != nil {
-		if strings.TrimSpace(spec.Tenant) == "" {
-			return errors.New("tenant is required when isolation is enabled")
-		}
-		if spec.Isolation.Runtime != "runsc" {
-			return fmt.Errorf("isolation runtime must be %q", "runsc")
-		}
-		if spec.Isolation.Network == nil || !spec.Isolation.Network.Enabled {
-			return errors.New("an enabled WireGuard network is required when isolation is enabled")
-		}
-		if spec.Isolation.Quota == nil || spec.Isolation.Quota.CPU <= 0 || spec.Isolation.Quota.Memory <= 0 {
-			return errors.New("positive CPU and memory quotas are required when isolation is enabled")
-		}
+	if !identifierPattern.MatchString(spec.Namespace) {
+		return errors.New("job namespace must be a safe identifier")
 	}
 	var totalCPU, totalMemory int
 	if len(spec.TaskGroups) == 0 {
@@ -52,6 +41,9 @@ func Validate(spec *JobSpec) error {
 			return fmt.Errorf("duplicate task group %q", group.Name)
 		}
 		groups[group.Name] = struct{}{}
+		if group.Runtime != "" && group.Runtime != "runc" && group.Runtime != "runsc" {
+			return fmt.Errorf("task group %q: unsupported runtime %q", group.Name, group.Runtime)
+		}
 		if group.Count < 1 {
 			return fmt.Errorf("task group %q: count must be at least 1", group.Name)
 		}
@@ -75,9 +67,6 @@ func Validate(spec *JobSpec) error {
 			}
 			if task.Resources != nil && (task.Resources.CPU < 0 || task.Resources.Memory < 0) {
 				return fmt.Errorf("task group %q task %q: resources cannot be negative", group.Name, task.Name)
-			}
-			if spec.Isolation != nil && (task.Resources == nil || task.Resources.CPU <= 0 || task.Resources.Memory <= 0) {
-				return fmt.Errorf("task group %q task %q: positive resource limits are required for isolated jobs", group.Name, task.Name)
 			}
 			if task.Resources != nil {
 				totalCPU += task.Resources.CPU * group.Count
@@ -114,8 +103,7 @@ func Validate(spec *JobSpec) error {
 			}
 		}
 	}
-	if spec.Isolation != nil && (totalCPU > spec.Isolation.Quota.CPU || totalMemory > spec.Isolation.Quota.Memory) {
-		return fmt.Errorf("job requests cpu=%d memory=%d, exceeding tenant quota cpu=%d memory=%d", totalCPU, totalMemory, spec.Isolation.Quota.CPU, spec.Isolation.Quota.Memory)
-	}
+	_ = totalCPU
+	_ = totalMemory
 	return nil
 }

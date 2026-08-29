@@ -11,18 +11,18 @@ type Plan struct {
 	Peers                           []PeerPlan
 }
 type AttachRequest struct {
-	AllocationID, Tenant, Network string
-	Plan                          Plan
+	AllocationID, Namespace, Network string
+	Plan                             Plan
 }
 
 type Attachment struct {
-	AllocationID string
-	Tenant       string
-	Network      string
-	Namespace    string
-	HostVeth     string
-	Address      string
-	LeasePath    string
+	AllocationID     string
+	Namespace        string
+	Network          string
+	NetworkNamespace string
+	HostVeth         string
+	Address          string
+	LeasePath        string
 }
 
 type Manager interface {

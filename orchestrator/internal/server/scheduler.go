@@ -14,7 +14,9 @@ type PlacementIntent struct {
 	Count         int
 	Nodes         []*Node
 	Allocations   []*Allocation
-	Task          *spec.TaskSpec
+	Tasks         []spec.TaskSpec
+	// Task is deprecated; Tasks represents the colocated scheduling unit.
+	Task *spec.TaskSpec
 }
 
 type Placement struct {
@@ -36,9 +38,11 @@ func Schedule(intent *PlacementIntent) []Placement {
 	for _, alloc := range intent.Allocations {
 		if alloc.Node != nil {
 			replicaCounts[alloc.Node.ID]++
-			if alloc.Task != nil && alloc.Task.Resources != nil {
-				usedCPU[alloc.Node.ID] += alloc.Task.Resources.CPU
-				usedMemory[alloc.Node.ID] += int64(alloc.Task.Resources.Memory)
+			for _, task := range alloc.Tasks {
+				if task.Resources != nil {
+					usedCPU[alloc.Node.ID] += task.Resources.CPU
+					usedMemory[alloc.Node.ID] += int64(task.Resources.Memory)
+				}
 			}
 		}
 	}
@@ -47,7 +51,13 @@ func Schedule(intent *PlacementIntent) []Placement {
 		var target *Node
 		var reqCPU int
 		var reqMemory int64
-		if intent.Task != nil && intent.Task.Resources != nil {
+		for _, task := range intent.Tasks {
+			if task.Resources != nil {
+				reqCPU += task.Resources.CPU
+				reqMemory += int64(task.Resources.Memory)
+			}
+		}
+		if len(intent.Tasks) == 0 && intent.Task != nil && intent.Task.Resources != nil {
 			reqCPU = intent.Task.Resources.CPU
 			reqMemory = int64(intent.Task.Resources.Memory)
 		}

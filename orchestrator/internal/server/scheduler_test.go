@@ -42,3 +42,16 @@ func TestScheduleRespectsResourcesAndDrainingNodes(t *testing.T) {
 		t.Fatalf("unexpected placements: %#v", counts)
 	}
 }
+
+func TestScheduleTreatsTaskGroupAsOneResourceUnit(t *testing.T) {
+	node := &Node{ID: uuid.New(), Status: NodeStatusHealthy}
+	node.CPU, node.Memory = 1000, 1024
+	tasks := []spec.TaskSpec{
+		{Name: "app", Resources: &spec.ResourcesSpec{CPU: 600, Memory: 256}},
+		{Name: "proxy", Resources: &spec.ResourcesSpec{CPU: 500, Memory: 256}},
+	}
+	placements := Schedule(&PlacementIntent{Count: 1, Nodes: []*Node{node}, Tasks: tasks})
+	if len(placements) != 0 {
+		t.Fatalf("placed a group whose aggregate task resources exceed the node: %#v", placements)
+	}
+}

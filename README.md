@@ -9,6 +9,24 @@ one node as leader; only that node exposes the control-plane API and reconciles
 jobs. The remaining nodes continue running allocations and automatically take
 part in the next election.
 
+## Resource model
+
+Trellis intentionally exposes low-level orchestration primitives rather than
+product concepts. Operators build tenants, projects, users, applications, and
+environments in their own control plane. Authentication and authorization of
+those users also happens outside Trellis.
+
+A job is identified by `(namespace, name)`. A namespace is a generic isolation
+domain—not a synonym for any operator-defined product concept—and scopes job
+and allocation identity, persistent storage, and network identity. Execution
+runtime and per-task CPU and memory limits remain independent of namespaces.
+
+Each task-group replica is one allocation and one scheduling/colocation unit.
+All tasks in that replica run on the same node. Runtime is selected for the
+task group, resource limits are selected per task, and `network.wireguard`
+only selects whether Trellis uses WireGuard to implement the namespace network;
+it does not define or disable the namespace isolation model.
+
 ## Quick start
 
 The demo scripts provision Consul and containerd, then start a Trellis node on
@@ -38,10 +56,12 @@ with the elected leader.
 Submit a job using a YAML manifest:
 
 ```yaml
+namespace: examples
 name: hello
 task_groups:
   - name: web
     count: 2
+    runtime: runc
     tasks:
       - name: server
         image: docker.io/library/nginx:alpine
@@ -67,7 +87,7 @@ listens on `8127`.
 ## Single-node production setup
 
 This section walks through deploying Trellis with the dashboard UI and
-multi-tenant isolation on a single server. Unlike the Vagrant demo, this
+namespaced workloads on a single server. Unlike the Vagrant demo, this
 targets a real Linux machine (bare metal or VM) and produces a systemd-managed
 stack you can operate in production.
 
@@ -78,7 +98,7 @@ stack you can operate in production.
 - Go 1.26+ (for building from source) or pre-built binaries from CI
 - Node.js 20+ and npm (for the dashboard UI)
 
-For tenant isolation (optional):
+For WireGuard networking (optional):
 - Linux kernel with WireGuard support (5.6+ has it built in)
 - `wireguard-tools`, `iproute2`, and `iptables` packages
 - gVisor `runsc` containerd shim (`io.containerd.runsc.v1`)
@@ -290,10 +310,10 @@ EnvironmentFile=/opt/trellis/ui/.env.local
 WantedBy=multi-user.target
 ```
 
-### Step 7: Enable multi-tenant isolation (optional)
+### Step 7: Enable WireGuard namespace networking (optional)
 
-Tenant isolation uses gVisor for container sandboxing and WireGuard for network
-segmentation. Install the required tools:
+Trellis can use gVisor for task-group execution and WireGuard as the mechanism
+for namespace network segmentation. Install the required tools:
 
 ```sh
 sudo apt-get install -y wireguard-tools iptables
@@ -312,21 +332,17 @@ automatically on first start and persisted under the data directory. On a
 single-node setup the default `--wireguard-pool 10.64.0.0/10` works without
 changes.
 
-Submit a tenant-scoped job:
+Submit a namespaced job:
 
 ```yaml
+namespace: acme
 name: storefront
-tenant: acme
-isolation:
-  runtime: runsc
-  network:
-    enabled: true
-  quota:
-    cpu: 2000
-    memory: 2147483648
+network:
+  wireguard: true
 task_groups:
   - name: web
     count: 2
+    runtime: runsc
     tasks:
       - name: server
         image: docker.io/library/nginx:alpine
@@ -345,14 +361,12 @@ task_groups:
 ```sh
 trellis --server-addr localhost:8128 \
   --cluster-token "$TOKEN" \
-  --tenant acme \
   jobs apply --file storefront.yaml
 ```
 
-Isolated jobs require explicit `resources` on every task. Trellis enforces the
-tenant's aggregate quota, runs each container under the `runsc` shim, stores
-volumes under a tenant-specific path, and places each allocation in its own
-WireGuard-connected network namespace.
+The group runtime is independent of its namespace, while each task's `resources`
+are enforced by the container runtime. Persistent volumes and WireGuard network
+identity are scoped by namespace.
 
 ### Step 8: Verify the deployment
 
@@ -391,7 +405,7 @@ node, jobs, and allocation health.
 | `--containerd-sock` | `/run/containerd/containerd.sock` | containerd socket path |
 | `--consul-addr` | `127.0.0.1:8500` | Consul HTTP address |
 | `--election-ttl` | `15s` | Leader election session TTL |
-| `--wireguard-pool` | `10.64.0.0/10` | Address pool for tenant networking |
+| `--wireguard-pool` | `10.64.0.0/10` | Address pool for namespace networking |
 | `--wireguard-endpoint` | (auto) | Externally reachable WireGuard host:port |
 | `--wireguard-port` | `51820` | WireGuard UDP listen port |
 
@@ -421,39 +435,14 @@ healthy nodes with enough spare capacity:
 go run ./cmd/trellis nodes drain NODE_ID
 ```
 
-## Optional tenant isolation
+## Optional WireGuard networking
 
-Trusted jobs continue to work without any tenant configuration. A frontend for
-untrusted users can instead scope every request with `X-Trellis-Tenant` (the CLI
-equivalent is `--tenant`) and submit an isolated job:
-
-```yaml
-name: storefront
-tenant: acme
-isolation:
-  runtime: runsc
-  network:
-    enabled: true
-  quota:
-    cpu: 2000
-    memory: 2147483648
-task_groups:
-  - name: web
-    count: 2
-    tasks:
-      - name: server
-        image: docker.io/library/nginx:alpine
-        resources:
-          cpu: 500
-          memory: 268435456
-```
-
-Isolated jobs require explicit per-task limits. Trellis enforces the tenant's
-aggregate CPU and memory quota before accepting a job, selects the configured
-gVisor `runsc` containerd shim, stores volumes below a tenant-specific path, and
-creates a network namespace connected to an administrator-defined WireGuard
-overlay. The API never resolves jobs, allocations, logs, or volumes outside the
-request's tenant scope.
+A namespace is required for every job and always defines its isolation scope.
+Operators select a namespace when querying jobs (the CLI option is `--namespace`),
+while the namespace for an applied job comes from its manifest. WireGuard is an
+optional implementation mechanism for that namespace network, as shown above;
+`wireguard: false` does not change the conceptual namespace isolation guarantee.
+Task group runtime and task resource limits are deliberately separate settings.
 
 Each node needs `ip`, `wg`, `iptables`, kernel WireGuard support, and an
 `io.containerd.runsc.v1` shim. Trellis generates and persists the node's
@@ -472,8 +461,8 @@ All nodes in a cluster must use the same pool. The pool must not overlap host or
 datacenter routes, and UDP traffic on the configured port must be permitted
 between nodes. Private keys and IP leases live below the node data directory.
 The leader builds peer and `AllowedIPs` plans from registered node identities;
-the agent creates tenant bridges and WireGuard interfaces, installs routes and
+the agent creates namespace bridges and WireGuard interfaces, installs routes and
 forwarding guards, and places each allocation in its own network namespace.
 Starting an isolated allocation fails closed if any setup step does not
 succeed. A detected deterministic subnet collision also fails closed rather
-than replacing another tenant route.
+than replacing another namespace route.
