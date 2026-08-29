@@ -6,8 +6,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"time"
 )
+
+const maxResponseBody = 1 << 20
+
+func newHTTPClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second,
+		IdleConnTimeout: 90 * time.Second, MaxIdleConns: 100,
+	}}
+}
 
 type client struct {
 	token  string
@@ -43,9 +56,12 @@ func (c *client) request(ctx context.Context, method string, url string, request
 		_ = response.Body.Close()
 	}()
 
-	responseBody, err := io.ReadAll(response.Body)
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBody+1))
 	if err != nil {
 		return fmt.Errorf("read response body: %w", err)
+	}
+	if len(responseBody) > maxResponseBody {
+		return fmt.Errorf("response body exceeds %d bytes", maxResponseBody)
 	}
 
 	if checkStatusCode(response.StatusCode) {
@@ -81,7 +97,7 @@ func (c *client) stream(ctx context.Context, url string) (io.ReadCloser, error) 
 	}
 	if checkStatusCode(response.StatusCode) {
 		defer response.Body.Close()
-		body, _ := io.ReadAll(response.Body)
+		body, _ := io.ReadAll(io.LimitReader(response.Body, maxResponseBody))
 		return nil, fmt.Errorf("status %d: %s", response.StatusCode, bytes.TrimSpace(body))
 	}
 	return response.Body, nil

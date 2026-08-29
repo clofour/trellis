@@ -9,9 +9,11 @@ import (
 	"github.com/clofour/trellis/internal/runtime"
 )
 
-const checkInterval = 3 * time.Second
-const maxRestarts = 3
-const windowSize = 10 * time.Minute
+const (
+	checkInterval = 3 * time.Second
+	maxRestarts   = 3
+	windowSize    = 10 * time.Minute
+)
 
 type RestartController struct {
 	runtime runtime.ContainerRuntime
@@ -42,7 +44,7 @@ func NewRestartController(runtime runtime.ContainerRuntime, subscriber RestartSu
 	}
 }
 
-func (r *RestartController) Track(ctx context.Context, allocID string) {
+func (r *RestartController) Track(allocID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -53,7 +55,7 @@ func (r *RestartController) Track(ctx context.Context, allocID string) {
 	}
 }
 
-func (r *RestartController) Untrack(ctx context.Context, allocID string) error {
+func (r *RestartController) Untrack(allocID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -91,7 +93,9 @@ func (r *RestartController) RunDetectionLoop(ctx context.Context) {
 				}
 
 				if containerState.Status == runtime.StatusStopped {
-					_ = r.RequestRestart(ctx, allocID)
+					if err := r.RequestRestart(ctx, allocID); err != nil {
+						continue
+					}
 				}
 			}
 

@@ -85,7 +85,7 @@ func Validate(spec *JobSpec) error {
 			}
 			volumes := make(map[string]struct{})
 			for _, volume := range task.Volumes {
-				if strings.TrimSpace(volume.Name) == "" || strings.TrimSpace(volume.Path) == "" || !strings.HasPrefix(volume.Path, "/") {
+				if !identifierPattern.MatchString(volume.Name) || strings.TrimSpace(volume.Path) == "" || !strings.HasPrefix(volume.Path, "/") {
 					return fmt.Errorf("task group %q task %q: volume name and absolute path are required", group.Name, task.Name)
 				}
 				if _, exists := volumes[volume.Name]; exists {

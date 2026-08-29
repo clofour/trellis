@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -11,17 +10,12 @@ import (
 
 func newLogReader(ctx context.Context, file *os.File, follow bool, tail int) (io.ReadCloser, error) {
 	if tail > 0 {
-		data, err := io.ReadAll(file)
+		start, err := tailOffset(file, tail)
 		if err != nil {
 			_ = file.Close()
 			return nil, err
 		}
-		lines := bytes.Split(data, []byte("\n"))
-		start := len(lines) - tail - 1
-		if start < 0 {
-			start = 0
-		}
-		if _, err := file.Seek(int64(len(data)-len(bytes.Join(lines[start:], []byte("\n")))), io.SeekStart); err != nil {
+		if _, err := file.Seek(start, io.SeekStart); err != nil {
 			_ = file.Close()
 			return nil, err
 		}
@@ -34,6 +28,8 @@ func newLogReader(ctx context.Context, file *os.File, follow bool, tail int) (io
 		defer file.Close()
 		defer writer.Close()
 		buf := bufio.NewReader(file)
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
 		for {
 			chunk, err := buf.ReadBytes('\n')
 			if len(chunk) > 0 {
@@ -51,9 +47,36 @@ func newLogReader(ctx context.Context, file *os.File, follow bool, tail int) (io
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(200 * time.Millisecond):
+			case <-ticker.C:
 			}
 		}
 	}()
 	return reader, nil
+}
+
+func tailOffset(file *os.File, tail int) (int64, error) {
+	info, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	position := info.Size()
+	lines := 0
+	buffer := make([]byte, 32*1024)
+	for position > 0 {
+		start := max(int64(0), position-int64(len(buffer)))
+		n, err := file.ReadAt(buffer[:position-start], start)
+		if err != nil && err != io.EOF {
+			return 0, err
+		}
+		for i := n - 1; i >= 0; i-- {
+			if buffer[i] == '\n' && start+int64(i) < info.Size()-1 {
+				lines++
+				if lines == tail {
+					return start + int64(i) + 1, nil
+				}
+			}
+		}
+		position = start
+	}
+	return 0, nil
 }

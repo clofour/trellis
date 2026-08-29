@@ -62,10 +62,11 @@ func Schedule(intent *PlacementIntent) []Placement {
 			if reqCPU == 0 && reqMemory == 0 {
 				better = target == nil || replicaCounts[node.ID] < replicaCounts[target.ID]
 			} else if target != nil {
-				// Best fit leaves the least aggregate spare capacity.
-				spare := int64(node.CPU-usedCPU[node.ID]-reqCPU)*1024*1024 + node.Memory - usedMemory[node.ID] - reqMemory
-				targetSpare := int64(target.CPU-usedCPU[target.ID]-reqCPU)*1024*1024 + target.Memory - usedMemory[target.ID] - reqMemory
-				better = spare < targetSpare
+				// Best fit compares normalized utilization rather than adding
+				// incomparable CPU and byte units.
+				utilization := placementUtilization(node, usedCPU[node.ID]+reqCPU, usedMemory[node.ID]+reqMemory)
+				targetUtilization := placementUtilization(target, usedCPU[target.ID]+reqCPU, usedMemory[target.ID]+reqMemory)
+				better = utilization > targetUtilization
 			}
 			if better {
 				target = node
@@ -85,4 +86,15 @@ func Schedule(intent *PlacementIntent) []Placement {
 	}
 
 	return result
+}
+
+func placementUtilization(node *Node, cpu int, memory int64) float64 {
+	var cpuRatio, memoryRatio float64
+	if node.CPU > 0 {
+		cpuRatio = float64(cpu) / float64(node.CPU)
+	}
+	if node.Memory > 0 {
+		memoryRatio = float64(memory) / float64(node.Memory)
+	}
+	return max(cpuRatio, memoryRatio)
 }

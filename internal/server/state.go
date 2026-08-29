@@ -146,27 +146,6 @@ func (s *StateController) get(ctx context.Context, key string, value any) (bool,
 	return true, nil
 }
 
-func (s *StateController) list(ctx context.Context, prefix string, value any) error {
-	rawArray, err := s.store.List(ctx, prefix)
-	if err != nil {
-		return fmt.Errorf("list prefix %s: %w", prefix, err)
-	}
-	if rawArray == nil {
-		return nil
-	}
-
-	rawText, err := json.Marshal(rawArray)
-	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
-	}
-	err = json.Unmarshal(rawText, value)
-	if err != nil {
-		return fmt.Errorf("unmarshal json: %w", err)
-	}
-
-	return nil
-}
-
 func (s *StateController) put(ctx context.Context, key string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {

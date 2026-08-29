@@ -116,9 +116,14 @@ func run(parent context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("init runtime: %w", err)
 	}
+	defer func() {
+		if err := runtimeClient.Close(); err != nil {
+			log.Error("close runtime", "error", err)
+		}
+	}()
 	healthMgr := health.NewHealthManager(log, runtimeClient, nil)
 	restartCtl := agent.NewRestartController(runtimeClient, nil)
-	registry, err := discovery.NewConsulRegistry()
+	registry, err := discovery.NewConsulRegistryWithAddress(cfg.ConsulAddr)
 	if err != nil {
 		return fmt.Errorf("init service registry: %w", err)
 	}
@@ -147,9 +152,7 @@ func run(parent context.Context, cfg *config) error {
 		memory = int64(sysinfo.Totalram) * int64(sysinfo.Unit)
 	}
 	ag.SetResources(goruntime.NumCPU()*1000, memory, goruntime.GOOS, goruntime.GOARCH)
-	if err := ag.Init(ctx); err != nil {
-		return fmt.Errorf("initialize agent: %w", err)
-	}
+	ag.Init(ctx)
 
 	agentHTTP := echo.New()
 	agentHTTP.Use(middleware.Recover(), authMiddleware(cfg.ClusterToken))
@@ -180,7 +183,10 @@ func run(parent context.Context, cfg *config) error {
 				leaderCancel()
 			}
 			return nil
-		case event := <-events:
+		case event, ok := <-events:
+			if !ok {
+				return fmt.Errorf("leader election event stream closed")
+			}
 			if event.Elected {
 				if err := control.Reload(ctx); err != nil {
 					log.Error("load leader state failed", "error", err)
@@ -229,6 +235,8 @@ func watchLeader(ctx context.Context, log *slog.Logger, elector *election.Electo
 			log.Error("discover leader failed", "error", err)
 		} else if leader != nil {
 			target.SetAddress(leader.Address)
+		} else {
+			target.SetAddress("")
 		}
 		select {
 		case <-ctx.Done():

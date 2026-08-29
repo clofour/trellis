@@ -37,7 +37,7 @@ func (c *ConsulStore) Client() *api.Client {
 func (c *ConsulStore) Get(ctx context.Context, key string) ([]byte, error) {
 	kv := c.client.KV()
 
-	data, _, err := kv.Get(key, nil)
+	data, _, err := kv.Get(key, (&api.QueryOptions{}).WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", key, err)
 	}
@@ -51,7 +51,7 @@ func (c *ConsulStore) Get(ctx context.Context, key string) ([]byte, error) {
 func (c *ConsulStore) List(ctx context.Context, prefix string) (map[string][]byte, error) {
 	kv := c.client.KV()
 
-	data, _, err := kv.List(prefix, nil)
+	data, _, err := kv.List(prefix, (&api.QueryOptions{}).WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list %s: %w", prefix, err)
 	}
@@ -72,7 +72,7 @@ func (c *ConsulStore) Put(ctx context.Context, key string, value []byte) error {
 		Value: value,
 	}
 
-	_, err := kv.Put(p, nil)
+	_, err := kv.Put(p, (&api.WriteOptions{}).WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("put %s: %w", key, err)
 	}
@@ -83,7 +83,7 @@ func (c *ConsulStore) Put(ctx context.Context, key string, value []byte) error {
 func (c *ConsulStore) Delete(ctx context.Context, key string) error {
 	kv := c.client.KV()
 
-	_, err := kv.Delete(key, nil)
+	_, err := kv.Delete(key, (&api.WriteOptions{}).WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("delete %s: %w", key, err)
 	}

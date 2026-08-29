@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"syscall"
 
 	"github.com/clofour/trellis/internal/runtime"
@@ -18,6 +19,7 @@ type PortManager struct {
 	min    int
 	max    int
 	cursor int
+	mu     sync.Mutex
 }
 
 func NewPortManager(containerRuntime runtime.ContainerRuntime, min int, max int, cursor int) *PortManager {
@@ -40,6 +42,12 @@ func NewPortManager(containerRuntime runtime.ContainerRuntime, min int, max int,
 }
 
 func (p *PortManager) Check(hostPort int) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.check(hostPort)
+}
+
+func (p *PortManager) check(hostPort int) (bool, error) {
 	_, ok := p.claims[hostPort]
 	if ok {
 		return true, nil
@@ -61,6 +69,8 @@ func (p *PortManager) Check(hostPort int) (bool, error) {
 }
 
 func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	hostPort := portSpec.HostPort
 	if hostPort == 0 {
 
@@ -70,7 +80,7 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 				return nil, fmt.Errorf("no free ports")
 			}
 
-			taken, err := p.Check(p.cursor)
+			taken, err := p.check(p.cursor)
 
 			if err != nil {
 				return nil, err
@@ -88,7 +98,7 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 
 	} else {
 
-		taken, err := p.Check(hostPort)
+		taken, err := p.check(hostPort)
 		if err != nil {
 			return nil, err
 		} else if taken {
@@ -108,6 +118,11 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 }
 
 func (p *PortManager) Release(port *runtime.Port) error {
+	if port == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	hostPort := port.HostPort
 
 	_, ok := p.claims[hostPort]
@@ -117,10 +132,5 @@ func (p *PortManager) Release(port *runtime.Port) error {
 
 	delete(p.claims, hostPort)
 
-	return nil
-}
-
-func Restore() error {
-	// Not Implemented
 	return nil
 }

@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -47,7 +49,6 @@ type Allocation struct {
 	Spec      *spec.TaskSpec
 
 	ContainerID string
-	ServiceID   string
 	ServiceIDs  []string
 	Ports       []*runtime.Port
 	Mounts      []*runtime.Mount
@@ -56,6 +57,11 @@ type Allocation struct {
 }
 
 const heartbeatInterval = 10 * time.Second
+
+var (
+	ErrAllocationNotFound = errors.New("allocation not found")
+	ErrAllocationExists   = errors.New("allocation already exists")
+)
 
 func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, restart *RestartController, ports *PortManager, volumes *VolumeManager, service discovery.ServiceRegistry, server *client.ServerClient, nodeID uuid.UUID) *Agent {
 	agent := &Agent{
@@ -97,21 +103,25 @@ func (a *Agent) SetResources(cpu int, memory int64, osName, arch string) {
 	a.nodeInfo.CPU, a.nodeInfo.Memory, a.nodeInfo.OS, a.nodeInfo.Arch = cpu, memory, osName, arch
 }
 
-func (a *Agent) Init(ctx context.Context) error {
+func (a *Agent) Init(ctx context.Context) {
 	a.health.Subscriber = a
+	a.health.SetContext(ctx)
 	a.restart.Subscriber = a
 
 	go a.runHeartbeatLoop(ctx)
 	go a.restart.RunDetectionLoop(ctx)
-	return nil
 }
 
-func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
+func (a *Agent) GetAllocations() []*Allocation {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	result := make([]*Allocation, 0, len(a.allocations))
 	for _, alloc := range a.allocations {
-		result = append(result, alloc)
+		copy := *alloc
+		copy.Ports = append([]*runtime.Port(nil), alloc.Ports...)
+		copy.Mounts = append([]*runtime.Mount(nil), alloc.Mounts...)
+		copy.ServiceIDs = append([]string(nil), alloc.ServiceIDs...)
+		result = append(result, &copy)
 	}
 
 	return result
@@ -125,14 +135,47 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 	if allocID == "" {
 		return fmt.Errorf("allocation ID is required")
 	}
-	a.mu.RLock()
+	a.mu.Lock()
 	_, exists := a.allocations[allocID]
-	a.mu.RUnlock()
 	if exists {
-		return fmt.Errorf("allocation %s already exists", allocID)
+		a.mu.Unlock()
+		return fmt.Errorf("%w: %s", ErrAllocationExists, allocID)
 	}
-
+	alloc := &Allocation{ID: allocID, Tenant: tenant, JobName: jobName, GroupName: groupName, TaskName: taskName, Spec: spec, Status: "starting"}
+	a.allocations[allocID] = alloc
+	a.mu.Unlock()
+	committed := false
+	containerCreated := false
+	containerStarted := false
+	tracked := false
+	healthRegistered := false
+	var netAttachment *network.Attachment
 	var ports []*runtime.Port
+	defer func() {
+		if committed {
+			return
+		}
+		if healthRegistered {
+			a.health.DeregisterTask(allocID)
+		}
+		if tracked {
+			_ = a.restart.Untrack(allocID)
+		}
+		if containerStarted {
+			_ = a.runtime.Stop(context.WithoutCancel(ctx), allocID)
+		}
+		if containerCreated {
+			_ = a.runtime.Remove(context.WithoutCancel(ctx), allocID)
+		}
+		_ = a.network.Detach(context.WithoutCancel(ctx), netAttachment)
+		for _, p := range ports {
+			_ = a.ports.Release(p)
+		}
+		a.mu.Lock()
+		delete(a.allocations, allocID)
+		a.mu.Unlock()
+	}()
+
 	for _, p := range spec.Ports {
 		port, err := a.ports.Claim(p)
 		if err != nil {
@@ -158,7 +201,6 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 	}
 
 	containerID := allocID
-	var netAttachment *network.Attachment
 	if isolation != nil && isolation.Network != nil {
 		if networkPlan == nil {
 			return fmt.Errorf("automatic WireGuard network plan is required")
@@ -199,16 +241,15 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 		}(),
 	})
 	if err != nil {
-		_ = a.network.Detach(ctx, netAttachment)
 		return fmt.Errorf("create container %s: %w", containerID, err)
 	}
+	containerCreated = true
 
 	err = a.runtime.Start(ctx, containerID)
 	if err != nil {
-		_ = a.runtime.Remove(ctx, containerID)
-		_ = a.network.Detach(ctx, netAttachment)
 		return fmt.Errorf("start container %s: %w", containerID, err)
 	}
+	containerStarted = true
 
 	if spec.HealthCheck != nil {
 		check := *spec.HealthCheck
@@ -219,11 +260,13 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 			}
 		}
 		a.health.RegisterTask(allocID, containerID, &check)
+		healthRegistered = true
 	}
 
-	a.restart.Track(ctx, allocID)
+	a.restart.Track(allocID)
+	tracked = true
 
-	alloc := &Allocation{
+	ready := &Allocation{
 		ID:     allocID,
 		Tenant: tenant,
 
@@ -233,20 +276,20 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 		Spec:      spec,
 
 		ContainerID: containerID,
-		ServiceID:   "0",
 		Ports:       ports,
 		Mounts:      mounts,
 		Network:     netAttachment,
 		Status:      "running",
 	}
 	a.mu.Lock()
-	a.allocations[allocID] = alloc
+	a.allocations[allocID] = ready
 	a.mu.Unlock()
 	if spec.HealthCheck == nil {
 		if err := a.OnHealthy(ctx, allocID); err != nil {
 			return fmt.Errorf("register allocation service: %w", err)
 		}
 	}
+	committed = true
 
 	return nil
 }
@@ -256,57 +299,61 @@ func (a *Agent) Logs(ctx context.Context, allocID string, follow bool, tail int)
 	alloc := a.allocations[allocID]
 	a.mu.RUnlock()
 	if alloc == nil {
-		return nil, fmt.Errorf("allocation %s not found", allocID)
+		return nil, fmt.Errorf("%w: %s", ErrAllocationNotFound, allocID)
 	}
 	return a.runtime.Logs(ctx, alloc.ContainerID, follow, tail)
 }
 
 func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	a.mu.RLock()
-	alloc, ok := a.allocations[allocID]
+	stored, ok := a.allocations[allocID]
+	var alloc Allocation
+	if ok {
+		alloc = *stored
+		alloc.Ports = append([]*runtime.Port(nil), stored.Ports...)
+		alloc.ServiceIDs = append([]string(nil), stored.ServiceIDs...)
+	}
 	a.mu.RUnlock()
 	if !ok {
-		return fmt.Errorf("allocation %s not found", allocID)
+		return fmt.Errorf("%w: %s", ErrAllocationNotFound, allocID)
 	}
 
 	containerID := alloc.ContainerID
 
-	err := a.runtime.Stop(ctx, containerID)
-	if err != nil {
-		return fmt.Errorf("stop container %s: %w", containerID, err)
+	var errs []error
+	if err := a.runtime.Stop(ctx, containerID); err != nil {
+		errs = append(errs, fmt.Errorf("stop container %s: %w", containerID, err))
 	}
-
-	if err = a.network.Detach(ctx, alloc.Network); err != nil {
-		return fmt.Errorf("detach allocation network: %w", err)
+	if err := a.network.Detach(ctx, alloc.Network); err != nil {
+		errs = append(errs, fmt.Errorf("detach allocation network: %w", err))
 	}
-	err = a.runtime.Remove(ctx, containerID)
-	if err != nil {
-		return fmt.Errorf("remove container %s: %w", containerID, err)
+	if err := a.runtime.Remove(ctx, containerID); err != nil {
+		errs = append(errs, fmt.Errorf("remove container %s: %w", containerID, err))
 	}
 
 	for _, id := range alloc.ServiceIDs {
-		_ = a.service.Deregister(ctx, id)
+		if err := a.service.Deregister(ctx, id); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	a.health.DeregisterTask(allocID)
 
-	if err = a.restart.Untrack(ctx, allocID); err != nil {
-		return fmt.Errorf("untrack allocation %s: %w", allocID, err)
+	if err := a.restart.Untrack(allocID); err != nil {
+		errs = append(errs, fmt.Errorf("untrack allocation %s: %w", allocID, err))
 	}
 
 	for _, p := range alloc.Ports {
 		err := a.ports.Release(p)
 		if err != nil {
-			return fmt.Errorf("release port %d: %w", p.HostPort, err)
+			errs = append(errs, fmt.Errorf("release port %d: %w", p.HostPort, err))
 		}
 	}
-	alloc.Ports = nil
-
 	a.mu.Lock()
 	delete(a.allocations, allocID)
 	a.mu.Unlock()
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (a *Agent) OnHealthy(ctx context.Context, allocID string) error {
@@ -315,35 +362,59 @@ func (a *Agent) OnHealthy(ctx context.Context, allocID string) error {
 	if ok {
 		alloc.Status = "healthy"
 	}
+	var ports []*runtime.Port
+	var taskName string
+	if ok {
+		ports = append(ports, alloc.Ports...)
+		taskName = alloc.TaskName
+	}
 	a.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("alloc %s not found", allocID)
 	}
 
-	for _, p := range alloc.Ports {
+	var registered []string
+	for _, p := range ports {
 		id := fmt.Sprintf("%s-%d", allocID, p.HostPort)
-		if err := a.service.Register(ctx, id, alloc.TaskName, "127.0.0.1", p.HostPort); err != nil {
+		a.mu.RLock()
+		alreadyRegistered := currentServiceRegistered(a.allocations[allocID], id)
+		a.mu.RUnlock()
+		if alreadyRegistered {
+			continue
+		}
+		if err := a.service.Register(ctx, id, taskName, "127.0.0.1", p.HostPort); err != nil {
+			for _, registeredID := range registered {
+				_ = a.service.Deregister(ctx, registeredID)
+			}
 			return err
 		}
+		registered = append(registered, id)
 		a.mu.Lock()
-		alloc.ServiceIDs = append(alloc.ServiceIDs, id)
+		if current := a.allocations[allocID]; current != nil {
+			current.ServiceIDs = append(current.ServiceIDs, id)
+		}
 		a.mu.Unlock()
 	}
 
 	return nil
 }
 
+func currentServiceRegistered(alloc *Allocation, id string) bool {
+	return alloc != nil && slices.Contains(alloc.ServiceIDs, id)
+}
+
 func (a *Agent) OnUnhealthy(ctx context.Context, allocID string) error {
 	a.mu.Lock()
-	if alloc := a.allocations[allocID]; alloc != nil {
+	alloc := a.allocations[allocID]
+	var serviceIDs []string
+	if alloc != nil {
 		alloc.Status = "unhealthy"
+		serviceIDs = append(serviceIDs, alloc.ServiceIDs...)
+		alloc.ServiceIDs = nil
 	}
 	a.mu.Unlock()
-	a.mu.RLock()
-	alloc := a.allocations[allocID]
-	a.mu.RUnlock()
 	if alloc != nil {
-		for _, id := range alloc.ServiceIDs {
+		for _, id := range serviceIDs {
 			_ = a.service.Deregister(ctx, id)
 		}
 	}

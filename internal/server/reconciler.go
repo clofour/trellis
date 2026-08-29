@@ -27,6 +27,8 @@ type Action struct {
 
 // Reconcile converges the in-memory allocation set on the latest job specs.
 func (s *Server) Reconcile(ctx context.Context) {
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
 	s.mu.Lock()
 	for _, node := range s.nodes {
 		if node.Status == NodeStatusHealthy && time.Since(node.LastHeartbeat) > 3*heartbeatInterval {
@@ -124,6 +126,9 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 				return err
 			}
 		}
+		if err := s.state.DeleteAllocation(ctx, alloc.Name); err != nil {
+			return fmt.Errorf("delete allocation state: %w", err)
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for i, existing := range s.allocations {
@@ -131,9 +136,6 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 				s.allocations = append(s.allocations[:i], s.allocations[i+1:]...)
 				break
 			}
-		}
-		if err := s.state.DeleteAllocation(ctx, alloc.Name); err != nil {
-			return fmt.Errorf("delete allocation state: %w", err)
 		}
 	}
 	return nil

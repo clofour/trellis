@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/spec"
@@ -24,9 +25,12 @@ func NewVolumeManager(dataRoot ...string) *VolumeManager {
 }
 
 func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.VolumeSpec) (*runtime.Mount, error) {
-	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
+	hostPath, err := vm.getHostPath(jobName, taskName, volume.Name)
+	if err != nil {
+		return nil, err
+	}
 
-	err := os.MkdirAll(hostPath, 0755)
+	err = os.MkdirAll(hostPath, 0o750)
 	if err != nil {
 		return nil, fmt.Errorf("creating volume dir %s: %w", hostPath, err)
 	}
@@ -38,7 +42,10 @@ func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.Vol
 }
 
 func (vm *VolumeManager) Check(jobName string, taskName string, volume spec.VolumeSpec) (bool, error) {
-	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
+	hostPath, err := vm.getHostPath(jobName, taskName, volume.Name)
+	if err != nil {
+		return false, err
+	}
 
 	info, err := os.Stat(hostPath)
 	if err != nil {
@@ -49,9 +56,12 @@ func (vm *VolumeManager) Check(jobName string, taskName string, volume spec.Volu
 }
 
 func (vm *VolumeManager) Delete(jobName string, taskName string, volume spec.VolumeSpec) error {
-	hostPath := vm.getHostPath(jobName, taskName, volume.Name)
+	hostPath, err := vm.getHostPath(jobName, taskName, volume.Name)
+	if err != nil {
+		return err
+	}
 
-	err := os.RemoveAll(hostPath)
+	err = os.RemoveAll(hostPath)
 	if err != nil {
 		return fmt.Errorf("deleting volume dir %s: %w", hostPath, err)
 	}
@@ -59,6 +69,12 @@ func (vm *VolumeManager) Delete(jobName string, taskName string, volume spec.Vol
 	return nil
 }
 
-func (vm *VolumeManager) getHostPath(jobName string, taskName string, volumeName string) string {
-	return filepath.Join(vm.dataRootPath, jobName, taskName, volumeName)
+func (vm *VolumeManager) getHostPath(jobName string, taskName string, volumeName string) (string, error) {
+	parts := []string{jobName, taskName, volumeName}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." || filepath.Base(part) != part || strings.ContainsAny(part, `/\\`) {
+			return "", fmt.Errorf("invalid volume path component %q", part)
+		}
+	}
+	return filepath.Join(append([]string{vm.dataRootPath}, parts...)...), nil
 }
