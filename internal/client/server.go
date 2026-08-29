@@ -54,9 +54,14 @@ type Heartbeat struct {
 }
 
 func NewServerClient(token string, addr string) *ServerClient {
+	return NewTenantServerClient(token, addr, "")
+}
+
+func NewTenantServerClient(token string, addr string, tenant string) *ServerClient {
 	baseURL := normalizeBaseURL(addr)
 	client := &client{
 		token:  token,
+		tenant: tenant,
 		client: &http.Client{},
 	}
 

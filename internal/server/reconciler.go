@@ -32,7 +32,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 	var actions []Action
 	valid := make([]*Allocation, 0, len(s.allocations))
 	for _, allocation := range s.allocations {
-		job := s.jobs[allocation.JobName]
+		job := s.jobs[jobKey(allocation.Tenant, allocation.JobName)]
 		if job == nil || allocation.Status == AllocationStatusUnhealthy || allocation.Revision < job.Revision || allocation.Node == nil || allocation.Node.Status != NodeStatusHealthy {
 			actions = append(actions, Action{Type: ActionStop, Allocation: allocation})
 			continue
@@ -40,13 +40,15 @@ func (s *Server) Reconcile(ctx context.Context) {
 		valid = append(valid, allocation)
 	}
 
-	for jobName, job := range s.jobs {
+	for _, job := range s.jobs {
+		jobName := job.Spec.Name
+		tenant := job.Spec.Tenant
 		for _, group := range job.Spec.TaskGroups {
 			for taskIndex := range group.Tasks {
 				task := &group.Tasks[taskIndex]
 				var current []*Allocation
 				for _, alloc := range valid {
-					if alloc.JobName == jobName && alloc.TaskGroupName == group.Name && alloc.Task != nil && alloc.Task.Name == task.Name {
+					if alloc.Tenant == tenant && alloc.JobName == jobName && alloc.TaskGroupName == group.Name && alloc.Task != nil && alloc.Task.Name == task.Name {
 						current = append(current, alloc)
 					}
 				}
@@ -59,7 +61,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 				for _, placement := range placements {
 					node := s.nodes[placement.NodeID]
 					name := fmt.Sprintf("%s-%s-%s-%s", jobName, group.Name, task.Name, uuid.NewString()[:8])
-					actions = append(actions, Action{Type: ActionStart, Allocation: &Allocation{JobName: jobName, TaskGroupName: group.Name, Name: name, Task: task, Node: node, Status: AllocationStatusPending, Revision: job.Revision}})
+					actions = append(actions, Action{Type: ActionStart, Allocation: &Allocation{Tenant: tenant, JobName: jobName, TaskGroupName: group.Name, Name: name, Task: task, Node: node, Status: AllocationStatusPending, Revision: job.Revision}})
 				}
 			}
 		}
@@ -86,7 +88,8 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 	address := fmt.Sprintf("%s:%d", alloc.Node.Host, alloc.Node.Port)
 	switch action.Type {
 	case ActionStart:
-		request := &api.AllocationRequest{JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Task: alloc.Task}
+		job := s.jobs[jobKey(alloc.Tenant, alloc.JobName)]
+		request := &api.AllocationRequest{Tenant: alloc.Tenant, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Task: alloc.Task, Isolation: job.Spec.Isolation}
 		if err := s.state.PutAllocation(ctx, alloc); err != nil {
 			return fmt.Errorf("persist allocation: %w", err)
 		}

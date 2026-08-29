@@ -39,10 +39,14 @@ type Server struct {
 }
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
+	return s.AllocationLogsForTenant(ctx, "", id, follow, tail)
+}
+
+func (s *Server) AllocationLogsForTenant(ctx context.Context, tenant, id string, follow bool, tail int) (io.ReadCloser, error) {
 	s.mu.RLock()
 	var found *Allocation
 	for _, alloc := range s.allocations {
-		if alloc.Name == id {
+		if alloc.Name == id && alloc.Tenant == tenant {
 			found = alloc
 			break
 		}
@@ -111,6 +115,7 @@ const (
 )
 
 type Allocation struct {
+	Tenant        string
 	JobName       string
 	TaskGroupName string
 	Name          string
@@ -275,13 +280,51 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	return nil
 }
 
-func (s *Server) RegisterJob(ctx context.Context, jobSpec *spec.JobSpec) error {
+func jobKey(tenant, name string) string {
+	if tenant == "" {
+		return name
+	}
+	return tenant + "\x00" + name
+}
+
+func requestedResources(jobSpec *spec.JobSpec) (cpu, memory int) {
+	for _, group := range jobSpec.TaskGroups {
+		for _, task := range group.Tasks {
+			if task.Resources != nil {
+				cpu += task.Resources.CPU * group.Count
+				memory += task.Resources.Memory * group.Count
+			}
+		}
+	}
+	return
+}
+
+func (s *Server) RegisterJob(ctx context.Context, tenant string, jobSpec *spec.JobSpec) error {
 	if err := spec.Validate(jobSpec); err != nil {
 		return fmt.Errorf("validate job: %w", err)
 	}
 	s.mu.Lock()
 	revision := 1
-	if existing := s.jobs[jobSpec.Name]; existing != nil {
+	if jobSpec.Tenant != tenant {
+		s.mu.Unlock()
+		return fmt.Errorf("job tenant does not match request tenant")
+	}
+	key := jobKey(tenant, jobSpec.Name)
+	if jobSpec.Isolation != nil {
+		cpu, memory := requestedResources(jobSpec)
+		for existingKey, existing := range s.jobs {
+			if existingKey == key || existing.Spec.Tenant != tenant || existing.Spec.Isolation == nil {
+				continue
+			}
+			ec, em := requestedResources(existing.Spec)
+			cpu, memory = cpu+ec, memory+em
+		}
+		if cpu > jobSpec.Isolation.Quota.CPU || memory > jobSpec.Isolation.Quota.Memory {
+			s.mu.Unlock()
+			return fmt.Errorf("tenant %q quota exceeded: requested cpu=%d memory=%d, quota cpu=%d memory=%d", tenant, cpu, memory, jobSpec.Isolation.Quota.CPU, jobSpec.Isolation.Quota.Memory)
+		}
+	}
+	if existing := s.jobs[key]; existing != nil {
 		revision = existing.Revision + 1
 	}
 	job := &Job{
@@ -289,11 +332,11 @@ func (s *Server) RegisterJob(ctx context.Context, jobSpec *spec.JobSpec) error {
 		Revision: revision,
 	}
 	s.mu.Unlock()
-	if err := s.state.PutJob(ctx, jobSpec.Name, job); err != nil {
+	if err := s.state.PutJob(ctx, key, job); err != nil {
 		return fmt.Errorf("save job remotely: %w", err)
 	}
 	s.mu.Lock()
-	s.jobs[jobSpec.Name] = job
+	s.jobs[key] = job
 	s.mu.Unlock()
 
 	return nil
@@ -353,10 +396,10 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (s *Server) GetJob(name string) (*api.JobStatusResponse, bool) {
+func (s *Server) GetJob(tenant, name string) (*api.JobStatusResponse, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	job, ok := s.jobs[name]
+	job, ok := s.jobs[jobKey(tenant, name)]
 	if !ok {
 		return nil, false
 	}
@@ -365,7 +408,7 @@ func (s *Server) GetJob(name string) (*api.JobStatusResponse, bool) {
 		r.Desired += g.Count * len(g.Tasks)
 	}
 	for _, a := range s.allocations {
-		if a.JobName != name {
+		if a.Tenant != tenant || a.JobName != name {
 			continue
 		}
 		ar := api.AllocationResponse{ID: a.Name, Group: a.TaskGroupName, Status: string(a.Status)}
@@ -384,17 +427,18 @@ func (s *Server) GetJob(name string) (*api.JobStatusResponse, bool) {
 	return r, true
 }
 
-func (s *Server) DeleteJob(ctx context.Context, name string) error {
+func (s *Server) DeleteJob(ctx context.Context, tenant, name string) error {
 	s.mu.Lock()
-	_, ok := s.jobs[name]
+	key := jobKey(tenant, name)
+	_, ok := s.jobs[key]
 	if ok {
-		delete(s.jobs, name)
+		delete(s.jobs, key)
 	}
 	s.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("job %s not found", name)
 	}
-	if err := s.state.DeleteJob(ctx, name); err != nil {
+	if err := s.state.DeleteJob(ctx, key); err != nil {
 		return err
 	}
 	s.Reconcile(ctx)

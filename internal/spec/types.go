@@ -2,7 +2,22 @@ package spec
 
 type JobSpec struct {
 	Name       string          `yaml:"name" json:"name"`
+	Tenant     string          `yaml:"tenant,omitempty" json:"tenant,omitempty"`
+	Isolation  *IsolationSpec  `yaml:"isolation,omitempty" json:"isolation,omitempty"`
 	TaskGroups []TaskGroupSpec `yaml:"task_groups" json:"task_groups"`
+}
+
+// IsolationSpec opts a job into the restrictions used by an untrusted tenant.
+// Omitting it preserves Trellis' trusted, single-tenant behaviour.
+type IsolationSpec struct {
+	Runtime string         `yaml:"runtime" json:"runtime"`
+	Network *WireGuardSpec `yaml:"network,omitempty" json:"network,omitempty"`
+	Quota   *ResourcesSpec `yaml:"quota,omitempty" json:"quota,omitempty"`
+}
+
+type WireGuardSpec struct {
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Network string `yaml:"network,omitempty" json:"network,omitempty"`
 }
 
 type TaskGroupSpec struct {

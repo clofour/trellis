@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -35,7 +36,8 @@ type Agent struct {
 }
 
 type Allocation struct {
-	ID string
+	ID     string
+	Tenant string
 
 	JobName   string
 	GroupName string
@@ -101,7 +103,8 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName string, groupName string, taskName string, spec *spec.TaskSpec) error {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, isolation *spec.IsolationSpec) error {
+	spec := taskSpec
 	if spec == nil {
 		return fmt.Errorf("task spec is required")
 	}
@@ -127,7 +130,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 
 	var mounts []*runtime.Mount
 	for _, v := range spec.Volumes {
-		mount, err := a.volumes.Create(jobName, taskName, v)
+		mount, err := a.volumes.Create(filepath.Join("tenants", tenant, jobName), taskName, v)
 		if err != nil {
 			return fmt.Errorf("create volume %s: %w", v.Name, err)
 		}
@@ -158,6 +161,18 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 			}
 			return 0
 		}(),
+		Runtime: func() string {
+			if isolation != nil {
+				return isolation.Runtime
+			}
+			return ""
+		}(),
+		Network: func() string {
+			if isolation != nil && isolation.Network != nil {
+				return isolation.Network.Network
+			}
+			return ""
+		}(),
 	})
 	if err != nil {
 		return fmt.Errorf("create container %s: %w", containerID, err)
@@ -182,7 +197,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 	a.restart.Track(ctx, allocID)
 
 	alloc := &Allocation{
-		ID: allocID,
+		ID:     allocID,
+		Tenant: tenant,
 
 		JobName:   jobName,
 		GroupName: groupName,

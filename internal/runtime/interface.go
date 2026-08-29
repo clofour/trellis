@@ -15,12 +15,14 @@ const (
 )
 
 type CreateOptions struct {
-	ID     string
-	Image  string
-	Env    map[string]string
-	Mounts []*Mount
-	CPU    int
-	Memory int64
+	ID      string
+	Image   string
+	Env     map[string]string
+	Mounts  []*Mount
+	CPU     int
+	Memory  int64
+	Runtime string
+	Network string
 }
 
 type ContainerInfo struct {

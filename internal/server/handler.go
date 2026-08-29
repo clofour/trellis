@@ -14,6 +14,8 @@ type Handler struct {
 	server *Server
 }
 
+func requestTenant(c *echo.Context) string { return c.Request().Header.Get("X-Trellis-Tenant") }
+
 func NewHandler(server *Server) *Handler {
 	return &Handler{
 		server: server,
@@ -40,7 +42,7 @@ func (h *Handler) handleAllocationLogs(c *echo.Context) error {
 	if err != nil || tail < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "tail must be a non-negative integer")
 	}
-	logs, err := h.server.AllocationLogs(c.Request().Context(), c.Param("id"), c.QueryParam("follow") == "true", tail)
+	logs, err := h.server.AllocationLogsForTenant(c.Request().Context(), requestTenant(c), c.Param("id"), c.QueryParam("follow") == "true", tail)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
 	}
@@ -122,7 +124,7 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 }
 
 func (h *Handler) handleGetJob(c *echo.Context) error {
-	status, ok := h.server.GetJob(c.Param("name"))
+	status, ok := h.server.GetJob(requestTenant(c), c.Param("name"))
 	if !ok {
 		return echo.NewHTTPError(http.StatusNotFound, "job not found")
 	}
@@ -130,7 +132,7 @@ func (h *Handler) handleGetJob(c *echo.Context) error {
 }
 
 func (h *Handler) handleDeleteJob(c *echo.Context) error {
-	if err := h.server.DeleteJob(c.Request().Context(), c.Param("name")); err != nil {
+	if err := h.server.DeleteJob(c.Request().Context(), requestTenant(c), c.Param("name")); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -145,7 +147,7 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 		return err
 	}
 
-	err = h.server.RegisterJob(ctx, &request.Spec)
+	err = h.server.RegisterJob(ctx, requestTenant(c), &request.Spec)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
