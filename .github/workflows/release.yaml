@@ -25,12 +25,17 @@ jobs:
           go build -o bin/trellis-node ./cmd/trellis-node
           go build -o bin/trellis ./cmd/trellis
 
-      - name: Package archive
+      - name: Package binaries
         working-directory: orchestrator
         run: tar -czf ../trellis_linux_x64.tar.gz -C bin trellis-node trellis
+
+      - name: Package UI source
+        run: tar -czf trellis_ui.tar.gz -C ui --exclude node_modules --exclude .next .
 
       - name: Create release
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631
         with:
-          files: trellis_linux_x64.tar.gz
+          files: |
+            trellis_linux_x64.tar.gz
+            trellis_ui.tar.gz
           generate_release_notes: true

@@ -7,6 +7,9 @@ DATA_DIR="/var/lib/trellis/data"
 CONFIG_DIR="/etc/trellis"
 ENV_FILE="${CONFIG_DIR}/trellis.env"
 SERVICE_FILE="/etc/systemd/system/trellis-node.service"
+UI_DIR="/opt/trellis/ui"
+UI_SERVICE_FILE="/etc/systemd/system/trellis-ui.service"
+UI_USER="trellis-ui"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
@@ -53,15 +56,17 @@ fi
 # ── Download binaries from latest release ────────────────────────────
 
 info "Fetching latest release from GitHub..."
-download_url="$(
-    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | grep -oP '"browser_download_url":\s*"\K[^"]*trellis_linux_x64\.tar\.gz'
-)" || error "Failed to find a release. Make sure the repository has at least one tagged release."
+release_json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" \
+    || error "Failed to find a release. Make sure the repository has at least one tagged release."
 
-info "Downloading ${download_url}..."
+bin_url="$(printf '%s' "$release_json" \
+    | grep -oP '"browser_download_url":\s*"\K[^"]*trellis_linux_x64\.tar\.gz')" \
+    || error "Release is missing the trellis_linux_x64.tar.gz asset."
+
+info "Downloading ${bin_url}..."
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fSL -o "${tmp}/trellis_linux_x64.tar.gz" "$download_url"
+curl -fSL -o "${tmp}/trellis_linux_x64.tar.gz" "$bin_url"
 
 info "Installing binaries to ${INSTALL_DIR}..."
 tar -xzf "${tmp}/trellis_linux_x64.tar.gz" -C "$tmp"
@@ -158,6 +163,86 @@ else
     info "Start it with: sudo systemctl start trellis-node"
 fi
 
+# ── Dashboard (optional) ─────────────────────────────────────────────
+
+install_ui=false
+if confirm "Install the web dashboard?" "n"; then
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+        error "Node.js and npm are required for the dashboard. Install Node.js 20+ and re-run."
+    fi
+
+    node_major="$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')"
+    if [ "$node_major" -lt 20 ]; then
+        error "Node.js 20 or later is required (found v$(node --version))."
+    fi
+
+    ui_url="$(printf '%s' "$release_json" \
+        | grep -oP '"browser_download_url":\s*"\K[^"]*trellis_ui\.tar\.gz')" \
+        || error "Release is missing the trellis_ui.tar.gz asset."
+
+    info "Downloading dashboard source..."
+    curl -fSL -o "${tmp}/trellis_ui.tar.gz" "$ui_url"
+
+    info "Installing dashboard to ${UI_DIR}..."
+    install -d -m 0755 "$UI_DIR"
+    tar -xzf "${tmp}/trellis_ui.tar.gz" -C "$UI_DIR"
+
+    info "Installing npm dependencies and building..."
+    (cd "$UI_DIR" && npm ci --ignore-scripts --no-audit --no-fund && npm run build) \
+        || error "Dashboard build failed."
+
+    prompt api_url "Trellis leader API URL" "http://${advertise_host}:8128"
+
+    cluster_token="$(grep -oP '(?<=TRELLIS_TOKEN=).+' "$ENV_FILE")"
+    cat > "${UI_DIR}/.env.local" <<ENVEOF
+TRELLIS_API_URL=${api_url}
+TRELLIS_API_TOKEN=${cluster_token}
+ENVEOF
+
+    if ! id "$UI_USER" >/dev/null 2>&1; then
+        useradd --system --no-create-home --shell /usr/sbin/nologin "$UI_USER"
+    fi
+    chown -R "${UI_USER}:${UI_USER}" "$UI_DIR"
+    chmod 600 "${UI_DIR}/.env.local"
+
+    info "Writing systemd unit to ${UI_SERVICE_FILE}..."
+    cat > "$UI_SERVICE_FILE" <<EOF
+[Unit]
+Description=Trellis dashboard
+After=network-online.target trellis-node.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${UI_USER}
+Group=${UI_USER}
+WorkingDirectory=${UI_DIR}
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+
+    if confirm "Start the dashboard now?" "y"; then
+        systemctl enable --now trellis-ui
+        info "Dashboard is running at http://localhost:3000"
+    else
+        systemctl enable trellis-ui
+        info "Dashboard is enabled but not started."
+        info "Start it with: sudo systemctl start trellis-ui"
+    fi
+
+    install_ui=true
+fi
+
 echo
 info "Setup complete!"
 info "CLI usage: trellis --server-addr ${advertise_host}:8128 --cluster-token \"\$(. ${ENV_FILE} && echo \$TRELLIS_TOKEN)\" nodes list"
+if [ "$install_ui" = true ]; then
+    info "Dashboard: http://localhost:3000"
+fi
