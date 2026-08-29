@@ -30,13 +30,30 @@ The current MVP includes:
 
 ## Quick start
 
-### Requirements
+### Install from release (recommended)
 
-- Linux with containerd and Consul running
-- Go 1.26.4 or later
-- a token shared by all nodes and clients in the cluster
+The setup script downloads the latest release binaries, configures a systemd
+service, and generates a cluster token. It supports Linux x64 and requires
+root access and a running containerd instance.
 
-Build the node daemon and CLI:
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash
+```
+
+Or clone the repository and run the script directly:
+
+```sh
+git clone https://github.com/clofour/trellis-experimental.git
+sudo ./trellis-experimental/scripts/setup.sh
+```
+
+The script will interactively ask whether to enable WireGuard networking
+and whether this node should join an existing cluster.
+
+### Build from source
+
+If you prefer to build from source, install Go 1.26.4 or later and a
+running containerd instance, then:
 
 ```sh
 cd orchestrator
