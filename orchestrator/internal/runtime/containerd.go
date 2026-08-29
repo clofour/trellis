@@ -362,6 +362,9 @@ func convertMounts(mounts []*Mount) []specs.Mount {
 }
 
 func writeDNSConfig(path string, servers []string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("create DNS config directory: %w", err)
+	}
 	var content string
 	for _, s := range servers {
 		content += "nameserver " + s + "\n"

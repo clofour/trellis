@@ -85,6 +85,7 @@ func (h *Handler) handleRun(c *echo.Context) error {
 		if errors.Is(err, ErrAllocationExists) {
 			return echo.NewHTTPError(http.StatusConflict, "allocation already exists")
 		}
+		h.agent.log.Error("start allocation failed", "allocation", request.Name, "error", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to start allocation")
 	}
 
