@@ -1,10 +1,10 @@
 # Trellis
 
-Trellis is a container scheduler built on containerd and Consul. It sits in the space between rolling your own deployment scripts and adopting Kubernetes — a real orchestrator for container workloads, without the operational complexity.
+Trellis is a container scheduler built on containerd. It sits in the space between rolling your own deployment scripts and adopting Kubernetes — a real orchestrator for container workloads, without the operational complexity.
 
 Every project that ships software ends up rebuilding the same infrastructure: service placement, health checks, rolling updates, port allocation. Tools like Coolify improve the developer experience, but at their core they are not orchestrators. Kubernetes is a full orchestrator, but it brings significant complexity that many workloads simply do not need. Trellis is closer to Nomad in spirit: a lightweight, focused scheduler you can understand and operate yourself.
 
-Every machine runs the same `trellis-node` daemon. Consul elects one node to serve the control-plane API and reconcile jobs, while every node continues to run allocations and participate in the next election.
+Every machine runs the same `trellis-node` daemon. Raft consensus elects one node to serve the control-plane API and reconcile jobs, while every node continues to run allocations and participate in the next election.
 
 > [!NOTE]
 > Trellis is experimental. Evaluate its security, failure modes, and upgrade
@@ -28,7 +28,7 @@ Every machine runs the same `trellis-node` daemon. Consul elects one node to ser
 - Node registration, heartbeats, draining, and balanced placement
 - Allocation lifecycle management, health checks, and restart handling
 - Container resource limits, dynamic host ports, and persistent local volumes
-- Consul service registration and optional WireGuard namespace networking
+- Built-in DNS service discovery and optional WireGuard namespace networking
 - A CLI and a read-only Next.js operations dashboard
 
 ## Documentation
