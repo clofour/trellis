@@ -28,19 +28,3 @@ export interface Job {
   healthy: number;
   allocations: Allocation[] | null;
 }
-
-export interface PortMapping {
-  host_port: number;
-  container_port: number;
-}
-
-export interface Service {
-  id: string;
-  job: string;
-  group: string;
-  namespace: string;
-  labels?: Record<string, string>;
-  address: string;
-  ports?: PortMapping[];
-  status: string;
-}

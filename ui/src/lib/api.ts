@@ -1,4 +1,4 @@
-import type { Node, Job, Service } from "./types";
+import type { Node, Job } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_TRELLIS_API_URL || "";
 
@@ -20,8 +20,4 @@ export async function fetchJobs(): Promise<Job[]> {
 
 export async function fetchJob(name: string): Promise<Job> {
   return apiFetch<Job>(`/api/v1/jobs/${encodeURIComponent(name)}`);
-}
-
-export async function fetchServices(): Promise<Service[]> {
-  return apiFetch<Service[]>("/api/v1/services");
 }

@@ -1,7 +1,7 @@
 # Trellis dashboard
 
-The dashboard is a read-only Next.js view of cluster health, nodes, jobs,
-allocations, and the service catalog. It refreshes API data every five seconds.
+The dashboard is a read-only Next.js view of cluster health, nodes, jobs, and
+allocations. It refreshes API data every five seconds.
 
 ## How API access works
 
@@ -28,7 +28,7 @@ TRELLIS_NAMESPACE=default
 | --- | --- | --- |
 | `TRELLIS_API_URL` | Recommended | Base URL of the current leader API; defaults to `http://localhost:8128`. |
 | `TRELLIS_API_TOKEN` | Yes | Shared cluster token sent as a bearer token. |
-| `TRELLIS_NAMESPACE` | Recommended | Namespace used to scope jobs, allocations, and services; defaults to the orchestrator's empty namespace when omitted. |
+| `TRELLIS_NAMESPACE` | Recommended | Namespace used to scope jobs and allocations; defaults to the orchestrator's empty namespace when omitted. |
 
 The configured namespace is shown in the sidebar. The dashboard sends it as
 `X-Trellis-Namespace` for all orchestrator requests. When using a

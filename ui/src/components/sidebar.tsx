@@ -37,18 +37,6 @@ const navigation = [
       </svg>
     ),
   },
-  {
-    name: "Services",
-    href: "/services",
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="4" cy="9" r="2.5" />
-        <circle cx="14" cy="4" r="2.5" />
-        <circle cx="14" cy="14" r="2.5" />
-        <path d="m6.2 7.8 5.6-2.6M6.2 10.2l5.6 2.6" />
-      </svg>
-    ),
-  },
 ];
 
 export function Sidebar({ namespace }: { namespace: string }) {

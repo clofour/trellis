@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import type { Node, Job, Service } from "@/lib/types";
+import type { Node, Job } from "@/lib/types";
 
 const REFRESH_INTERVAL = 5000;
 
@@ -25,12 +25,6 @@ export function useJobs() {
 
 export function useJob(name: string) {
   return useSWR<Job>(`/api/v1/jobs/${encodeURIComponent(name)}`, fetcher, {
-    refreshInterval: REFRESH_INTERVAL,
-  });
-}
-
-export function useServices() {
-  return useSWR<Service[]>("/api/v1/services", fetcher, {
     refreshInterval: REFRESH_INTERVAL,
   });
 }
