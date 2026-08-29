@@ -28,7 +28,7 @@ func NewJobsLogsCmd() *cobra.Command {
 	var follow bool
 	var tail int
 	cmd := &cobra.Command{Use: "logs ALLOCATION", Args: cobra.ExactArgs(1), Short: "Stream allocation logs", RunE: func(cmd *cobra.Command, args []string) error {
-		logs, err := client.NewServerClient(config.ClusterToken, config.ServerAddr).AllocationLogs(cmd.Context(), args[0], follow, tail)
+		logs, err := client.NewTenantServerClient(config.ClusterToken, config.ServerAddr, config.Tenant).AllocationLogs(cmd.Context(), args[0], follow, tail)
 		if err != nil {
 			return err
 		}
@@ -43,7 +43,7 @@ func NewJobsLogsCmd() *cobra.Command {
 
 func NewJobsStatusCmd() *cobra.Command {
 	return &cobra.Command{Use: "status NAME", Args: cobra.ExactArgs(1), Short: "Show desired and actual job state", RunE: func(cmd *cobra.Command, args []string) error {
-		status, err := client.NewServerClient(config.ClusterToken, config.ServerAddr).GetJob(cmd.Context(), args[0])
+		status, err := client.NewTenantServerClient(config.ClusterToken, config.ServerAddr, config.Tenant).GetJob(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -57,7 +57,7 @@ func NewJobsStatusCmd() *cobra.Command {
 
 func NewJobsDestroyCmd() *cobra.Command {
 	return &cobra.Command{Use: "destroy NAME", Args: cobra.ExactArgs(1), Short: "Destroy a job and its allocations", RunE: func(cmd *cobra.Command, args []string) error {
-		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr).DeleteJob(cmd.Context(), args[0]); err != nil {
+		if err := client.NewTenantServerClient(config.ClusterToken, config.ServerAddr, config.Tenant).DeleteJob(cmd.Context(), args[0]); err != nil {
 			return err
 		}
 		fmt.Println("Job destroyed successfully.")
@@ -87,7 +87,7 @@ func NewJobsApplyCmd() *cobra.Command {
 				return fmt.Errorf("validate: %w", err)
 			}
 
-			serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr)
+			serverClient := client.NewTenantServerClient(config.ClusterToken, config.ServerAddr, config.Tenant)
 
 			err = serverClient.SubmitJob(cmd.Context(), job)
 			if err != nil {

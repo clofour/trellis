@@ -1,0 +1,38 @@
+package server
+
+import (
+	"net/netip"
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+func TestTenantNodeSubnetIsStableAndTenantScoped(t *testing.T) {
+	pool := netip.MustParsePrefix("10.64.0.0/10")
+	node := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	first := tenantNodeSubnet(pool, "acme", node)
+	if first != tenantNodeSubnet(pool, "acme", node) {
+		t.Fatal("subnet allocation is not stable")
+	}
+	if !pool.Contains(first.Addr()) || first.Bits() != 24 {
+		t.Fatalf("subnet %s is outside pool %s", first, pool)
+	}
+	if first == tenantNodeSubnet(pool, "globex", node) {
+		t.Fatal("different tenants received the same deterministic subnet")
+	}
+}
+
+func TestNetworkPlanUsesRegisteredPeerIdentity(t *testing.T) {
+	targetID, peerID := uuid.New(), uuid.New()
+	s := &Server{networkPool: netip.MustParsePrefix("10.64.0.0/10"), nodes: map[uuid.UUID]*Node{}}
+	target := &Node{ID: targetID}
+	s.nodes[targetID] = target
+	s.nodes[peerID] = &Node{ID: peerID, WireGuardPublicKey: "peer-key", WireGuardEndpoint: "node-b:51820"}
+	plan, err := s.networkPlan("acme", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Peers) != 1 || plan.Peers[0].PublicKey != "peer-key" || plan.Peers[0].Endpoint != "node-b:51820" {
+		t.Fatalf("unexpected plan: %#v", plan)
+	}
+}

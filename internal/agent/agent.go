@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/health"
+	"github.com/clofour/trellis/internal/network"
 	"github.com/clofour/trellis/internal/runtime"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
@@ -29,13 +31,15 @@ type Agent struct {
 	ports    *PortManager
 	volumes  *VolumeManager
 	service  discovery.ServiceRegistry
+	network  network.Manager
 	server   *client.ServerClient
 	nodeInfo client.NodeInfo
 	mu       sync.RWMutex
 }
 
 type Allocation struct {
-	ID string
+	ID     string
+	Tenant string
 
 	JobName   string
 	GroupName string
@@ -47,6 +51,7 @@ type Allocation struct {
 	ServiceIDs  []string
 	Ports       []*runtime.Port
 	Mounts      []*runtime.Mount
+	Network     *network.Attachment
 	Status      string
 }
 
@@ -65,11 +70,22 @@ func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health
 		ports:    ports,
 		volumes:  volumes,
 		service:  service,
+		network:  network.DisabledManager{},
 		server:   server,
 		nodeInfo: client.NodeInfo{ID: nodeID, Host: "127.0.0.1", Port: 8127},
 	}
 
 	return agent
+}
+
+func (a *Agent) SetNetworkManager(manager network.Manager) {
+	if manager != nil {
+		a.network = manager
+	}
+}
+
+func (a *Agent) SetWireGuardIdentity(publicKey, endpoint string) {
+	a.nodeInfo.WireGuardPublicKey, a.nodeInfo.WireGuardEndpoint = publicKey, endpoint
 }
 
 func (a *Agent) SetAdvertiseAddress(host string, port int) {
@@ -101,7 +117,8 @@ func (a *Agent) GetAllocations(ctx context.Context) []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName string, groupName string, taskName string, spec *spec.TaskSpec) error {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, isolation *spec.IsolationSpec, networkPlan *network.Plan) error {
+	spec := taskSpec
 	if spec == nil {
 		return fmt.Errorf("task spec is required")
 	}
@@ -127,7 +144,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 
 	var mounts []*runtime.Mount
 	for _, v := range spec.Volumes {
-		mount, err := a.volumes.Create(jobName, taskName, v)
+		mount, err := a.volumes.Create(filepath.Join("tenants", tenant, jobName), taskName, v)
 		if err != nil {
 			return fmt.Errorf("create volume %s: %w", v.Name, err)
 		}
@@ -141,6 +158,16 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 	}
 
 	containerID := allocID
+	var netAttachment *network.Attachment
+	if isolation != nil && isolation.Network != nil {
+		if networkPlan == nil {
+			return fmt.Errorf("automatic WireGuard network plan is required")
+		}
+		netAttachment, err = a.network.Attach(ctx, network.AttachRequest{AllocationID: allocID, Tenant: tenant, Network: tenant, Plan: *networkPlan})
+		if err != nil {
+			return fmt.Errorf("attach WireGuard network: %w", err)
+		}
+	}
 	_, err = a.runtime.Create(ctx, runtime.CreateOptions{
 		ID:     containerID,
 		Image:  spec.Image,
@@ -158,13 +185,28 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 			}
 			return 0
 		}(),
+		Runtime: func() string {
+			if isolation != nil {
+				return isolation.Runtime
+			}
+			return ""
+		}(),
+		NetworkNamespace: func() string {
+			if netAttachment != nil {
+				return netAttachment.Namespace
+			}
+			return ""
+		}(),
 	})
 	if err != nil {
+		_ = a.network.Detach(ctx, netAttachment)
 		return fmt.Errorf("create container %s: %w", containerID, err)
 	}
 
 	err = a.runtime.Start(ctx, containerID)
 	if err != nil {
+		_ = a.runtime.Remove(ctx, containerID)
+		_ = a.network.Detach(ctx, netAttachment)
 		return fmt.Errorf("start container %s: %w", containerID, err)
 	}
 
@@ -182,7 +224,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 	a.restart.Track(ctx, allocID)
 
 	alloc := &Allocation{
-		ID: allocID,
+		ID:     allocID,
+		Tenant: tenant,
 
 		JobName:   jobName,
 		GroupName: groupName,
@@ -193,6 +236,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 		ServiceID:   "0",
 		Ports:       ports,
 		Mounts:      mounts,
+		Network:     netAttachment,
 		Status:      "running",
 	}
 	a.mu.Lock()
@@ -232,6 +276,9 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 		return fmt.Errorf("stop container %s: %w", containerID, err)
 	}
 
+	if err = a.network.Detach(ctx, alloc.Network); err != nil {
+		return fmt.Errorf("detach allocation network: %w", err)
+	}
 	err = a.runtime.Remove(ctx, containerID)
 	if err != nil {
 		return fmt.Errorf("remove container %s: %w", containerID, err)

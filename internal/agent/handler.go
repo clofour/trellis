@@ -62,7 +62,7 @@ func (h *Handler) handleRun(c *echo.Context) error {
 		return err
 	}
 
-	err = h.agent.RunAllocation(ctx, request.Name, request.JobName, request.GroupName, request.Name, request.Task)
+	err = h.agent.RunAllocation(ctx, request.Name, request.Tenant, request.JobName, request.GroupName, request.Name, request.Task, request.Isolation, request.NetworkPlan)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

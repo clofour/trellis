@@ -89,3 +89,60 @@ healthy nodes with enough spare capacity:
 ```sh
 go run ./cmd/trellis nodes drain NODE_ID
 ```
+
+## Optional tenant isolation
+
+Trusted jobs continue to work without any tenant configuration. A frontend for
+untrusted users can instead scope every request with `X-Trellis-Tenant` (the CLI
+equivalent is `--tenant`) and submit an isolated job:
+
+```yaml
+name: storefront
+tenant: acme
+isolation:
+  runtime: runsc
+  network:
+    enabled: true
+  quota:
+    cpu: 2000
+    memory: 2147483648
+task_groups:
+  - name: web
+    count: 2
+    tasks:
+      - name: server
+        image: docker.io/library/nginx:alpine
+        resources:
+          cpu: 500
+          memory: 268435456
+```
+
+Isolated jobs require explicit per-task limits. Trellis enforces the tenant's
+aggregate CPU and memory quota before accepting a job, selects the configured
+gVisor `runsc` containerd shim, stores volumes below a tenant-specific path, and
+creates a network namespace connected to an administrator-defined WireGuard
+overlay. The API never resolves jobs, allocations, logs, or volumes outside the
+request's tenant scope.
+
+Each node needs `ip`, `wg`, `iptables`, kernel WireGuard support, and an
+`io.containerd.runsc.v1` shim. Trellis generates and persists the node's
+WireGuard identity, publishes its public key and endpoint during registration,
+and derives non-overlapping node subnets from the cluster pool. Configure only
+the cluster-wide pool and, when automatic discovery is unsuitable, the node's
+reachable endpoint:
+
+```sh
+trellis-node --wireguard-pool 10.64.0.0/10 \
+  --wireguard-endpoint node-a.example:51820 \
+  --wireguard-port 51820
+```
+
+All nodes in a cluster must use the same pool. The pool must not overlap host or
+datacenter routes, and UDP traffic on the configured port must be permitted
+between nodes. Private keys and IP leases live below the node data directory.
+The leader builds peer and `AllowedIPs` plans from registered node identities;
+the agent creates tenant bridges and WireGuard interfaces, installs routes and
+forwarding guards, and places each allocation in its own network namespace.
+Starting an isolated allocation fails closed if any setup step does not
+succeed. A detected deterministic subnet collision also fails closed rather
+than replacing another tenant route.

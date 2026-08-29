@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/clofour/trellis/internal/state"
 )
@@ -62,11 +63,19 @@ func (s *StateController) PutNode(ctx context.Context, id string, node *NodeSumm
 
 func (s *StateController) ListJobs(ctx context.Context) (map[string]*Job, error) {
 	prefix := fmt.Sprintf("%s/%s/jobs/", trellisNamespace, s.cluster)
-	return listValues[Job](ctx, s.store, prefix)
+	values, err := listValues[Job](ctx, s.store, prefix)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*Job, len(values))
+	for _, job := range values {
+		result[jobKey(job.Spec.Tenant, job.Spec.Name)] = job
+	}
+	return result, nil
 }
 
 func (s *StateController) PutJob(ctx context.Context, id string, job *Job) error {
-	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, id)
+	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, url.QueryEscape(id))
 
 	err := s.put(ctx, key, job)
 	if err != nil {
@@ -77,7 +86,7 @@ func (s *StateController) PutJob(ctx context.Context, id string, job *Job) error
 }
 
 func (s *StateController) DeleteJob(ctx context.Context, id string) error {
-	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, id)
+	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, url.QueryEscape(id))
 	if err := s.store.Delete(ctx, key); err != nil {
 		return fmt.Errorf("delete job: %w", err)
 	}

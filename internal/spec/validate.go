@@ -3,8 +3,11 @@ package spec
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var identifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 
 func Validate(spec *JobSpec) error {
 	if spec == nil {
@@ -13,6 +16,27 @@ func Validate(spec *JobSpec) error {
 	if strings.TrimSpace(spec.Name) == "" {
 		return errors.New("job name is required")
 	}
+	if !identifierPattern.MatchString(spec.Name) {
+		return errors.New("job name must be a safe identifier")
+	}
+	if spec.Tenant != "" && !identifierPattern.MatchString(spec.Tenant) {
+		return errors.New("tenant must be a safe identifier")
+	}
+	if spec.Isolation != nil {
+		if strings.TrimSpace(spec.Tenant) == "" {
+			return errors.New("tenant is required when isolation is enabled")
+		}
+		if spec.Isolation.Runtime != "runsc" {
+			return fmt.Errorf("isolation runtime must be %q", "runsc")
+		}
+		if spec.Isolation.Network == nil || !spec.Isolation.Network.Enabled {
+			return errors.New("an enabled WireGuard network is required when isolation is enabled")
+		}
+		if spec.Isolation.Quota == nil || spec.Isolation.Quota.CPU <= 0 || spec.Isolation.Quota.Memory <= 0 {
+			return errors.New("positive CPU and memory quotas are required when isolation is enabled")
+		}
+	}
+	var totalCPU, totalMemory int
 	if len(spec.TaskGroups) == 0 {
 		return errors.New("at least one task group is required")
 	}
@@ -20,6 +44,9 @@ func Validate(spec *JobSpec) error {
 	for i, group := range spec.TaskGroups {
 		if strings.TrimSpace(group.Name) == "" {
 			return fmt.Errorf("task group %d: name is required", i)
+		}
+		if !identifierPattern.MatchString(group.Name) {
+			return fmt.Errorf("task group %q: name must be a safe identifier", group.Name)
 		}
 		if _, exists := groups[group.Name]; exists {
 			return fmt.Errorf("duplicate task group %q", group.Name)
@@ -36,6 +63,9 @@ func Validate(spec *JobSpec) error {
 			if strings.TrimSpace(task.Name) == "" {
 				return fmt.Errorf("task group %q task %d: name is required", group.Name, j)
 			}
+			if !identifierPattern.MatchString(task.Name) {
+				return fmt.Errorf("task group %q task %q: name must be a safe identifier", group.Name, task.Name)
+			}
 			if _, exists := tasks[task.Name]; exists {
 				return fmt.Errorf("task group %q: duplicate task %q", group.Name, task.Name)
 			}
@@ -45,6 +75,13 @@ func Validate(spec *JobSpec) error {
 			}
 			if task.Resources != nil && (task.Resources.CPU < 0 || task.Resources.Memory < 0) {
 				return fmt.Errorf("task group %q task %q: resources cannot be negative", group.Name, task.Name)
+			}
+			if spec.Isolation != nil && (task.Resources == nil || task.Resources.CPU <= 0 || task.Resources.Memory <= 0) {
+				return fmt.Errorf("task group %q task %q: positive resource limits are required for isolated jobs", group.Name, task.Name)
+			}
+			if task.Resources != nil {
+				totalCPU += task.Resources.CPU * group.Count
+				totalMemory += task.Resources.Memory * group.Count
 			}
 			volumes := make(map[string]struct{})
 			for _, volume := range task.Volumes {
@@ -76,6 +113,9 @@ func Validate(spec *JobSpec) error {
 				}
 			}
 		}
+	}
+	if spec.Isolation != nil && (totalCPU > spec.Isolation.Quota.CPU || totalMemory > spec.Isolation.Quota.Memory) {
+		return fmt.Errorf("job requests cpu=%d memory=%d, exceeding tenant quota cpu=%d memory=%d", totalCPU, totalMemory, spec.Isolation.Quota.CPU, spec.Isolation.Quota.Memory)
 	}
 	return nil
 }

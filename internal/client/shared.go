@@ -11,6 +11,7 @@ import (
 
 type client struct {
 	token  string
+	tenant string
 	client *http.Client
 }
 
@@ -30,6 +31,9 @@ func (c *client) request(ctx context.Context, method string, url string, request
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+c.token)
+	if c.tenant != "" {
+		request.Header.Set("X-Trellis-Tenant", c.tenant)
+	}
 
 	response, err := c.client.Do(request)
 	if err != nil {
@@ -68,6 +72,9 @@ func (c *client) stream(ctx context.Context, url string) (io.ReadCloser, error) 
 		return nil, fmt.Errorf("constructing request %s: %w", url, err)
 	}
 	request.Header.Set("Authorization", "Bearer "+c.token)
+	if c.tenant != "" {
+		request.Header.Set("X-Trellis-Tenant", c.tenant)
+	}
 	response, err := c.client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("executing request %s: %w", url, err)

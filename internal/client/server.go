@@ -38,13 +38,15 @@ func (s *ServerClient) address() string {
 }
 
 type NodeInfo struct {
-	ID     uuid.UUID
-	Host   string
-	Port   int
-	CPU    int
-	Memory int64
-	OS     string
-	Arch   string
+	ID                 uuid.UUID
+	Host               string
+	Port               int
+	CPU                int
+	Memory             int64
+	OS                 string
+	Arch               string
+	WireGuardPublicKey string
+	WireGuardEndpoint  string
 }
 
 type Heartbeat struct {
@@ -54,9 +56,14 @@ type Heartbeat struct {
 }
 
 func NewServerClient(token string, addr string) *ServerClient {
+	return NewTenantServerClient(token, addr, "")
+}
+
+func NewTenantServerClient(token string, addr string, tenant string) *ServerClient {
 	baseURL := normalizeBaseURL(addr)
 	client := &client{
 		token:  token,
+		tenant: tenant,
 		client: &http.Client{},
 	}
 
@@ -86,13 +93,15 @@ func (s *ServerClient) DrainNode(ctx context.Context, id uuid.UUID) error {
 
 func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*api.NodeRegistrationResponse, error) {
 	requestData := &api.NodeRegistrationRequest{
-		ID:     nodeInfo.ID,
-		Host:   nodeInfo.Host,
-		Port:   nodeInfo.Port,
-		CPU:    nodeInfo.CPU,
-		Memory: nodeInfo.Memory,
-		OS:     nodeInfo.OS,
-		Arch:   nodeInfo.Arch,
+		ID:                 nodeInfo.ID,
+		Host:               nodeInfo.Host,
+		Port:               nodeInfo.Port,
+		CPU:                nodeInfo.CPU,
+		Memory:             nodeInfo.Memory,
+		OS:                 nodeInfo.OS,
+		Arch:               nodeInfo.Arch,
+		WireGuardPublicKey: nodeInfo.WireGuardPublicKey,
+		WireGuardEndpoint:  nodeInfo.WireGuardEndpoint,
 	}
 	var responseData api.NodeRegistrationResponse
 

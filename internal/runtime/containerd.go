@@ -75,6 +75,11 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 		oci.WithEnv(convertEnv(options.Env)),
 		oci.WithMounts(convertMounts(options.Mounts)),
 	}
+	if options.NetworkNamespace != "" {
+		ociSpecOpts = append(ociSpecOpts, oci.WithLinuxNamespace(specs.LinuxNamespace{
+			Type: specs.NetworkNamespace, Path: options.NetworkNamespace,
+		}))
+	}
 	if options.CPU > 0 {
 		ociSpecOpts = append(ociSpecOpts, oci.WithCPUCFS(int64(options.CPU*100), 100000))
 	}
@@ -82,11 +87,18 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 		ociSpecOpts = append(ociSpecOpts, oci.WithMemoryLimit(uint64(options.Memory)))
 	}
 
-	container, err := c.client.NewContainer(ctx, options.ID,
+	containerOpts := []containerd.NewContainerOpts{
 		containerd.WithImage(image),
 		containerd.WithNewSnapshot(options.ID, image),
 		containerd.WithNewSpec(ociSpecOpts...),
-	)
+	}
+	if options.Runtime != "" {
+		if options.Runtime != "runsc" {
+			return "", fmt.Errorf("unsupported runtime %q", options.Runtime)
+		}
+		containerOpts = append(containerOpts, containerd.WithRuntime("io.containerd.runsc.v1", nil))
+	}
+	container, err := c.client.NewContainer(ctx, options.ID, containerOpts...)
 	if err != nil {
 		return "", fmt.Errorf("creating container %s: %w", options.ID, err)
 	}
