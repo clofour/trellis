@@ -21,14 +21,18 @@ jobs:
       - name: Create build directory
         run: mkdir -p orchestrator/bin
 
-      - name: Run build
+      - name: Build Trellis node
         working-directory: orchestrator
-        run: |
-          go build -o bin/trellis-node ./cmd/trellis-node
-          go build -o bin/trellis ./cmd/trellis
+        run: go build -o bin/trellis-node ./cmd/trellis-node
+
+      - name: Build Trellis CLI
+        working-directory: orchestrator
+        run: go build -o bin/trellis ./cmd/trellis
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: trellis_linux_x64
-          path: orchestrator/bin/
+          path: |
+            orchestrator/bin/trellis-node
+            orchestrator/bin/trellis
