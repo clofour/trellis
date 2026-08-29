@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Trellis dashboard
 
-## Getting Started
+The dashboard is a read-only Next.js view of cluster health, nodes, jobs, and
+allocations. It refreshes API data every five seconds.
 
-First, run the development server:
+## How API access works
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Browser requests go to same-origin routes under `/api/v1`. Those server-side
+route handlers forward requests to the elected Trellis leader and add the
+cluster bearer token. Keep both configuration values server-side; do not expose
+the token through a `NEXT_PUBLIC_` environment variable.
+
+## Configuration
+
+Copy the example file and set the leader API URL and cluster token:
+
+```sh
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+```dotenv
+TRELLIS_API_URL=http://localhost:8128
+TRELLIS_API_TOKEN=replace-with-the-cluster-token
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Required | Description |
+| --- | --- | --- |
+| `TRELLIS_API_URL` | Recommended | Base URL of the current leader API; defaults to `http://localhost:8128`. |
+| `TRELLIS_API_TOKEN` | Yes | Shared cluster token sent as a bearer token. |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+In the current single-leader setup, the configured URL must reach the node
+that owns leadership. Restart the dashboard with a new URL after leadership
+moves to an address it cannot already reach.
 
-## Learn More
+## Local development
 
-To learn more about Next.js, take a look at the following resources:
+Requires Node.js 20 or later and npm.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```sh
+npm ci
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open <http://localhost:3000>. Source lives under `src/app`, shared UI pieces
+under `src/components`, and browser data hooks under `src/hooks`.
 
-## Deploy on Vercel
+## Quality checks
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```sh
+npm run lint
+npm run build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Production
+
+Install locked dependencies, build, and start the production server:
+
+```sh
+npm ci
+npm run build
+npm run start
+```
+
+The default address is <http://localhost:3000>. Put the application behind your
+normal TLS reverse proxy if it is exposed outside a trusted administration
+network.
+
+For systemd, store the application at `/opt/trellis/ui`, place the two
+variables in `/opt/trellis/ui/.env.local`, and create
+`/etc/systemd/system/trellis-ui.service`:
+
+```ini
+[Unit]
+Description=Trellis dashboard
+After=network-online.target trellis-node.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trellis-ui
+Group=trellis-ui
+WorkingDirectory=/opt/trellis/ui
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Protect `.env.local` so only the service account can read it, then enable the
+service:
+
+```sh
+sudo chown trellis-ui:trellis-ui /opt/trellis/ui/.env.local
+sudo chmod 600 /opt/trellis/ui/.env.local
+sudo systemctl daemon-reload
+sudo systemctl enable --now trellis-ui
+```
+
+## Troubleshooting
+
+- **Dashboard API requests return 502:** verify both environment variables and
+  confirm `TRELLIS_API_URL` points to the elected leader.
+- **Dashboard API requests return 401:** the UI token does not match the
+  cluster token used by the node.
+- **Data appears stale:** the dashboard polls every five seconds; check the
+  browser network panel and dashboard service logs for failed proxy requests.
