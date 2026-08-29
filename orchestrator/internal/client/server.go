@@ -145,6 +145,15 @@ func (s *ServerClient) DeleteJob(ctx context.Context, name string) error {
 	return nil
 }
 
+func (s *ServerClient) ListServices(ctx context.Context) (*api.ServiceListResponse, error) {
+	var responseData api.ServiceListResponse
+	err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/services", nil, &responseData)
+	if err != nil {
+		return nil, fmt.Errorf("list services: %w", err)
+	}
+	return &responseData, nil
+}
+
 func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbeat *Heartbeat) error {
 	requestData := &api.HeartbeatRequest{
 		NodeID:      heartbeat.NodeID,

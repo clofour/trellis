@@ -23,6 +23,15 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("valid job rejected: %v", err)
 	}
 
+	withExtensions := &JobSpec{Namespace: "default", Name: "proxy", TaskGroups: []TaskGroupSpec{{
+		Name: "proxy", Count: 1, NetworkMode: "host", APIAccess: true,
+		Labels: map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"},
+		Tasks:  []TaskSpec{{Name: "nginx", Image: "nginx:latest"}},
+	}}}
+	if err := Validate(withExtensions); err != nil {
+		t.Fatalf("valid job with extensions rejected: %v", err)
+	}
+
 	tests := []struct {
 		name string
 		job  *JobSpec
@@ -32,6 +41,8 @@ func TestValidate(t *testing.T) {
 		{"zero replicas", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
 		{"missing image", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server"}}}}}},
 		{"invalid port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Ports: []PortSpec{{ContainerPort: 70000}}}}}}}},
+		{"invalid network_mode", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, NetworkMode: "bridge", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
+		{"invalid label key", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Labels: map[string]string{"123bad": "v"}, Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

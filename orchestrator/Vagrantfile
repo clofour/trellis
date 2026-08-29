@@ -8,9 +8,9 @@ Vagrant.configure("2") do |config|
     config.hostmanager.include_offline = true
 
     nodes = [
-        { name: "control", role: "control", hostname: "control.trellis.local" },
-        { name: "worker-1", role: "worker", hostname: "worker-1.trellis.local" },
-        { name: "worker-2", role: "worker", hostname: "worker-2.trellis.local" }
+        { name: "control", hostname: "control.trellis.local" },
+        { name: "worker-1", hostname: "worker-1.trellis.local" },
+        { name: "worker-2", hostname: "worker-2.trellis.local" }
     ]
 
     nodes.each do |definition|
@@ -26,11 +26,6 @@ Vagrant.configure("2") do |config|
 
             node.vm.provision "common", type: "shell", path: "demo/common.sh"
             node.vm.provision "containerd", type: "shell", path: "demo/containerd.sh"
-            if definition[:role] == "control"
-                node.vm.provision "consul-server", type: "shell", path: "demo/consul-server.sh"
-            else
-                node.vm.provision "consul-client", type: "shell", path: "demo/consul-client.sh"
-            end
             node.vm.provision "trellis-node", type: "shell", path: "demo/trellis-node.sh"
         end
     end

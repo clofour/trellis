@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/agent"
+	"github.com/clofour/trellis/internal/auth"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
 	"github.com/clofour/trellis/internal/election"
@@ -35,10 +36,10 @@ const shutdownTime = 10 * time.Second
 
 type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
-	DataDir, Cluster, ClusterToken, ContainerdSock, ConsulAddr string
-	ElectionTTL                                                time.Duration
-	WireGuardPool, WireGuardEndpoint                           string
-	WireGuardPort                                              int
+	DataDir, Cluster, ClusterToken, ContainerdSock            string
+	ElectionTTL                                               time.Duration
+	WireGuardPool, WireGuardEndpoint                          string
+	WireGuardPort                                             int
 }
 
 func main() {
@@ -53,7 +54,6 @@ func main() {
 	f.StringVar(&cfg.Cluster, "cluster", "default", "Cluster name")
 	f.StringVar(&cfg.ClusterToken, "cluster-token", "", "Shared cluster token")
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
-	f.StringVar(&cfg.ConsulAddr, "consul-addr", "127.0.0.1:8500", "Consul address")
 	f.DurationVar(&cfg.ElectionTTL, "election-ttl", 15*time.Second, "Leader election session TTL")
 	f.StringVar(&cfg.WireGuardPool, "wireguard-pool", "10.64.0.0/10", "Cluster address pool used for automatic namespace networking")
 	f.StringVar(&cfg.WireGuardEndpoint, "wireguard-endpoint", "", "Externally reachable WireGuard host or host:port")
@@ -95,16 +95,17 @@ func run(parent context.Context, cfg *config) error {
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	store, err := state.NewConsulStoreWithAddress(cfg.ConsulAddr)
+	store, err := state.NewBoltStore(filepath.Join(cfg.DataDir, "trellis.db"))
 	if err != nil {
-		return fmt.Errorf("init Consul: %w", err)
+		return fmt.Errorf("init state store: %w", err)
 	}
+	defer store.Close()
 	local := storage.NewLocalStorage(cfg.DataDir)
 	if err := local.Init(); err != nil {
 		return fmt.Errorf("init local storage: %w", err)
 	}
 	stateCtl := server.NewStateController(store, cfg.Cluster)
-	control := server.NewServer(log, local, stateCtl)
+	control := server.NewServer(log, local, stateCtl, store, cfg.Cluster, cfg.ServerAdvertise)
 	if err := control.SetNetworkPool(cfg.WireGuardPool); err != nil {
 		return err
 	}
@@ -123,10 +124,7 @@ func run(parent context.Context, cfg *config) error {
 	}()
 	healthMgr := health.NewHealthManager(log, runtimeClient, nil)
 	restartCtl := agent.NewRestartController(runtimeClient, nil)
-	registry, err := discovery.NewConsulRegistryWithAddress(cfg.ConsulAddr)
-	if err != nil {
-		return fmt.Errorf("init service registry: %w", err)
-	}
+	registry := discovery.NoopRegistry{}
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "")
 	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), registry, leaderClient, id)
 	networkManager, err := network.NewAutomatedWireGuardManager(filepath.Join(cfg.DataDir, "network"), cfg.WireGuardPort)
@@ -155,7 +153,7 @@ func run(parent context.Context, cfg *config) error {
 	ag.Init(ctx)
 
 	agentHTTP := echo.New()
-	agentHTTP.Use(middleware.Recover(), authMiddleware(cfg.ClusterToken))
+	agentHTTP.Use(middleware.Recover(), clusterAuthMiddleware(cfg.ClusterToken))
 	agent.NewHandler(ag).Register(agentHTTP)
 	go func() {
 		if err := (echo.StartConfig{Address: cfg.AgentListen, GracefulTimeout: shutdownTime}).Start(ctx, agentHTTP); err != nil && ctx.Err() == nil {
@@ -164,7 +162,7 @@ func run(parent context.Context, cfg *config) error {
 		}
 	}()
 
-	elector := election.New(store.Client(), cfg.Cluster, election.Leader{NodeID: id, Address: cfg.ServerAdvertise}, cfg.ElectionTTL)
+	elector := election.NewSingleNodeElector(election.Leader{NodeID: id, Address: cfg.ServerAdvertise})
 	events := make(chan election.Event)
 	go func() {
 		if err := elector.Run(ctx, events); err != nil {
@@ -198,7 +196,7 @@ func run(parent context.Context, cfg *config) error {
 				log.Info("leadership acquired", "node_id", id, "address", cfg.ServerAdvertise)
 				control.Run(termCtx)
 				leaderHTTP := echo.New()
-				leaderHTTP.Use(middleware.Recover(), authMiddleware(cfg.ClusterToken))
+				leaderHTTP.Use(middleware.Recover(), leaderAuthMiddleware(cfg.ClusterToken, control.TokenManager()))
 				server.NewHandler(control).Register(leaderHTTP)
 				done := make(chan struct{})
 				leaderDone = done
@@ -226,7 +224,7 @@ func run(parent context.Context, cfg *config) error {
 	}
 }
 
-func watchLeader(ctx context.Context, log *slog.Logger, elector *election.Elector, target *client.ServerClient) {
+func watchLeader(ctx context.Context, log *slog.Logger, elector election.Elector, target *client.ServerClient) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -246,9 +244,27 @@ func watchLeader(ctx context.Context, log *slog.Logger, elector *election.Electo
 	}
 }
 
-func authMiddleware(token string) echo.MiddlewareFunc {
+func clusterAuthMiddleware(token string) echo.MiddlewareFunc {
 	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{KeyLookup: "header:Authorization:Bearer ", Validator: func(_ *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
 		return subtle.ConstantTimeCompare([]byte(key), []byte(token)) == 1, nil
+	}})
+}
+
+func leaderAuthMiddleware(clusterToken string, tokenManager *auth.TokenManager) echo.MiddlewareFunc {
+	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{KeyLookup: "header:Authorization:Bearer ", Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
+		if subtle.ConstantTimeCompare([]byte(key), []byte(clusterToken)) == 1 {
+			return true, nil
+		}
+		scope, err := tokenManager.ValidateToken(c.Request().Context(), key)
+		if err != nil {
+			return false, nil
+		}
+		if scope != nil {
+			ctx := context.WithValue(c.Request().Context(), server.NamespaceContextKey, scope.Namespace)
+			c.SetRequest(c.Request().WithContext(ctx))
+			return true, nil
+		}
+		return false, nil
 	}})
 }
 

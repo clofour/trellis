@@ -14,7 +14,16 @@ type Handler struct {
 	server *Server
 }
 
-func requestNamespace(c *echo.Context) string { return c.Request().Header.Get("X-Trellis-Namespace") }
+type contextKey string
+
+const NamespaceContextKey contextKey = "trellis-namespace"
+
+func requestNamespace(c *echo.Context) string {
+	if ns, ok := c.Request().Context().Value(NamespaceContextKey).(string); ok && ns != "" {
+		return ns
+	}
+	return c.Request().Header.Get("X-Trellis-Namespace")
+}
 
 func NewHandler(server *Server) *Handler {
 	return &Handler{
@@ -33,6 +42,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
+	v1.GET("/services", h.handleListServices)
 }
 
 func (h *Handler) handleAllocationLogs(c *echo.Context) error {
@@ -159,6 +169,14 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusAccepted)
+}
+
+func (h *Handler) handleListServices(c *echo.Context) error {
+	services := h.server.ListServices(requestNamespace(c))
+	if services == nil {
+		services = api.ServiceListResponse{}
+	}
+	return c.JSON(200, services)
 }
 
 func (h *Handler) convertNode(node *Node) *api.NodeResponse {

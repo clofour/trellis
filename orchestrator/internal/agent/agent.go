@@ -127,7 +127,7 @@ func (a *Agent) GetAllocations() []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan) error {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan, networkMode string, envOverrides map[string]string) error {
 	spec := taskSpec
 	if spec == nil {
 		return fmt.Errorf("task spec is required")
@@ -201,7 +201,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 	}
 
 	containerID := allocID
-	if wireGuard {
+	hostMode := networkMode == "host"
+	if wireGuard && !hostMode {
 		if networkPlan == nil {
 			return fmt.Errorf("automatic WireGuard network plan is required")
 		}
@@ -210,10 +211,17 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 			return fmt.Errorf("attach WireGuard network: %w", err)
 		}
 	}
+	env := make(map[string]string, len(spec.Env)+len(envOverrides))
+	for k, v := range spec.Env {
+		env[k] = v
+	}
+	for k, v := range envOverrides {
+		env[k] = v
+	}
 	_, err = a.runtime.Create(ctx, runtime.CreateOptions{
 		ID:     containerID,
 		Image:  spec.Image,
-		Env:    spec.Env,
+		Env:    env,
 		Mounts: mounts,
 		CPU: func() int {
 			if spec.Resources != nil {
@@ -450,7 +458,11 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 			a.mu.RLock()
 			actual := make([]api.AllocationStatus, 0, len(a.allocations))
 			for _, alloc := range a.allocations {
-				actual = append(actual, api.AllocationStatus{ID: alloc.ID, Status: alloc.Status})
+				ports := make([]api.PortMapping, 0, len(alloc.Ports))
+				for _, p := range alloc.Ports {
+					ports = append(ports, api.PortMapping{HostPort: p.HostPort, ContainerPort: p.ContainerPort})
+				}
+				actual = append(actual, api.AllocationStatus{ID: alloc.ID, Status: alloc.Status, Ports: ports})
 			}
 			a.mu.RUnlock()
 			err := a.server.SendHeartbeat(ctx, a.nodeID, &client.Heartbeat{

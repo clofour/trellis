@@ -8,6 +8,7 @@ import (
 )
 
 var identifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
+var labelKeyPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._/-]{0,62}$`)
 
 func Validate(spec *JobSpec) error {
 	if spec == nil {
@@ -43,6 +44,17 @@ func Validate(spec *JobSpec) error {
 		groups[group.Name] = struct{}{}
 		if group.Runtime != "" && group.Runtime != "runc" && group.Runtime != "runsc" {
 			return fmt.Errorf("task group %q: unsupported runtime %q", group.Name, group.Runtime)
+		}
+		if group.NetworkMode != "" && group.NetworkMode != "host" {
+			return fmt.Errorf("task group %q: unsupported network_mode %q", group.Name, group.NetworkMode)
+		}
+		for k, v := range group.Labels {
+			if !labelKeyPattern.MatchString(k) {
+				return fmt.Errorf("task group %q: invalid label key %q", group.Name, k)
+			}
+			if len(v) > 256 {
+				return fmt.Errorf("task group %q: label value for %q exceeds 256 characters", group.Name, k)
+			}
 		}
 		if group.Count < 1 {
 			return fmt.Errorf("task group %q: count must be at least 1", group.Name)

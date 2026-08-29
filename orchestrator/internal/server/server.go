@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/auth"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/spec"
+	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
 
 	"github.com/google/uuid"
@@ -32,14 +34,16 @@ type Server struct {
 	state   *StateController
 	client  *client.AgentClient
 
-	cluster     *Cluster
-	nodes       map[uuid.UUID]*Node
-	jobs        map[string]*Job
-	allocations []*Allocation
-	networkPool netip.Prefix
-	mu          sync.RWMutex
-	reconcileMu sync.Mutex
-	mutationMu  sync.Mutex
+	cluster       *Cluster
+	nodes         map[uuid.UUID]*Node
+	jobs          map[string]*Job
+	allocations   []*Allocation
+	networkPool   netip.Prefix
+	tokenManager  *auth.TokenManager
+	serverAddr    string
+	mu            sync.RWMutex
+	reconcileMu   sync.Mutex
+	mutationMu    sync.Mutex
 }
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
@@ -135,18 +139,21 @@ type Allocation struct {
 	Status   AllocationStatus
 	Node     *Node
 	Revision int
+	Ports    []api.PortMapping `json:"ports,omitempty"`
 }
 
-func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController) *Server {
+func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController, store state.StateStore, cluster, serverAddr string) *Server {
 	pool := netip.MustParsePrefix("10.64.0.0/10")
 	return &Server{
-		log:         log.With("component", "server"),
-		storage:     storage,
-		state:       state,
-		client:      &client.AgentClient{},
-		nodes:       make(map[uuid.UUID]*Node),
-		jobs:        make(map[string]*Job),
-		networkPool: pool,
+		log:          log.With("component", "server"),
+		storage:      storage,
+		state:        state,
+		client:       &client.AgentClient{},
+		nodes:        make(map[uuid.UUID]*Node),
+		jobs:         make(map[string]*Job),
+		networkPool:  pool,
+		tokenManager: auth.NewTokenManager(store, cluster),
+		serverAddr:   serverAddr,
 	}
 }
 
@@ -288,16 +295,36 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 		node.Status = NodeStatusHealthy
 	}
 	node.LastHeartbeat = time.Now()
-	statuses := make(map[string]AllocationStatus, len(actual))
+	type statusInfo struct {
+		Status AllocationStatus
+		Ports  []api.PortMapping
+	}
+	statuses := make(map[string]statusInfo, len(actual))
 	for _, a := range actual {
-		statuses[a.ID] = AllocationStatus(a.Status)
+		statuses[a.ID] = statusInfo{Status: AllocationStatus(a.Status), Ports: a.Ports}
 	}
 	for _, a := range s.allocations {
 		if a.Node == node {
-			if status, ok := statuses[a.Name]; ok {
-				a.Status = status
+			matched := false
+			var allPorts []api.PortMapping
+			for id, info := range statuses {
+				if len(id) >= len(a.Name) && id[:len(a.Name)] == a.Name {
+					if info.Status == AllocationStatusHealthy {
+						matched = true
+					}
+					allPorts = append(allPorts, info.Ports...)
+				}
+			}
+			if matched {
+				a.Status = AllocationStatusHealthy
+			} else if _, ok := statuses[a.Name]; ok {
+				a.Status = statuses[a.Name].Status
+				allPorts = statuses[a.Name].Ports
 			} else {
 				a.Status = AllocationStatusUnhealthy
+			}
+			if len(allPorts) > 0 {
+				a.Ports = allPorts
 			}
 		}
 	}
@@ -508,6 +535,50 @@ func unwrapPathError(err error) error {
 		}
 		err = u.Unwrap()
 	}
+}
+
+func (s *Server) ListServices(namespace string) api.ServiceListResponse {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result api.ServiceListResponse
+	for _, a := range s.allocations {
+		if a.Namespace != namespace || a.Status != AllocationStatusHealthy {
+			continue
+		}
+		job := s.jobs[jobKey(a.Namespace, a.JobName)]
+		var labels map[string]string
+		if job != nil {
+			for _, g := range job.Spec.TaskGroups {
+				if g.Name == a.TaskGroupName {
+					labels = g.Labels
+					break
+				}
+			}
+		}
+		var address string
+		if a.Node != nil {
+			address = a.Node.Host
+		}
+		result = append(result, api.ServiceEntry{
+			ID:        a.Name,
+			Job:       a.JobName,
+			Group:     a.TaskGroupName,
+			Namespace: a.Namespace,
+			Labels:    labels,
+			Address:   address,
+			Ports:     a.Ports,
+			Status:    string(a.Status),
+		})
+	}
+	return result
+}
+
+func (s *Server) TokenManager() *auth.TokenManager {
+	return s.tokenManager
+}
+
+func (s *Server) ServerAddr() string {
+	return s.serverAddr
 }
 
 func (s *Server) runReconcileLoop(ctx context.Context) {

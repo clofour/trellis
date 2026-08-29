@@ -2,36 +2,46 @@ package election
 
 import (
 	"context"
-	"encoding/base64"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hashicorp/consul/api"
 )
 
-func TestCurrentReturnsOnlyHeldLeader(t *testing.T) {
+func TestSingleNodeElectorEmitsElectedEvent(t *testing.T) {
 	id := uuid.New()
-	value := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(`{"node_id":%q,"address":"node:8128"}`, id)))
-	held := true
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		session := ""
-		if held {
-			session = "session-id"
+	elector := NewSingleNodeElector(Leader{NodeID: id, Address: "node:8128"})
+	ctx, cancel := context.WithCancel(context.Background())
+	events := make(chan Event, 1)
+	done := make(chan error, 1)
+	go func() { done <- elector.Run(ctx, events) }()
+
+	select {
+	case e := <-events:
+		if !e.Elected {
+			t.Fatal("expected elected event")
 		}
-		fmt.Fprintf(w, `[{"Key":"trellis/default/leader","Value":%q,"Session":%q}]`, value, session)
-	}))
-	defer ts.Close()
-	config := api.DefaultConfig()
-	config.Address = ts.URL
-	client, err := api.NewClient(config)
-	if err != nil {
-		t.Fatal(err)
+		if e.Leader.NodeID != id || e.Leader.Address != "node:8128" {
+			t.Fatalf("unexpected leader: %#v", e.Leader)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for election event")
 	}
-	elector := New(client, "default", Leader{}, 15*time.Second)
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Run to exit")
+	}
+}
+
+func TestSingleNodeElectorCurrentReturnsLeader(t *testing.T) {
+	id := uuid.New()
+	elector := NewSingleNodeElector(Leader{NodeID: id, Address: "node:8128"})
 
 	leader, err := elector.Current(context.Background())
 	if err != nil {
@@ -40,12 +50,6 @@ func TestCurrentReturnsOnlyHeldLeader(t *testing.T) {
 	if leader == nil || leader.NodeID != id || leader.Address != "node:8128" {
 		t.Fatalf("unexpected leader: %#v", leader)
 	}
-	held = false
-	leader, err = elector.Current(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if leader != nil {
-		t.Fatalf("expected no leader, got %#v", leader)
-	}
 }
+
+var _ Elector = (*SingleNodeElector)(nil)

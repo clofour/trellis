@@ -14,8 +14,8 @@ fi
 cat > /etc/systemd/system/trellis-node.service <<EOF
 [Unit]
 Description=Trellis node
-After=containerd.service consul.service network-online.target
-Wants=containerd.service consul.service network-online.target
+After=containerd.service network-online.target
+Wants=containerd.service network-online.target
 
 [Service]
 ExecStart=/usr/local/bin/trellis-node --data-dir ${DATA_DIR} --agent-advertise $(hostname):8127 --server-advertise $(hostname):8128 --cluster-token $(cat "${TOKEN_FILE}")

@@ -97,14 +97,19 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 			return fmt.Errorf("job %s was deleted before allocation start", alloc.JobName)
 		}
 		var groupRuntime string
+		var groupNetworkMode string
+		var groupAPIAccess bool
 		for _, group := range job.Spec.TaskGroups {
 			if group.Name == alloc.TaskGroupName {
 				groupRuntime = group.Runtime
+				groupNetworkMode = group.NetworkMode
+				groupAPIAccess = group.APIAccess
 				break
 			}
 		}
-		wireGuard := job.Spec.Network != nil && job.Spec.Network.WireGuard
-		request := &api.AllocationRequest{Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard}
+		hostMode := groupNetworkMode == "host"
+		wireGuard := job.Spec.Network != nil && job.Spec.Network.WireGuard && !hostMode
+		request := &api.AllocationRequest{Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard, NetworkMode: groupNetworkMode}
 		if wireGuard {
 			plan, err := s.networkPlan(alloc.Namespace, alloc.Node)
 			if err != nil {
@@ -114,6 +119,16 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 			request.NetworkPlan = plan
 		}
 		s.mu.RUnlock()
+		if groupAPIAccess && s.tokenManager != nil {
+			token, err := s.tokenManager.GetOrCreateNamespaceToken(ctx, alloc.Namespace)
+			if err != nil {
+				return fmt.Errorf("create namespace token: %w", err)
+			}
+			request.EnvOverrides = map[string]string{
+				"TRELLIS_TOKEN": token,
+				"TRELLIS_ADDR":  s.serverAddr,
+			}
+		}
 		if err := s.state.PutAllocation(ctx, alloc); err != nil {
 			return fmt.Errorf("persist allocation: %w", err)
 		}
