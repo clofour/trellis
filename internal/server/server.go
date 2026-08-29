@@ -38,6 +38,8 @@ type Server struct {
 	allocations []*Allocation
 	networkPool netip.Prefix
 	mu          sync.RWMutex
+	reconcileMu sync.Mutex
+	mutationMu  sync.Mutex
 }
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
@@ -224,7 +226,7 @@ func (s *Server) Run(ctx context.Context) {
 	go s.runReconcileLoop(ctx)
 }
 
-func (s *Server) ListNodes(ctx context.Context) []Node {
+func (s *Server) ListNodes() []Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]Node, 0, len(s.nodes))
@@ -324,6 +326,8 @@ func (s *Server) RegisterJob(ctx context.Context, tenant string, jobSpec *spec.J
 	if err := spec.Validate(jobSpec); err != nil {
 		return fmt.Errorf("validate job: %w", err)
 	}
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
 	s.mu.Lock()
 	revision := 1
 	if jobSpec.Tenant != tenant {
@@ -407,10 +411,16 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 		s.mu.Unlock()
 		return fmt.Errorf("node not found")
 	}
+	previousStatus := node.Status
 	node.Status = NodeStatusDraining
 	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, Status: node.Status}
 	s.mu.Unlock()
 	if err := s.state.PutNode(ctx, id.String(), summary); err != nil {
+		s.mu.Lock()
+		if current := s.nodes[id]; current == node && current.Status == NodeStatusDraining {
+			current.Status = previousStatus
+		}
+		s.mu.Unlock()
 		return err
 	}
 	s.Reconcile(ctx)
@@ -449,32 +459,26 @@ func (s *Server) GetJob(tenant, name string) (*api.JobStatusResponse, bool) {
 }
 
 func (s *Server) DeleteJob(ctx context.Context, tenant, name string) error {
-	s.mu.Lock()
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+	s.mu.RLock()
 	key := jobKey(tenant, name)
 	_, ok := s.jobs[key]
-	if ok {
-		delete(s.jobs, key)
-	}
-	s.mu.Unlock()
+	s.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("job %s not found", name)
 	}
 	if err := s.state.DeleteJob(ctx, key); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	delete(s.jobs, key)
+	s.mu.Unlock()
 	s.Reconcile(ctx)
 	return nil
 }
 
-func (s *Server) RunAllocation(ctx context.Context, allocation *Allocation) error {
-	return nil
-}
-
-func (s *Server) StopAllocation(ctx context.Context, allocation *Allocation) error {
-	return nil
-}
-
-func (s *Server) ValidateAPIToken(ctx context.Context, token string) bool {
+func (s *Server) ValidateAPIToken(token string) bool {
 	if s.cluster == nil {
 		return false
 	}

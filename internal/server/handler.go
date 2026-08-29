@@ -44,7 +44,7 @@ func (h *Handler) handleAllocationLogs(c *echo.Context) error {
 	}
 	logs, err := h.server.AllocationLogsForTenant(c.Request().Context(), requestTenant(c), c.Param("id"), c.QueryParam("follow") == "true", tail)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+		return echo.NewHTTPError(http.StatusNotFound, "allocation not found")
 	}
 	defer logs.Close()
 	c.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -56,18 +56,16 @@ func (h *Handler) handleAllocationLogs(c *echo.Context) error {
 func (h *Handler) handleDrainNode(c *echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid node ID")
 	}
 	if err := h.server.DrainNode(c.Request().Context(), id); err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+		return echo.NewHTTPError(http.StatusNotFound, "node not found")
 	}
 	return c.NoContent(http.StatusAccepted)
 }
 
 func (h *Handler) handleListNodes(c *echo.Context) error {
-	ctx := c.Request().Context()
-
-	nodes := h.server.ListNodes(ctx)
+	nodes := h.server.ListNodes()
 
 	result := make(api.NodeListResponse, 0, len(nodes))
 	for _, node := range nodes {
@@ -83,7 +81,7 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 	var request api.NodeRegistrationRequest
 	err := c.Bind(&request)
 	if err != nil {
-		return err
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
 	err = h.server.RegisterNode(ctx, &NodeRegistration{
@@ -98,7 +96,7 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 		WireGuardEndpoint:  request.WireGuardEndpoint,
 	})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "unable to register node")
 	}
 
 	return c.JSON(http.StatusCreated, api.NodeRegistrationResponse{ID: request.ID})
@@ -115,11 +113,11 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 
 	var request api.HeartbeatRequest
 	if err := c.Bind(&request); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 	err = h.server.Heartbeat(ctx, uuid, request.Allocations)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "unable to process heartbeat")
 	}
 
 	return c.NoContent(http.StatusNoContent)
@@ -135,7 +133,7 @@ func (h *Handler) handleGetJob(c *echo.Context) error {
 
 func (h *Handler) handleDeleteJob(c *echo.Context) error {
 	if err := h.server.DeleteJob(c.Request().Context(), requestTenant(c), c.Param("name")); err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+		return echo.NewHTTPError(http.StatusNotFound, "job not found")
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -146,12 +144,12 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 	var request api.JobRegistrationRequest
 	err := c.Bind(&request)
 	if err != nil {
-		return err
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
 	err = h.server.RegisterJob(ctx, requestTenant(c), &request.Spec)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "job is invalid or could not be saved")
 	}
 
 	return c.NoContent(http.StatusAccepted)

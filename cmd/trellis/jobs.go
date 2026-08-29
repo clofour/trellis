@@ -47,9 +47,9 @@ func NewJobsStatusCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Job: %s\nRevision: %d\nDesired: %d\nRunning: %d\nHealthy: %d\n", status.Name, status.Revision, status.Desired, status.Running, status.Healthy)
+		fmt.Fprintf(cmd.OutOrStdout(), "Job: %s\nRevision: %d\nDesired: %d\nRunning: %d\nHealthy: %d\n", status.Name, status.Revision, status.Desired, status.Running, status.Healthy)
 		for _, a := range status.Allocations {
-			fmt.Printf("%s\t%s/%s\t%s\t%s\n", a.ID, a.Group, a.Task, a.NodeID, a.Status)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s/%s\t%s\t%s\n", a.ID, a.Group, a.Task, a.NodeID, a.Status)
 		}
 		return nil
 	}}
@@ -60,7 +60,7 @@ func NewJobsDestroyCmd() *cobra.Command {
 		if err := client.NewTenantServerClient(config.ClusterToken, config.ServerAddr, config.Tenant).DeleteJob(cmd.Context(), args[0]); err != nil {
 			return err
 		}
-		fmt.Println("Job destroyed successfully.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Job destroyed successfully.")
 		return nil
 	}}
 }
@@ -94,7 +94,7 @@ func NewJobsApplyCmd() *cobra.Command {
 				return fmt.Errorf("submit job: %w", err)
 			}
 
-			fmt.Println("Job submitted successfully.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Job submitted successfully.")
 
 			return nil
 		},

@@ -22,7 +22,7 @@ func (s *AgentClient) Logs(ctx context.Context, address, allocID string, follow 
 func NewAgentClient(token string) *AgentClient {
 	client := &client{
 		token:  token,
-		client: &http.Client{},
+		client: newHTTPClient(),
 	}
 
 	return &AgentClient{
@@ -39,7 +39,7 @@ func (s *AgentClient) RunAllocation(ctx context.Context, address string, allocat
 }
 
 func (s *AgentClient) StopAllocation(ctx context.Context, address string, allocID string) error {
-	err := s.client.request(ctx, http.MethodDelete, normalizeBaseURL(address)+"/v1/allocations/"+allocID, nil, nil)
+	err := s.client.request(ctx, http.MethodDelete, normalizeBaseURL(address)+"/v1/allocations/"+url.PathEscape(allocID), nil, nil)
 	if err != nil {
 		return fmt.Errorf("stop allocation: %w", err)
 	}

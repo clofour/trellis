@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"text/tabwriter"
 	"time"
 
@@ -32,7 +31,7 @@ func NewNodesDrainCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr).DrainNode(cmd.Context(), id); err != nil {
 			return err
 		}
-		fmt.Println("Node drain started.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Node drain started.")
 		return nil
 	}}
 }
@@ -50,11 +49,11 @@ func NewNodesListCmd() *cobra.Command {
 			}
 
 			if len(*nodes) == 0 {
-				fmt.Println("No nodes")
+				fmt.Fprintln(cmd.OutOrStdout(), "No nodes")
 				return nil
 			}
 
-			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 
 			fmt.Fprintln(w, "ID\tAddress\tStatus\tCPU (m)\tMemory (bytes)\tHeartbeat")
 

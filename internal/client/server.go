@@ -64,7 +64,7 @@ func NewTenantServerClient(token string, addr string, tenant string) *ServerClie
 	client := &client{
 		token:  token,
 		tenant: tenant,
-		client: &http.Client{},
+		client: newHTTPClient(),
 	}
 
 	return &ServerClient{
@@ -115,7 +115,7 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 
 func (s *ServerClient) GetJob(ctx context.Context, name string) (*api.JobStatusResponse, error) {
 	var response api.JobStatusResponse
-	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/jobs/"+name, nil, &response); err != nil {
+	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/jobs/"+url.PathEscape(name), nil, &response); err != nil {
 		return nil, fmt.Errorf("get job: %w", err)
 	}
 	return &response, nil
@@ -128,14 +128,14 @@ func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error 
 
 	err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/jobs", requestData, nil)
 	if err != nil {
-		return fmt.Errorf("register node: %w", err)
+		return fmt.Errorf("submit job: %w", err)
 	}
 
 	return nil
 }
 
 func (s *ServerClient) DeleteJob(ctx context.Context, name string) error {
-	if err := s.client.request(ctx, http.MethodDelete, s.address()+"/v1/jobs/"+name, nil, nil); err != nil {
+	if err := s.client.request(ctx, http.MethodDelete, s.address()+"/v1/jobs/"+url.PathEscape(name), nil, nil); err != nil {
 		return fmt.Errorf("delete job: %w", err)
 	}
 	return nil
@@ -151,7 +151,7 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbea
 
 	err := s.client.request(ctx, http.MethodPost, url, requestData, nil)
 	if err != nil {
-		return fmt.Errorf("register node: %w", err)
+		return fmt.Errorf("send heartbeat: %w", err)
 	}
 
 	return nil

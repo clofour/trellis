@@ -117,11 +117,7 @@ func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error
 	if err := os.MkdirAll(c.logDir, 0o750); err != nil {
 		return fmt.Errorf("create log directory: %w", err)
 	}
-	logFile, err := os.OpenFile(c.logPath(containerID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
-	if err != nil {
-		return fmt.Errorf("open log file: %w", err)
-	}
-	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, logFile, logFile)))
+	task, err := container.NewTask(ctx, cio.LogFile(c.logPath(containerID)))
 	if err != nil {
 		return fmt.Errorf("creating task for %s: %w", containerID, err)
 	}
@@ -166,6 +162,9 @@ func (c *ContainerdRuntime) Stop(ctx context.Context, containerID string) error 
 
 	container, err := c.client.LoadContainer(ctx, containerID)
 	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil
+		}
 		return fmt.Errorf("loading container %s: %w", containerID, err)
 	}
 
@@ -217,6 +216,9 @@ func (c *ContainerdRuntime) Remove(ctx context.Context, containerID string) erro
 
 	container, err := c.client.LoadContainer(ctx, containerID)
 	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil
+		}
 		return fmt.Errorf("loading container %s: %w", containerID, err)
 	}
 

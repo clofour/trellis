@@ -11,9 +11,11 @@ import (
 	"github.com/clofour/trellis/internal/spec"
 )
 
-const checkInterval = 10 * time.Second
-const checkTimeout = 5 * time.Second
-const checkThreshold = 3
+const (
+	checkInterval  = 10 * time.Second
+	checkTimeout   = 5 * time.Second
+	checkThreshold = 3
+)
 
 type HealthSubscriber interface {
 	OnHealthy(ctx context.Context, allocID string) error
@@ -44,6 +46,7 @@ type HealthManager struct {
 
 	mu    sync.Mutex
 	tasks map[string]*trackedTask
+	ctx   context.Context
 }
 
 func NewHealthManager(log *slog.Logger, runtime runtime.ContainerRuntime, subscriber HealthSubscriber) *HealthManager {
@@ -52,14 +55,21 @@ func NewHealthManager(log *slog.Logger, runtime runtime.ContainerRuntime, subscr
 		runtime:    runtime,
 		tasks:      make(map[string]*trackedTask),
 		Subscriber: subscriber,
+		ctx:        context.Background(),
 	}
+}
+
+func (h *HealthManager) SetContext(ctx context.Context) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ctx = ctx
 }
 
 func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *spec.HealthCheckSpec) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(h.ctx)
 
 	existingTrackedTask, ok := h.tasks[allocID]
 	if ok {
