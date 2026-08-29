@@ -28,6 +28,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/nodes", h.handleRegisterNode)
 	v1.POST("/nodes/:id/heartbeat", h.handleHeartbeat)
 	v1.POST("/nodes/:id/drain", h.handleDrainNode)
+	v1.GET("/jobs", h.handleListJobs)
 	v1.POST("/jobs", h.handleRegisterJob)
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
@@ -121,6 +122,11 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *Handler) handleListJobs(c *echo.Context) error {
+	jobs := h.server.ListJobs(requestTenant(c))
+	return c.JSON(200, jobs)
 }
 
 func (h *Handler) handleGetJob(c *echo.Context) error {
