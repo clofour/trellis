@@ -67,13 +67,13 @@ func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health
 
 		log: log,
 
-		runtime: runtime,
-		health:  health,
-		restart: restart,
-		ports:   ports,
-		volumes: volumes,
-		network: network.DisabledManager{},
-		server:  server,
+		runtime:  runtime,
+		health:   health,
+		restart:  restart,
+		ports:    ports,
+		volumes:  volumes,
+		network:  network.DisabledManager{},
+		server:   server,
 		nodeInfo: client.NodeInfo{ID: nodeID, Host: "127.0.0.1", Port: 8127},
 	}
 
@@ -403,6 +403,9 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if !a.server.Ready() {
+				continue
+			}
+			if !registered {
 				continue
 			}
 			a.mu.RLock()
