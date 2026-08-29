@@ -21,12 +21,19 @@ cp .env.example .env.local
 ```dotenv
 TRELLIS_API_URL=http://localhost:8128
 TRELLIS_API_TOKEN=replace-with-the-cluster-token
+TRELLIS_NAMESPACE=default
 ```
 
 | Variable | Required | Description |
 | --- | --- | --- |
 | `TRELLIS_API_URL` | Recommended | Base URL of the current leader API; defaults to `http://localhost:8128`. |
 | `TRELLIS_API_TOKEN` | Yes | Shared cluster token sent as a bearer token. |
+| `TRELLIS_NAMESPACE` | Recommended | Namespace used to scope jobs and allocations; defaults to the orchestrator's empty namespace when omitted. |
+
+The configured namespace is shown in the sidebar. The dashboard sends it as
+`X-Trellis-Namespace` for all orchestrator requests. When using a
+namespace-scoped token, set this value to the token's namespace; the
+orchestrator enforces the scope carried by the token.
 
 In the current single-leader setup, the configured URL must reach the node
 that owns leadership. Restart the dashboard with a new URL after leadership

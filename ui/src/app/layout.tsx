@@ -29,7 +29,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex h-full bg-background text-foreground">
-        <Sidebar />
+        <Sidebar namespace={process.env.TRELLIS_NAMESPACE || "unscoped"} />
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-5xl px-6 py-8">{children}</div>
         </main>

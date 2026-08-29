@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
-
-const TRELLIS_URL = process.env.TRELLIS_API_URL || "http://localhost:8128";
-const TRELLIS_TOKEN = process.env.TRELLIS_API_TOKEN || "";
+import { orchestratorHeaders, TRELLIS_URL } from "@/lib/orchestrator";
 
 export async function GET() {
   try {
     const res = await fetch(`${TRELLIS_URL}/v1/nodes`, {
-      headers: {
-        Authorization: `Bearer ${TRELLIS_TOKEN}`,
-      },
+      headers: orchestratorHeaders(),
     });
 
     if (!res.ok) {
