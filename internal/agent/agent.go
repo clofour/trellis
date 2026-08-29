@@ -214,7 +214,9 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 
 	a.health.DeregisterTask(allocID)
 
-	a.restart.Untrack(ctx, allocID)
+	if err = a.restart.Untrack(ctx, allocID); err != nil {
+		return fmt.Errorf("untrack allocation %s: %w", allocID, err)
+	}
 
 	for _, p := range alloc.Ports {
 		err := a.ports.Release(p)
@@ -296,11 +298,14 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 				actual = append(actual, api.AllocationStatus{ID: alloc.ID, Status: alloc.Status})
 			}
 			a.mu.RUnlock()
-			a.server.SendHeartbeat(ctx, a.nodeID, &client.Heartbeat{
+			err := a.server.SendHeartbeat(ctx, a.nodeID, &client.Heartbeat{
 				NodeID:      a.nodeID,
 				Timestamp:   time.Now(),
 				Allocations: actual,
 			})
+			if err != nil {
+				a.log.Error("send heartbeat failed", "error", err)
+			}
 		}
 	}
 }

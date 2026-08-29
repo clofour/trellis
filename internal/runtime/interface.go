@@ -28,9 +28,9 @@ type ContainerInfo struct {
 type ContainerRuntime interface {
 	Pull(ctx context.Context, image string) error
 	Create(ctx context.Context, options CreateOptions) (string, error)
-	Start(ctx context.Context, containerId string) error
-	Restart(ctx context.Context, containerId string) error
-	Stop(ctx context.Context, containerId string) error
+	Start(ctx context.Context, containerID string) error
+	Restart(ctx context.Context, containerID string) error
+	Stop(ctx context.Context, containerID string) error
 	Remove(ctx context.Context, containerID string) error
 	Exec(ctx context.Context, containerID string, command []string) (int, error)
 	Inspect(ctx context.Context, containerID string) (*ContainerInfo, error)

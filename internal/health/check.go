@@ -23,7 +23,9 @@ func CheckHTTP(ctx context.Context, addr string, port int, path string) (bool, e
 	if err != nil {
 		return false, fmt.Errorf("executing request %s: %w", url, err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	return response.StatusCode >= 200 && response.StatusCode < 300, nil
 }
@@ -36,7 +38,9 @@ func CheckTCP(ctx context.Context, addr string, port int) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("executing request %s: %w", url, err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	return true, nil
 }

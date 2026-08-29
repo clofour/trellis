@@ -54,12 +54,18 @@ func (s *LocalStorage) Put(key string, value any) error {
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer tmpFile.Close()
+	defer func() {
+		_ = tmpFile.Close()
+	}()
 
 	_, err = tmpFile.Write(content)
 	if err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return fmt.Errorf("write tmp file: %w", err)
+	}
+	if err = tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpFile.Name())
+		return fmt.Errorf("close tmp file: %w", err)
 	}
 
 	err = os.Rename(tmpFile.Name(), path)

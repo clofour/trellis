@@ -31,8 +31,8 @@ func (s *AgentClient) RunAllocation(ctx context.Context, address string, allocat
 	return nil
 }
 
-func (s *AgentClient) StopAllocation(ctx context.Context, address string, allocId string) error {
-	err := s.client.request(ctx, http.MethodDelete, normalizeBaseURL(address)+"/v1/allocations/"+allocId, nil, nil)
+func (s *AgentClient) StopAllocation(ctx context.Context, address string, allocID string) error {
+	err := s.client.request(ctx, http.MethodDelete, normalizeBaseURL(address)+"/v1/allocations/"+allocID, nil, nil)
 	if err != nil {
 		return fmt.Errorf("stop allocation: %w", err)
 	}

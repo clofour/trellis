@@ -91,7 +91,7 @@ func (r *RestartController) RunDetectionLoop(ctx context.Context) {
 				}
 
 				if containerState.Status == runtime.StatusStopped {
-					r.RequestRestart(ctx, allocID)
+					_ = r.RequestRestart(ctx, allocID)
 				}
 			}
 

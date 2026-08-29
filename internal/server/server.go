@@ -128,7 +128,9 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	}
 
 	b := make([]byte, 32)
-	rand.Read(b)
+	if _, err = rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate cluster token: %w", err)
+	}
 
 	token := base64.RawURLEncoding.EncodeToString(b)
 
