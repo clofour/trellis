@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/clofour/trellis/internal/client"
@@ -18,7 +19,25 @@ func NewJobsCmd() *cobra.Command {
 	cmd.AddCommand(NewJobsApplyCmd())
 	cmd.AddCommand(NewJobsStatusCmd())
 	cmd.AddCommand(NewJobsDestroyCmd())
+	cmd.AddCommand(NewJobsLogsCmd())
 
+	return cmd
+}
+
+func NewJobsLogsCmd() *cobra.Command {
+	var follow bool
+	var tail int
+	cmd := &cobra.Command{Use: "logs ALLOCATION", Args: cobra.ExactArgs(1), Short: "Stream allocation logs", RunE: func(cmd *cobra.Command, args []string) error {
+		logs, err := client.NewServerClient(config.ClusterToken, config.ServerAddr).AllocationLogs(cmd.Context(), args[0], follow, tail)
+		if err != nil {
+			return err
+		}
+		defer logs.Close()
+		_, err = io.Copy(cmd.OutOrStdout(), logs)
+		return err
+	}}
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow new log output")
+	cmd.Flags().IntVar(&tail, "tail", 100, "Number of trailing lines (0 means all)")
 	return cmd
 }
 

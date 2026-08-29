@@ -1,7 +1,9 @@
 package server
 
 import (
+	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/google/uuid"
@@ -23,9 +25,41 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/nodes", h.handleListNodes)
 	v1.POST("/nodes", h.handleRegisterNode)
 	v1.POST("/nodes/:id/heartbeat", h.handleHeartbeat)
+	v1.POST("/nodes/:id/drain", h.handleDrainNode)
 	v1.POST("/jobs", h.handleRegisterJob)
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
+	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
+}
+
+func (h *Handler) handleAllocationLogs(c *echo.Context) error {
+	tail, err := strconv.Atoi(c.QueryParam("tail"))
+	if c.QueryParam("tail") == "" {
+		tail, err = 100, nil
+	}
+	if err != nil || tail < 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "tail must be a non-negative integer")
+	}
+	logs, err := h.server.AllocationLogs(c.Request().Context(), c.Param("id"), c.QueryParam("follow") == "true", tail)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	defer logs.Close()
+	c.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
+	c.Response().WriteHeader(http.StatusOK)
+	_, err = io.Copy(c.Response(), logs)
+	return err
+}
+
+func (h *Handler) handleDrainNode(c *echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if err := h.server.DrainNode(c.Request().Context(), id); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	return c.NoContent(http.StatusAccepted)
 }
 
 func (h *Handler) handleListNodes(c *echo.Context) error {
@@ -126,5 +160,6 @@ func (h *Handler) convertNode(node *Node) *api.NodeResponse {
 		Port:          node.Port,
 		Status:        api.NodeStatusResponse(node.Status),
 		LastHeartbeat: node.LastHeartbeat,
+		CPU:           node.CPU, Memory: node.Memory,
 	}
 }

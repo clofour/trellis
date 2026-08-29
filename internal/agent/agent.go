@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -76,6 +77,10 @@ func (a *Agent) SetAdvertiseAddress(host string, port int) {
 	a.nodeInfo.Port = port
 }
 
+func (a *Agent) SetResources(cpu int, memory int64, osName, arch string) {
+	a.nodeInfo.CPU, a.nodeInfo.Memory, a.nodeInfo.OS, a.nodeInfo.Arch = cpu, memory, osName, arch
+}
+
 func (a *Agent) Init(ctx context.Context) error {
 	a.health.Subscriber = a
 	a.restart.Subscriber = a
@@ -141,6 +146,18 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 		Image:  spec.Image,
 		Env:    spec.Env,
 		Mounts: mounts,
+		CPU: func() int {
+			if spec.Resources != nil {
+				return spec.Resources.CPU
+			}
+			return 0
+		}(),
+		Memory: func() int64 {
+			if spec.Resources != nil {
+				return int64(spec.Resources.Memory)
+			}
+			return 0
+		}(),
 	})
 	if err != nil {
 		return fmt.Errorf("create container %s: %w", containerID, err)
@@ -188,6 +205,16 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID string, jobName strin
 	}
 
 	return nil
+}
+
+func (a *Agent) Logs(ctx context.Context, allocID string, follow bool, tail int) (io.ReadCloser, error) {
+	a.mu.RLock()
+	alloc := a.allocations[allocID]
+	a.mu.RUnlock()
+	if alloc == nil {
+		return nil, fmt.Errorf("allocation %s not found", allocID)
+	}
+	return a.runtime.Logs(ctx, alloc.ContainerID, follow, tail)
 }
 
 func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {

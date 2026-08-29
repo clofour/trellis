@@ -3,7 +3,9 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,10 @@ type ServerClient struct {
 	baseURL string
 	client  *client
 	mu      sync.RWMutex
+}
+
+func (s *ServerClient) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
+	return s.client.stream(ctx, fmt.Sprintf("%s/v1/allocations/%s/logs?follow=%t&tail=%d", s.address(), url.PathEscape(id), follow, tail))
 }
 
 func (s *ServerClient) SetAddress(addr string) {
@@ -69,6 +75,13 @@ func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, er
 	}
 
 	return &responseData, nil
+}
+
+func (s *ServerClient) DrainNode(ctx context.Context, id uuid.UUID) error {
+	if err := s.client.request(ctx, http.MethodPost, fmt.Sprintf("%s/v1/nodes/%s/drain", s.address(), id), nil, nil); err != nil {
+		return fmt.Errorf("drain node: %w", err)
+	}
+	return nil
 }
 
 func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*api.NodeRegistrationResponse, error) {

@@ -98,7 +98,7 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		s.allocations = append(s.allocations, alloc)
 		s.mu.Unlock()
 	case ActionStop:
-		if alloc.Node.Status == NodeStatusHealthy {
+		if alloc.Node.Status == NodeStatusHealthy || alloc.Node.Status == NodeStatusDraining {
 			if err := s.client.StopAllocation(ctx, address, alloc.Name); err != nil {
 				return err
 			}

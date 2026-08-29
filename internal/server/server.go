@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -35,6 +36,24 @@ type Server struct {
 	jobs        map[string]*Job
 	allocations []*Allocation
 	mu          sync.RWMutex
+}
+
+func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
+	s.mu.RLock()
+	var found *Allocation
+	for _, alloc := range s.allocations {
+		if alloc.Name == id {
+			found = alloc
+			break
+		}
+	}
+	if found == nil || found.Node == nil {
+		s.mu.RUnlock()
+		return nil, fmt.Errorf("allocation not found")
+	}
+	address := fmt.Sprintf("%s:%d", found.Node.Host, found.Node.Port)
+	s.mu.RUnlock()
+	return s.client.Logs(ctx, address, id, follow, tail)
 }
 
 type Cluster struct {
@@ -70,9 +89,12 @@ const (
 )
 
 type NodeSummary struct {
-	ID   uuid.UUID
-	Host string
-	Port int
+	ID     uuid.UUID
+	Host   string
+	Port   int
+	CPU    int
+	Memory int64
+	Status NodeStatus
 }
 
 type Job struct {
@@ -191,10 +213,17 @@ func (s *Server) ListNodes(ctx context.Context) []Node {
 }
 
 func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistration) error {
+	s.mu.RLock()
+	status := NodeStatusHealthy
+	if existing := s.nodes[nodeRegistration.ID]; existing != nil && existing.Status == NodeStatusDraining {
+		status = NodeStatusDraining
+	}
+	s.mu.RUnlock()
 	err := s.state.PutNode(ctx, nodeRegistration.ID.String(), &NodeSummary{
 		ID:   nodeRegistration.ID,
 		Host: nodeRegistration.Host,
 		Port: nodeRegistration.Port,
+		CPU:  nodeRegistration.CPU, Memory: nodeRegistration.Memory, Status: status,
 	})
 	if err != nil {
 		return fmt.Errorf("save node remotely: %w", err)
@@ -208,7 +237,10 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		s.nodes[nodeRegistration.ID] = node
 	}
 	node.Host, node.Port = nodeRegistration.Host, nodeRegistration.Port
-	node.Status, node.LastHeartbeat = NodeStatusHealthy, time.Now()
+	if node.Status != NodeStatusDraining {
+		node.Status = NodeStatusHealthy
+	}
+	node.LastHeartbeat = time.Now()
 	node.CPU, node.Memory = nodeRegistration.CPU, nodeRegistration.Memory
 
 	return nil
@@ -222,7 +254,9 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 		return fmt.Errorf("node not found")
 	}
 
-	node.Status = NodeStatusHealthy
+	if node.Status != NodeStatusDraining {
+		node.Status = NodeStatusHealthy
+	}
 	node.LastHeartbeat = time.Now()
 	statuses := make(map[string]AllocationStatus, len(actual))
 	for _, a := range actual {
@@ -281,7 +315,11 @@ func (s *Server) Reload(ctx context.Context) error {
 	}
 	nodes := make(map[uuid.UUID]*Node, len(nodeSummaries))
 	for _, summary := range nodeSummaries {
-		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, Status: NodeStatusUnhealthy}
+		status := NodeStatusUnhealthy
+		if summary.Status == NodeStatusDraining {
+			status = NodeStatusDraining
+		}
+		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, Status: status}
 	}
 	allocations := make([]*Allocation, 0, len(allocationMap))
 	for _, allocation := range allocationMap {
@@ -295,6 +333,23 @@ func (s *Server) Reload(ctx context.Context) error {
 	s.nodes = nodes
 	s.allocations = allocations
 	s.mu.Unlock()
+	return nil
+}
+
+func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	node := s.nodes[id]
+	if node == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("node not found")
+	}
+	node.Status = NodeStatusDraining
+	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, Status: node.Status}
+	s.mu.Unlock()
+	if err := s.state.PutNode(ctx, id.String(), summary); err != nil {
+		return err
+	}
+	s.Reconcile(ctx)
 	return nil
 }
 

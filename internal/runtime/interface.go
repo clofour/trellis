@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"io"
 )
 
 type ContainerStatus string
@@ -18,6 +19,8 @@ type CreateOptions struct {
 	Image  string
 	Env    map[string]string
 	Mounts []*Mount
+	CPU    int
+	Memory int64
 }
 
 type ContainerInfo struct {
@@ -34,4 +37,5 @@ type ContainerRuntime interface {
 	Remove(ctx context.Context, containerID string) error
 	Exec(ctx context.Context, containerID string, command []string) (int, error)
 	Inspect(ctx context.Context, containerID string) (*ContainerInfo, error)
+	Logs(ctx context.Context, containerID string, follow bool, tail int) (io.ReadCloser, error)
 }

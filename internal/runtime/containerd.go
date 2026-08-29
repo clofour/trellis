@@ -3,6 +3,9 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -19,6 +22,7 @@ const gracePeriod = 10 * time.Second
 
 type ContainerdRuntime struct {
 	client *containerd.Client
+	logDir string
 }
 
 type Port struct {
@@ -39,6 +43,7 @@ func NewContainerdRuntime(socketPath string) (*ContainerdRuntime, error) {
 
 	return &ContainerdRuntime{
 		client: client,
+		logDir: filepath.Join(os.TempDir(), "trellis-logs"),
 	}, nil
 }
 
@@ -70,6 +75,12 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 		oci.WithEnv(convertEnv(options.Env)),
 		oci.WithMounts(convertMounts(options.Mounts)),
 	}
+	if options.CPU > 0 {
+		ociSpecOpts = append(ociSpecOpts, oci.WithCPUCFS(int64(options.CPU*100), 100000))
+	}
+	if options.Memory > 0 {
+		ociSpecOpts = append(ociSpecOpts, oci.WithMemoryLimit(uint64(options.Memory)))
+	}
 
 	container, err := c.client.NewContainer(ctx, options.ID,
 		containerd.WithImage(image),
@@ -91,7 +102,14 @@ func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error
 		return fmt.Errorf("loading container %s: %w", containerID, err)
 	}
 
-	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
+	if err := os.MkdirAll(c.logDir, 0o750); err != nil {
+		return fmt.Errorf("create log directory: %w", err)
+	}
+	logFile, err := os.OpenFile(c.logPath(containerID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, logFile, logFile)))
 	if err != nil {
 		return fmt.Errorf("creating task for %s: %w", containerID, err)
 	}
@@ -103,6 +121,18 @@ func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error
 	}
 
 	return nil
+}
+
+func (c *ContainerdRuntime) logPath(containerID string) string {
+	return filepath.Join(c.logDir, filepath.Base(containerID)+".log")
+}
+
+func (c *ContainerdRuntime) Logs(ctx context.Context, containerID string, follow bool, tail int) (io.ReadCloser, error) {
+	file, err := os.Open(c.logPath(containerID))
+	if err != nil {
+		return nil, fmt.Errorf("open logs for %s: %w", containerID, err)
+	}
+	return newLogReader(ctx, file, follow, tail)
 }
 
 func (c *ContainerdRuntime) Restart(ctx context.Context, containerID string) error {

@@ -63,3 +63,29 @@ go run ./cmd/trellis --server-addr localhost:8128 \
 
 The elected leader API listens on port `8128` by default; every node's agent API
 listens on `8127`.
+
+## Resources, logs, and maintenance
+
+CPU requests are expressed in millicores and memory requests in bytes. Nodes
+advertise their detected capacity, and the scheduler only places allocations
+where both requests fit. The same limits are applied to the container runtime:
+
+```yaml
+resources:
+  cpu: 500
+  memory: 268435456
+```
+
+Stream the most recent output from an allocation (and keep following it with
+`--follow`):
+
+```sh
+go run ./cmd/trellis jobs logs --tail 100 --follow ALLOCATION_ID
+```
+
+Drain a node to reject new placements and migrate its existing allocations to
+healthy nodes with enough spare capacity:
+
+```sh
+go run ./cmd/trellis nodes drain NODE_ID
+```

@@ -62,6 +62,24 @@ func (c *client) request(ctx context.Context, method string, url string, request
 	return nil
 }
 
+func (c *client) stream(ctx context.Context, url string) (io.ReadCloser, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("constructing request %s: %w", url, err)
+	}
+	request.Header.Set("Authorization", "Bearer "+c.token)
+	response, err := c.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("executing request %s: %w", url, err)
+	}
+	if checkStatusCode(response.StatusCode) {
+		defer response.Body.Close()
+		body, _ := io.ReadAll(response.Body)
+		return nil, fmt.Errorf("status %d: %s", response.StatusCode, bytes.TrimSpace(body))
+	}
+	return response.Body, nil
+}
+
 func checkStatusCode(statusCode int) bool {
 	return statusCode < 200 || statusCode >= 300
 }
