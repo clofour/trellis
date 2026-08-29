@@ -1,22 +1,35 @@
 # Trellis
 
-Trellis is an experimental container scheduler built on containerd and Consul.
-Every machine runs the same `trellis-node` daemon: Consul elects one node to
-serve the control-plane API and reconcile jobs, while every node continues to
-run allocations and can participate in the next election.
+Trellis is a container scheduler built on containerd. It sits in the space between rolling your own deployment scripts and adopting Kubernetes — a real orchestrator for container workloads, without the operational complexity.
 
-The current MVP includes:
+Every project that ships software ends up rebuilding the same infrastructure: service placement, health checks, rolling updates, port allocation. Tools like Coolify improve the developer experience, but at their core they are not orchestrators. Kubernetes is a full orchestrator, but it brings significant complexity that many workloads simply do not need. Trellis is closer to Nomad in spirit: a lightweight, focused scheduler you can understand and operate yourself.
 
-- YAML job validation and revisioned job submission
-- node registration, heartbeats, draining, and balanced placement
-- allocation lifecycle management, health checks, and restart handling
-- container resource limits, dynamic host ports, and persistent local volumes
-- Consul service registration and optional WireGuard namespace networking
-- a CLI and a read-only Next.js operations dashboard
+Every machine runs the same `trellis-node` daemon. Raft consensus elects one node to serve the control-plane API and reconcile jobs, while every node continues to run allocations and participate in the next election.
 
 > [!NOTE]
 > Trellis is experimental. Evaluate its security, failure modes, and upgrade
 > behavior before using it for critical workloads.
+
+## Design principles
+
+**Modular and extensible, but focused.** Trellis exposes clean primitives you can build on. The core repository stays lean — only the essentials live here. If you need something specific to your environment, you can extend Trellis yourself rather than waiting on a plugin ecosystem. No Kubernetes complexity, and no surface area you did not ask for.
+
+**Non-opinionated and flexible.** Trellis provides the necessary building blocks without prescribing how you use them. Reverse proxies, for instance, are ordinary workloads — they read a service list and forward traffic like anything else, not a special first-class concept. Trellis does not enforce any organizational scheme; namespaces, teams, and projects are yours to arrange however makes sense. Operators can run Trellis as-is, or build their own frontends and abstractions on top for their specific use case.
+
+**Declarative, and optionally GitOps.** Jobs are defined as YAML manifests submitted through the API or CLI. Trellis supports a GitOps workflow, but does not require one — if your team prefers to apply manifests directly, that works just as well. The choice is yours.
+
+**Easy to use.** The tension between "flexible building blocks" and "easy to use" is addressed through thorough documentation and first-party examples. Trellis favors clear documentation over opinionated defaults that hide what is actually happening.
+
+**Open-source.** Trellis is fully open-source. Read it, modify it, and run it wherever you like.
+
+## Capabilities
+
+- YAML job validation and revisioned job submission
+- Node registration, heartbeats, draining, and balanced placement
+- Allocation lifecycle management, health checks, and restart handling
+- Container resource limits, dynamic host ports, and persistent local volumes
+- Built-in DNS service discovery and optional WireGuard namespace networking
+- A CLI and a read-only Next.js operations dashboard
 
 ## Documentation
 
@@ -52,8 +65,7 @@ and whether this node should join an existing cluster.
 
 ### Build from source
 
-If you prefer to build from source, install Go 1.26.4 or later and a
-running containerd instance, then:
+Install Go 1.26.4 or later and a running containerd instance, then:
 
 ```sh
 cd orchestrator
