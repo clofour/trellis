@@ -95,3 +95,8 @@ type ServiceEntry struct {
 }
 
 type ServiceListResponse = []ServiceEntry
+
+type RaftJoinRequest struct {
+	ID          string `json:"id"`
+	RaftAddress string `json:"raft_address"`
+}

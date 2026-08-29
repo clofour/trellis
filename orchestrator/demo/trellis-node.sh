@@ -11,6 +11,12 @@ if [ ! -s "${TOKEN_FILE}" ]; then
     head -c 32 /dev/urandom | base64 > "${TOKEN_FILE}"
 fi
 
+HOSTNAME=$(hostname)
+JOIN_FLAG=""
+if [ "${HOSTNAME}" != "control.trellis.local" ]; then
+    JOIN_FLAG="--join control.trellis.local:8128"
+fi
+
 cat > /etc/systemd/system/trellis-node.service <<EOF
 [Unit]
 Description=Trellis node
@@ -18,7 +24,7 @@ After=containerd.service network-online.target
 Wants=containerd.service network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/trellis-node --data-dir ${DATA_DIR} --agent-advertise $(hostname):8127 --server-advertise $(hostname):8128 --cluster-token $(cat "${TOKEN_FILE}")
+ExecStart=/usr/local/bin/trellis-node --data-dir ${DATA_DIR} --agent-advertise ${HOSTNAME}:8127 --server-advertise ${HOSTNAME}:8128 --raft-advertise ${HOSTNAME}:8129 --cluster-token $(cat "${TOKEN_FILE}") ${JOIN_FLAG}
 Restart=on-failure
 
 [Install]

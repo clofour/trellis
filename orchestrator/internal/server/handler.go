@@ -43,6 +43,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
 	v1.GET("/services", h.handleListServices)
+	v1.POST("/raft/join", h.handleRaftJoin)
 }
 
 func (h *Handler) handleAllocationLogs(c *echo.Context) error {
@@ -177,6 +178,23 @@ func (h *Handler) handleListServices(c *echo.Context) error {
 		services = api.ServiceListResponse{}
 	}
 	return c.JSON(200, services)
+}
+
+func (h *Handler) handleRaftJoin(c *echo.Context) error {
+	var req api.RaftJoinRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if req.ID == "" || req.RaftAddress == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id and raft_address are required")
+	}
+	if h.server.joiner == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "cluster join not available")
+	}
+	if err := h.server.joiner.AddVoter(req.ID, req.RaftAddress); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.NoContent(http.StatusOK)
 }
 
 func (h *Handler) convertNode(node *Node) *api.NodeResponse {

@@ -83,6 +83,22 @@ func (b *BoltStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+func (b *BoltStore) Restore(data map[string][]byte) error {
+	return b.db.Update(func(tx *bolt.Tx) error {
+		_ = tx.DeleteBucket(bucketName)
+		bucket, err := tx.CreateBucket(bucketName)
+		if err != nil {
+			return err
+		}
+		for k, v := range data {
+			if err := bucket.Put([]byte(k), v); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (b *BoltStore) Close() error {
 	return b.db.Close()
 }

@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +20,7 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/agent"
+	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/auth"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/discovery"
@@ -36,8 +41,8 @@ const shutdownTime = 10 * time.Second
 
 type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
+	RaftListen, RaftAdvertise, Join                           string
 	DataDir, Cluster, ClusterToken, ContainerdSock            string
-	ElectionTTL                                               time.Duration
 	WireGuardPool, WireGuardEndpoint                          string
 	WireGuardPort                                             int
 }
@@ -50,11 +55,13 @@ func main() {
 	f.StringVar(&cfg.AgentAdvertise, "agent-advertise", "", "Agent address advertised to the cluster")
 	f.StringVar(&cfg.ServerListen, "server-listen", ":8128", "Leader API listen address")
 	f.StringVar(&cfg.ServerAdvertise, "server-advertise", "", "Leader API address advertised to the cluster")
+	f.StringVar(&cfg.RaftListen, "raft-listen", ":8129", "Raft consensus transport listen address")
+	f.StringVar(&cfg.RaftAdvertise, "raft-advertise", "", "Raft consensus transport advertised address")
+	f.StringVar(&cfg.Join, "join", "", "Address of an existing cluster member to join (server API address)")
 	f.StringVar(&cfg.DataDir, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
 	f.StringVar(&cfg.Cluster, "cluster", "default", "Cluster name")
 	f.StringVar(&cfg.ClusterToken, "cluster-token", "", "Shared cluster token")
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
-	f.DurationVar(&cfg.ElectionTTL, "election-ttl", 15*time.Second, "Leader election session TTL")
 	f.StringVar(&cfg.WireGuardPool, "wireguard-pool", "10.64.0.0/10", "Cluster address pool used for automatic namespace networking")
 	f.StringVar(&cfg.WireGuardEndpoint, "wireguard-endpoint", "", "Externally reachable WireGuard host or host:port")
 	f.IntVar(&cfg.WireGuardPort, "wireguard-port", 51820, "WireGuard UDP listen port")
@@ -89,28 +96,57 @@ func run(parent context.Context, cfg *config) error {
 	if cfg.ServerAdvertise == "" {
 		cfg.ServerAdvertise = net.JoinHostPort(hostname, "8128")
 	}
+	if cfg.RaftAdvertise == "" {
+		cfg.RaftAdvertise = net.JoinHostPort(hostname, "8129")
+	}
 	agentHost, agentPort, err := splitAddress(cfg.AgentAdvertise)
 	if err != nil {
 		return fmt.Errorf("agent advertise address: %w", err)
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	store, err := state.NewBoltStore(filepath.Join(cfg.DataDir, "trellis.db"))
+
+	raftStore, err := state.NewRaftStore(state.RaftConfig{
+		DataDir:   cfg.DataDir,
+		BindAddr:  cfg.RaftListen,
+		Advertise: cfg.RaftAdvertise,
+		ServerID:  cfg.ServerAdvertise,
+		Bootstrap: cfg.Join == "",
+	})
 	if err != nil {
-		return fmt.Errorf("init state store: %w", err)
+		return fmt.Errorf("init raft store: %w", err)
 	}
-	defer store.Close()
+	defer raftStore.Close()
+
+	if cfg.Join != "" && !raftStore.HadExistingState() {
+		log.Info("joining cluster", "address", cfg.Join)
+		if err := joinCluster(ctx, log, cfg.Join, cfg.ClusterToken, cfg.ServerAdvertise, raftStore.LocalAddr()); err != nil {
+			return fmt.Errorf("join cluster: %w", err)
+		}
+	}
+
 	local := storage.NewLocalStorage(cfg.DataDir)
 	if err := local.Init(); err != nil {
 		return fmt.Errorf("init local storage: %w", err)
 	}
-	stateCtl := server.NewStateController(store, cfg.Cluster)
-	control := server.NewServer(log, local, stateCtl, store, cfg.Cluster, cfg.ServerAdvertise)
+	stateCtl := server.NewStateController(raftStore, cfg.Cluster)
+	control := server.NewServer(log, local, stateCtl, raftStore, cfg.Cluster, cfg.ServerAdvertise)
+	control.SetClusterJoiner(raftStore)
 	if err := control.SetNetworkPool(cfg.WireGuardPool); err != nil {
 		return err
 	}
-	if _, err := control.InitWithToken(ctx, cfg.ClusterToken); err != nil {
-		return fmt.Errorf("initialize control plane: %w", err)
+
+	for i := 0; ; i++ {
+		if _, err := control.InitWithToken(ctx, cfg.ClusterToken); err == nil {
+			break
+		} else if i >= 30 {
+			return fmt.Errorf("initialize control plane: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
 	runtimeClient, err := containerruntime.NewContainerdRuntime(cfg.ContainerdSock)
@@ -162,7 +198,7 @@ func run(parent context.Context, cfg *config) error {
 		}
 	}()
 
-	elector := election.NewSingleNodeElector(election.Leader{NodeID: id, Address: cfg.ServerAdvertise})
+	elector := election.NewRaftElector(raftStore.Raft(), election.Leader{NodeID: id, Address: cfg.ServerAdvertise})
 	events := make(chan election.Event)
 	go func() {
 		if err := elector.Run(ctx, events); err != nil {
@@ -220,6 +256,41 @@ func run(parent context.Context, cfg *config) error {
 				leaderCancel = nil
 				leaderDone = nil
 			}
+		}
+	}
+}
+
+func joinCluster(ctx context.Context, log *slog.Logger, joinAddr, clusterToken, serverID, raftAddr string) error {
+	body, err := json.Marshal(api.RaftJoinRequest{ID: serverID, RaftAddress: raftAddr})
+	if err != nil {
+		return err
+	}
+	base := joinAddr
+	if !strings.Contains(base, "://") {
+		base = "http://" + base
+	}
+	for i := 0; ; i++ {
+		req, _ := http.NewRequestWithContext(ctx, "POST", base+"/v1/raft/join", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+clusterToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				log.Info("joined cluster successfully")
+				return nil
+			}
+			err = fmt.Errorf("join returned status %d", resp.StatusCode)
+		}
+		if i >= 30 {
+			return err
+		}
+		log.Warn("join attempt failed, retrying", "error", err, "attempt", i+1)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(min(i+1, 5)) * time.Second):
 		}
 	}
 }

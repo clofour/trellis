@@ -28,6 +28,10 @@ import (
 const reconcileInterval = 10 * time.Second
 const heartbeatInterval = 10 * time.Second
 
+type ClusterJoiner interface {
+	AddVoter(id, address string) error
+}
+
 type Server struct {
 	log     *slog.Logger
 	storage *storage.LocalStorage
@@ -41,6 +45,7 @@ type Server struct {
 	networkPool   netip.Prefix
 	tokenManager  *auth.TokenManager
 	serverAddr    string
+	joiner        ClusterJoiner
 	mu            sync.RWMutex
 	reconcileMu   sync.Mutex
 	mutationMu    sync.Mutex
@@ -579,6 +584,10 @@ func (s *Server) TokenManager() *auth.TokenManager {
 
 func (s *Server) ServerAddr() string {
 	return s.serverAddr
+}
+
+func (s *Server) SetClusterJoiner(j ClusterJoiner) {
+	s.joiner = j
 }
 
 func (s *Server) runReconcileLoop(ctx context.Context) {
