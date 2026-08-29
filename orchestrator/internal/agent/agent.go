@@ -323,6 +323,13 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	containerID := alloc.ContainerID
 
 	var errs []error
+	// Stop observation and reconciliation before tearing down runtime state so a
+	// periodic reconcile cannot race an intentional stop and restart the task.
+	a.health.DeregisterTask(allocID)
+	if err := a.reconciler.Untrack(allocID); err != nil {
+		errs = append(errs, fmt.Errorf("untrack allocation %s: %w", allocID, err))
+	}
+
 	if err := a.runtime.Stop(ctx, containerID); err != nil {
 		errs = append(errs, fmt.Errorf("stop container %s: %w", containerID, err))
 	}
@@ -331,12 +338,6 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	}
 	if err := a.runtime.Remove(ctx, containerID); err != nil {
 		errs = append(errs, fmt.Errorf("remove container %s: %w", containerID, err))
-	}
-
-	a.health.DeregisterTask(allocID)
-
-	if err := a.reconciler.Untrack(allocID); err != nil {
-		errs = append(errs, fmt.Errorf("untrack allocation %s: %w", allocID, err))
 	}
 
 	for _, p := range alloc.Ports {
