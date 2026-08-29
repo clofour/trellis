@@ -25,14 +25,13 @@ Vagrant.configure("2") do |config|
             end
 
             node.vm.provision "common", type: "shell", path: "demo/common.sh"
+            node.vm.provision "containerd", type: "shell", path: "demo/containerd.sh"
             if definition[:role] == "control"
                 node.vm.provision "consul-server", type: "shell", path: "demo/consul-server.sh"
-                node.vm.provision "trellis-server", type: "shell", path: "demo/trellis-server.sh"
             else
-                node.vm.provision "containerd", type: "shell", path: "demo/containerd.sh"
                 node.vm.provision "consul-client", type: "shell", path: "demo/consul-client.sh"
-                node.vm.provision "trellis-agent", type: "shell", path: "demo/trellis-agent.sh"
             end
+            node.vm.provision "trellis-node", type: "shell", path: "demo/trellis-node.sh"
         end
     end
 end

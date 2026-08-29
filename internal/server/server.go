@@ -110,6 +110,10 @@ func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateCont
 }
 
 func (s *Server) Init(ctx context.Context) (string, error) {
+	return s.InitWithToken(ctx, "")
+}
+
+func (s *Server) InitWithToken(ctx context.Context, configuredToken string) (string, error) {
 	cluster, err := s.state.GetCluster(ctx)
 	if err != nil {
 		return "", fmt.Errorf("get cluster: %w", err)
@@ -119,20 +123,27 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 		s.log.Info("cluster already initialized")
 
 		s.cluster = cluster
-		var token string
-		if err := s.storage.Get("token", &token); err != nil && !os.IsNotExist(unwrapPathError(err)) {
-			return "", fmt.Errorf("load local cluster token: %w", err)
+		token := configuredToken
+		if token == "" {
+			if err := s.storage.Get("token", &token); err != nil && !os.IsNotExist(unwrapPathError(err)) {
+				return "", fmt.Errorf("load local cluster token: %w", err)
+			}
+		}
+		if token == "" || !validateToken(cluster, token) {
+			return "", fmt.Errorf("cluster token is missing or does not match cluster")
 		}
 		s.client = client.NewAgentClient(token)
 		return "", nil
 	}
 
-	b := make([]byte, 32)
-	if _, err = rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate cluster token: %w", err)
+	token := configuredToken
+	if token == "" {
+		b := make([]byte, 32)
+		if _, err = rand.Read(b); err != nil {
+			return "", fmt.Errorf("generate cluster token: %w", err)
+		}
+		token = base64.RawURLEncoding.EncodeToString(b)
 	}
-
-	token := base64.RawURLEncoding.EncodeToString(b)
 
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
@@ -155,6 +166,12 @@ func (s *Server) Init(ctx context.Context) (string, error) {
 	s.client = client.NewAgentClient(token)
 
 	return token, nil
+}
+
+func validateToken(cluster *Cluster, token string) bool {
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+	return subtle.ConstantTimeCompare([]byte(hashHex), []byte(cluster.Hash)) == 1
 }
 
 func (s *Server) Run(ctx context.Context) {
@@ -185,14 +202,14 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.nodes[nodeRegistration.ID] = &Node{
-		ID:            nodeRegistration.ID,
-		Host:          nodeRegistration.Host,
-		Port:          nodeRegistration.Port,
-		Status:        NodeStatusHealthy,
-		LastHeartbeat: time.Now(),
-		CPU:           nodeRegistration.CPU, Memory: nodeRegistration.Memory,
+	node := s.nodes[nodeRegistration.ID]
+	if node == nil {
+		node = &Node{ID: nodeRegistration.ID}
+		s.nodes[nodeRegistration.ID] = node
 	}
+	node.Host, node.Port = nodeRegistration.Host, nodeRegistration.Port
+	node.Status, node.LastHeartbeat = NodeStatusHealthy, time.Now()
+	node.CPU, node.Memory = nodeRegistration.CPU, nodeRegistration.Memory
 
 	return nil
 }
@@ -215,6 +232,8 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 		if a.Node == node {
 			if status, ok := statuses[a.Name]; ok {
 				a.Status = status
+			} else {
+				a.Status = AllocationStatusUnhealthy
 			}
 		}
 	}
@@ -226,22 +245,56 @@ func (s *Server) RegisterJob(ctx context.Context, jobSpec *spec.JobSpec) error {
 	if err := spec.Validate(jobSpec); err != nil {
 		return fmt.Errorf("validate job: %w", err)
 	}
-	err := s.state.PutJob(ctx, jobSpec.Name, jobSpec)
-	if err != nil {
-		return fmt.Errorf("save job remotely: %w", err)
-	}
-
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	revision := 1
 	if existing := s.jobs[jobSpec.Name]; existing != nil {
 		revision = existing.Revision + 1
 	}
-	s.jobs[jobSpec.Name] = &Job{
+	job := &Job{
 		Spec:     jobSpec,
 		Revision: revision,
 	}
+	s.mu.Unlock()
+	if err := s.state.PutJob(ctx, jobSpec.Name, job); err != nil {
+		return fmt.Errorf("save job remotely: %w", err)
+	}
+	s.mu.Lock()
+	s.jobs[jobSpec.Name] = job
+	s.mu.Unlock()
 
+	return nil
+}
+
+// Reload reconstructs the durable control-plane state before a leadership term starts.
+func (s *Server) Reload(ctx context.Context) error {
+	jobs, err := s.state.ListJobs(ctx)
+	if err != nil {
+		return fmt.Errorf("load jobs: %w", err)
+	}
+	nodeSummaries, err := s.state.ListNodes(ctx)
+	if err != nil {
+		return fmt.Errorf("load nodes: %w", err)
+	}
+	allocationMap, err := s.state.ListAllocations(ctx)
+	if err != nil {
+		return fmt.Errorf("load allocations: %w", err)
+	}
+	nodes := make(map[uuid.UUID]*Node, len(nodeSummaries))
+	for _, summary := range nodeSummaries {
+		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, Status: NodeStatusUnhealthy}
+	}
+	allocations := make([]*Allocation, 0, len(allocationMap))
+	for _, allocation := range allocationMap {
+		if allocation.Node != nil {
+			allocation.Node = nodes[allocation.Node.ID]
+		}
+		allocations = append(allocations, allocation)
+	}
+	s.mu.Lock()
+	s.jobs = jobs
+	s.nodes = nodes
+	s.allocations = allocations
+	s.mu.Unlock()
 	return nil
 }
 

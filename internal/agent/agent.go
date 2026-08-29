@@ -22,14 +22,15 @@ type Agent struct {
 
 	log *slog.Logger
 
-	runtime runtime.ContainerRuntime
-	health  *health.HealthManager
-	restart *RestartController
-	ports   *PortManager
-	volumes *VolumeManager
-	service discovery.ServiceRegistry
-	server  *client.ServerClient
-	mu      sync.RWMutex
+	runtime  runtime.ContainerRuntime
+	health   *health.HealthManager
+	restart  *RestartController
+	ports    *PortManager
+	volumes  *VolumeManager
+	service  discovery.ServiceRegistry
+	server   *client.ServerClient
+	nodeInfo client.NodeInfo
+	mu       sync.RWMutex
 }
 
 type Allocation struct {
@@ -57,24 +58,25 @@ func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health
 
 		log: log,
 
-		runtime: runtime,
-		health:  health,
-		restart: restart,
-		ports:   ports,
-		volumes: volumes,
-		service: service,
-		server:  server,
+		runtime:  runtime,
+		health:   health,
+		restart:  restart,
+		ports:    ports,
+		volumes:  volumes,
+		service:  service,
+		server:   server,
+		nodeInfo: client.NodeInfo{ID: nodeID, Host: "127.0.0.1", Port: 8127},
 	}
 
 	return agent
 }
 
-func (a *Agent) Init(ctx context.Context) error {
-	_, err := a.server.RegisterNode(ctx, &client.NodeInfo{ID: a.nodeID, Host: "127.0.0.1", Port: 8127})
-	if err != nil {
-		return fmt.Errorf("register node: %w", err)
-	}
+func (a *Agent) SetAdvertiseAddress(host string, port int) {
+	a.nodeInfo.Host = host
+	a.nodeInfo.Port = port
+}
 
+func (a *Agent) Init(ctx context.Context) error {
 	a.health.Subscriber = a
 	a.restart.Subscriber = a
 
@@ -286,8 +288,16 @@ func (a *Agent) OnFailed(allocID string) {
 func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
+	registered := false
 
 	for {
+		if !registered {
+			if _, err := a.server.RegisterNode(ctx, &a.nodeInfo); err != nil {
+				a.log.Error("register node failed", "error", err)
+			} else {
+				registered = true
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -305,6 +315,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 			})
 			if err != nil {
 				a.log.Error("send heartbeat failed", "error", err)
+				registered = false
 			}
 		}
 	}
