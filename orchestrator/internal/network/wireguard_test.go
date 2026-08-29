@@ -32,11 +32,11 @@ func TestWireGuardAttachBuildsIsolatedNamespace(t *testing.T) {
 	manager := NewWireGuardManager(dir)
 	manager.run = runner
 	manager.stateDir = t.TempDir()
-	a, err := manager.Attach(context.Background(), AttachRequest{Tenant: "acme", Network: "blue", AllocationID: "alloc-1"})
+	a, err := manager.Attach(context.Background(), AttachRequest{Namespace: "acme", Network: "blue", AllocationID: "alloc-1"})
 	if err != nil {
 		t.Fatalf("Attach() error = %v", err)
 	}
-	if a.Namespace != "/var/run/netns/alloc-1" || !strings.HasPrefix(a.Address, "10.42.1.") {
+	if a.Namespace != "acme" || a.NetworkNamespace != "/var/run/netns/alloc-1" || !strings.HasPrefix(a.Address, "10.42.1.") {
 		t.Fatalf("unexpected attachment: %#v", a)
 	}
 	joined := strings.Join(runner.commands, "\n")
@@ -49,7 +49,7 @@ func TestWireGuardAttachBuildsIsolatedNamespace(t *testing.T) {
 
 func TestWireGuardRejectsUntrustedNetworkName(t *testing.T) {
 	m := NewWireGuardManager(t.TempDir())
-	if _, err := m.Attach(context.Background(), AttachRequest{Tenant: "tenant", Network: "../escape", AllocationID: "alloc"}); err == nil {
+	if _, err := m.Attach(context.Background(), AttachRequest{Namespace: "namespace", Network: "../escape", AllocationID: "alloc"}); err == nil {
 		t.Fatal("Attach accepted path traversal")
 	}
 }

@@ -69,7 +69,7 @@ func (s *StateController) ListJobs(ctx context.Context) (map[string]*Job, error)
 	}
 	result := make(map[string]*Job, len(values))
 	for _, job := range values {
-		result[jobKey(job.Spec.Tenant, job.Spec.Name)] = job
+		result[jobKey(job.Spec.Namespace, job.Spec.Name)] = job
 	}
 	return result, nil
 }

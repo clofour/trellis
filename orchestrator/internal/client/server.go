@@ -60,15 +60,15 @@ type Heartbeat struct {
 }
 
 func NewServerClient(token string, addr string) *ServerClient {
-	return NewTenantServerClient(token, addr, "")
+	return NewNamespaceServerClient(token, addr, "")
 }
 
-func NewTenantServerClient(token string, addr string, tenant string) *ServerClient {
+func NewNamespaceServerClient(token string, addr string, namespace string) *ServerClient {
 	baseURL := normalizeBaseURL(addr)
 	client := &client{
-		token:  token,
-		tenant: tenant,
-		client: newHTTPClient(),
+		token:     token,
+		namespace: namespace,
+		client:    newHTTPClient(),
 	}
 
 	return &ServerClient{

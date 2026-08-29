@@ -14,7 +14,7 @@ type Handler struct {
 	server *Server
 }
 
-func requestTenant(c *echo.Context) string { return c.Request().Header.Get("X-Trellis-Tenant") }
+func requestNamespace(c *echo.Context) string { return c.Request().Header.Get("X-Trellis-Namespace") }
 
 func NewHandler(server *Server) *Handler {
 	return &Handler{
@@ -43,7 +43,7 @@ func (h *Handler) handleAllocationLogs(c *echo.Context) error {
 	if err != nil || tail < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "tail must be a non-negative integer")
 	}
-	logs, err := h.server.AllocationLogsForTenant(c.Request().Context(), requestTenant(c), c.Param("id"), c.QueryParam("follow") == "true", tail)
+	logs, err := h.server.AllocationLogsForNamespace(c.Request().Context(), requestNamespace(c), c.Param("id"), c.QueryParam("follow") == "true", tail)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "allocation not found")
 	}
@@ -125,12 +125,12 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 }
 
 func (h *Handler) handleListJobs(c *echo.Context) error {
-	jobs := h.server.ListJobs(requestTenant(c))
+	jobs := h.server.ListJobs(requestNamespace(c))
 	return c.JSON(200, jobs)
 }
 
 func (h *Handler) handleGetJob(c *echo.Context) error {
-	status, ok := h.server.GetJob(requestTenant(c), c.Param("name"))
+	status, ok := h.server.GetJob(requestNamespace(c), c.Param("name"))
 	if !ok {
 		return echo.NewHTTPError(http.StatusNotFound, "job not found")
 	}
@@ -138,7 +138,7 @@ func (h *Handler) handleGetJob(c *echo.Context) error {
 }
 
 func (h *Handler) handleDeleteJob(c *echo.Context) error {
-	if err := h.server.DeleteJob(c.Request().Context(), requestTenant(c), c.Param("name")); err != nil {
+	if err := h.server.DeleteJob(c.Request().Context(), requestNamespace(c), c.Param("name")); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "job not found")
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -153,7 +153,7 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	err = h.server.RegisterJob(ctx, requestTenant(c), &request.Spec)
+	err = h.server.RegisterJob(ctx, requestNamespace(c), &request.Spec)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, "job is invalid or could not be saved")
 	}

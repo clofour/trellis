@@ -40,8 +40,8 @@ type Agent struct {
 }
 
 type Allocation struct {
-	ID     string
-	Tenant string
+	ID        string
+	Namespace string
 
 	JobName   string
 	GroupName string
@@ -127,7 +127,7 @@ func (a *Agent) GetAllocations() []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, isolation *spec.IsolationSpec, networkPlan *network.Plan) error {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan) error {
 	spec := taskSpec
 	if spec == nil {
 		return fmt.Errorf("task spec is required")
@@ -141,7 +141,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 		a.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrAllocationExists, allocID)
 	}
-	alloc := &Allocation{ID: allocID, Tenant: tenant, JobName: jobName, GroupName: groupName, TaskName: taskName, Spec: spec, Status: "starting"}
+	alloc := &Allocation{ID: allocID, Namespace: namespace, JobName: jobName, GroupName: groupName, TaskName: taskName, Spec: spec, Status: "starting"}
 	a.allocations[allocID] = alloc
 	a.mu.Unlock()
 	committed := false
@@ -187,7 +187,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 
 	var mounts []*runtime.Mount
 	for _, v := range spec.Volumes {
-		mount, err := a.volumes.Create(filepath.Join("tenants", tenant, jobName), taskName, v)
+		mount, err := a.volumes.Create(filepath.Join("namespaces", namespace, jobName), taskName, v)
 		if err != nil {
 			return fmt.Errorf("create volume %s: %w", v.Name, err)
 		}
@@ -201,11 +201,11 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 	}
 
 	containerID := allocID
-	if isolation != nil && isolation.Network != nil {
+	if wireGuard {
 		if networkPlan == nil {
 			return fmt.Errorf("automatic WireGuard network plan is required")
 		}
-		netAttachment, err = a.network.Attach(ctx, network.AttachRequest{AllocationID: allocID, Tenant: tenant, Network: tenant, Plan: *networkPlan})
+		netAttachment, err = a.network.Attach(ctx, network.AttachRequest{AllocationID: allocID, Namespace: namespace, Network: namespace, Plan: *networkPlan})
 		if err != nil {
 			return fmt.Errorf("attach WireGuard network: %w", err)
 		}
@@ -227,15 +227,10 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 			}
 			return 0
 		}(),
-		Runtime: func() string {
-			if isolation != nil {
-				return isolation.Runtime
-			}
-			return ""
-		}(),
+		Runtime: groupRuntime,
 		NetworkNamespace: func() string {
 			if netAttachment != nil {
-				return netAttachment.Namespace
+				return netAttachment.NetworkNamespace
 			}
 			return ""
 		}(),
@@ -267,8 +262,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, tenant, jobName, gro
 	tracked = true
 
 	ready := &Allocation{
-		ID:     allocID,
-		Tenant: tenant,
+		ID:        allocID,
+		Namespace: namespace,
 
 		JobName:   jobName,
 		GroupName: groupName,

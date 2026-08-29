@@ -168,9 +168,9 @@ func allocationAddress(cidr, allocation string) (string, error) {
 func (m *WireGuardManager) Attach(ctx context.Context, request AttachRequest) (_ *Attachment, retErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	tenant, networkName, allocation := request.Tenant, request.Network, request.AllocationID
-	if !safeName.MatchString(tenant) || !safeAllocation.MatchString(allocation) {
-		return nil, fmt.Errorf("tenant and allocation must be safe identifiers")
+	namespace, networkName, allocation := request.Namespace, request.Network, request.AllocationID
+	if !safeName.MatchString(namespace) || !safeAllocation.MatchString(allocation) {
+		return nil, fmt.Errorf("namespace and allocation must be safe identifiers")
 	}
 	var cfg *Config
 	var err error
@@ -186,7 +186,7 @@ func (m *WireGuardManager) Attach(ctx context.Context, request AttachRequest) (_
 	if err != nil {
 		return nil, err
 	}
-	wg, bridge, hostVeth, peerVeth := short("tw", tenant+"\x00"+networkName), short("tb", tenant+"\x00"+networkName), short("vh", allocation), short("vc", allocation)
+	wg, bridge, hostVeth, peerVeth := short("tw", namespace+"\x00"+networkName), short("tb", namespace+"\x00"+networkName), short("vh", allocation), short("vc", allocation)
 	ns := filepath.Join("/var/run/netns", allocation)
 	address, err := allocationAddress(cfg.CIDR, allocation)
 	if err != nil {
@@ -279,7 +279,7 @@ func (m *WireGuardManager) Attach(ctx context.Context, request AttachRequest) (_
 	if err = m.run.Run(ctx, "ip", "-n", allocation, "route", "replace", "default", "via", cfg.Gateway); err != nil {
 		return nil, err
 	}
-	return &Attachment{AllocationID: allocation, Tenant: tenant, Network: networkName, Namespace: ns, HostVeth: hostVeth, Address: address, LeasePath: lease}, nil
+	return &Attachment{AllocationID: allocation, Namespace: namespace, Network: networkName, NetworkNamespace: ns, HostVeth: hostVeth, Address: address, LeasePath: lease}, nil
 }
 
 func (m *WireGuardManager) Detach(ctx context.Context, a *Attachment) error {

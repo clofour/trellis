@@ -38,7 +38,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 	var actions []Action
 	valid := make([]*Allocation, 0, len(s.allocations))
 	for _, allocation := range s.allocations {
-		job := s.jobs[jobKey(allocation.Tenant, allocation.JobName)]
+		job := s.jobs[jobKey(allocation.Namespace, allocation.JobName)]
 		if job == nil || allocation.Status == AllocationStatusUnhealthy || allocation.Revision < job.Revision || allocation.Node == nil || allocation.Node.Status != NodeStatusHealthy {
 			actions = append(actions, Action{Type: ActionStop, Allocation: allocation})
 			continue
@@ -48,27 +48,23 @@ func (s *Server) Reconcile(ctx context.Context) {
 
 	for _, job := range s.jobs {
 		jobName := job.Spec.Name
-		tenant := job.Spec.Tenant
+		namespace := job.Spec.Namespace
 		for _, group := range job.Spec.TaskGroups {
-			for taskIndex := range group.Tasks {
-				task := &group.Tasks[taskIndex]
-				var current []*Allocation
-				for _, alloc := range valid {
-					if alloc.Tenant == tenant && alloc.JobName == jobName && alloc.TaskGroupName == group.Name && alloc.Task != nil && alloc.Task.Name == task.Name {
-						current = append(current, alloc)
-					}
+			var current []*Allocation
+			for _, alloc := range valid {
+				if alloc.Namespace == namespace && alloc.JobName == jobName && alloc.TaskGroupName == group.Name {
+					current = append(current, alloc)
 				}
-				for len(current) > group.Count {
-					actions = append(actions, Action{Type: ActionStop, Allocation: current[len(current)-1]})
-					current = current[:len(current)-1]
-				}
-				missing := group.Count - len(current)
-				placements := Schedule(&PlacementIntent{JobName: jobName, TaskGroupName: group.Name, Count: missing, Nodes: s.nodePointers(), Allocations: valid, Task: task})
-				for _, placement := range placements {
-					node := s.nodes[placement.NodeID]
-					name := fmt.Sprintf("%s-%s-%s-%s", jobName, group.Name, task.Name, uuid.NewString()[:8])
-					actions = append(actions, Action{Type: ActionStart, Allocation: &Allocation{Tenant: tenant, JobName: jobName, TaskGroupName: group.Name, Name: name, Task: task, Node: node, Status: AllocationStatusPending, Revision: job.Revision}})
-				}
+			}
+			for len(current) > group.Count {
+				actions = append(actions, Action{Type: ActionStop, Allocation: current[len(current)-1]})
+				current = current[:len(current)-1]
+			}
+			placements := Schedule(&PlacementIntent{JobName: jobName, TaskGroupName: group.Name, Count: group.Count - len(current), Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks})
+			for _, placement := range placements {
+				node := s.nodes[placement.NodeID]
+				name := fmt.Sprintf("%s-%s-%s-%s", namespace, jobName, group.Name, uuid.NewString()[:8])
+				actions = append(actions, Action{Type: ActionStart, Allocation: &Allocation{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Name: name, Tasks: group.Tasks, Node: node, Status: AllocationStatusPending, Revision: job.Revision}})
 			}
 		}
 	}
@@ -95,14 +91,22 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 	switch action.Type {
 	case ActionStart:
 		s.mu.RLock()
-		job := s.jobs[jobKey(alloc.Tenant, alloc.JobName)]
+		job := s.jobs[jobKey(alloc.Namespace, alloc.JobName)]
 		if job == nil {
 			s.mu.RUnlock()
 			return fmt.Errorf("job %s was deleted before allocation start", alloc.JobName)
 		}
-		request := &api.AllocationRequest{Tenant: alloc.Tenant, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Task: alloc.Task, Isolation: job.Spec.Isolation}
-		if job.Spec.Isolation != nil {
-			plan, err := s.networkPlan(alloc.Tenant, alloc.Node)
+		var groupRuntime string
+		for _, group := range job.Spec.TaskGroups {
+			if group.Name == alloc.TaskGroupName {
+				groupRuntime = group.Runtime
+				break
+			}
+		}
+		wireGuard := job.Spec.Network != nil && job.Spec.Network.WireGuard
+		request := &api.AllocationRequest{Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard}
+		if wireGuard {
+			plan, err := s.networkPlan(alloc.Namespace, alloc.Node)
 			if err != nil {
 				s.mu.RUnlock()
 				return err
@@ -141,15 +145,15 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 	return nil
 }
 
-func (s *Server) networkPlan(tenant string, target *Node) (*network.Plan, error) {
-	local := tenantNodeSubnet(s.networkPool, tenant, target.ID)
-	plan := &network.Plan{CIDR: local.String(), Gateway: local.Addr().Next().String(), WireGuardAddress: wireGuardAddress(tenant, target.ID)}
+func (s *Server) networkPlan(namespace string, target *Node) (*network.Plan, error) {
+	local := namespaceNodeSubnet(s.networkPool, namespace, target.ID)
+	plan := &network.Plan{CIDR: local.String(), Gateway: local.Addr().Next().String(), WireGuardAddress: wireGuardAddress(namespace, target.ID)}
 	seen := map[string]uuid.UUID{local.String(): target.ID}
 	for _, node := range s.nodes {
 		if node.ID == target.ID || node.WireGuardPublicKey == "" || node.WireGuardEndpoint == "" {
 			continue
 		}
-		subnet := tenantNodeSubnet(s.networkPool, tenant, node.ID)
+		subnet := namespaceNodeSubnet(s.networkPool, namespace, node.ID)
 		if previous, ok := seen[subnet.String()]; ok && previous != node.ID {
 			return nil, fmt.Errorf("automatic network subnet collision between nodes %s and %s", previous, node.ID)
 		}
@@ -157,21 +161,21 @@ func (s *Server) networkPlan(tenant string, target *Node) (*network.Plan, error)
 		plan.Peers = append(plan.Peers, network.PeerPlan{PublicKey: node.WireGuardPublicKey, Endpoint: node.WireGuardEndpoint, AllowedIPs: []string{subnet.String()}})
 	}
 	for _, job := range s.jobs {
-		if job.Spec.Isolation == nil || job.Spec.Tenant == tenant {
+		if job.Spec.Network == nil || !job.Spec.Network.WireGuard || job.Spec.Namespace == namespace {
 			continue
 		}
 		for _, node := range s.nodes {
-			other := tenantNodeSubnet(s.networkPool, job.Spec.Tenant, node.ID)
+			other := namespaceNodeSubnet(s.networkPool, job.Spec.Namespace, node.ID)
 			if owner, exists := seen[other.String()]; exists {
-				return nil, fmt.Errorf("automatic network subnet %s for tenant %q conflicts with tenant %q on node %s", other, job.Spec.Tenant, tenant, owner)
+				return nil, fmt.Errorf("automatic network subnet %s for namespace %q conflicts with namespace %q on node %s", other, job.Spec.Namespace, namespace, owner)
 			}
 		}
 	}
 	return plan, nil
 }
 
-func tenantNodeSubnet(pool netip.Prefix, tenant string, node uuid.UUID) netip.Prefix {
-	h := sha256.Sum256(append([]byte(tenant+"\x00"), node[:]...))
+func namespaceNodeSubnet(pool netip.Prefix, namespace string, node uuid.UUID) netip.Prefix {
+	h := sha256.Sum256(append([]byte(namespace+"\x00"), node[:]...))
 	base := binary.BigEndian.Uint32(pool.Addr().AsSlice())
 	available := uint32(1) << uint32(24-pool.Bits())
 	index := binary.BigEndian.Uint32(h[:4]) % available
@@ -179,7 +183,7 @@ func tenantNodeSubnet(pool netip.Prefix, tenant string, node uuid.UUID) netip.Pr
 	return netip.PrefixFrom(netip.AddrFrom4([4]byte{byte(b >> 24), byte(b >> 16), byte(b >> 8), byte(b)}), 24)
 }
 
-func wireGuardAddress(tenant string, node uuid.UUID) string {
-	h := sha256.Sum256(append([]byte(tenant+"wg"), node[:]...))
+func wireGuardAddress(namespace string, node uuid.UUID) string {
+	h := sha256.Sum256(append([]byte(namespace+"wg"), node[:]...))
 	return fmt.Sprintf("169.254.%d.%d/32", h[0], max(byte(1), h[1]))
 }

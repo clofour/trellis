@@ -7,18 +7,18 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestTenantNodeSubnetIsStableAndTenantScoped(t *testing.T) {
+func TestNamespaceNodeSubnetIsStableAndNamespaceScoped(t *testing.T) {
 	pool := netip.MustParsePrefix("10.64.0.0/10")
 	node := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	first := tenantNodeSubnet(pool, "acme", node)
-	if first != tenantNodeSubnet(pool, "acme", node) {
+	first := namespaceNodeSubnet(pool, "acme", node)
+	if first != namespaceNodeSubnet(pool, "acme", node) {
 		t.Fatal("subnet allocation is not stable")
 	}
 	if !pool.Contains(first.Addr()) || first.Bits() != 24 {
 		t.Fatalf("subnet %s is outside pool %s", first, pool)
 	}
-	if first == tenantNodeSubnet(pool, "globex", node) {
-		t.Fatal("different tenants received the same deterministic subnet")
+	if first == namespaceNodeSubnet(pool, "globex", node) {
+		t.Fatal("different namespaces received the same deterministic subnet")
 	}
 }
 

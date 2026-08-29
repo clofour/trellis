@@ -9,7 +9,7 @@ import (
 type CLIConfig struct {
 	ServerAddr   string
 	ClusterToken string
-	Tenant       string
+	Namespace    string
 }
 
 var config CLIConfig
@@ -23,7 +23,7 @@ func main() {
 	persistentFlags := root.PersistentFlags()
 	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "Server HTTP API address")
 	persistentFlags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
-	persistentFlags.StringVar(&config.Tenant, "tenant", "", "Tenant scope for isolated objects")
+	persistentFlags.StringVar(&config.Namespace, "namespace", "", "Namespace scope for job queries")
 
 	root.AddCommand(NewJobsCmd())
 	root.AddCommand(NewNodesCmd())

@@ -2,30 +2,22 @@ package spec
 
 type JobSpec struct {
 	Name       string          `yaml:"name" json:"name"`
-	Tenant     string          `yaml:"tenant,omitempty" json:"tenant,omitempty"`
-	Isolation  *IsolationSpec  `yaml:"isolation,omitempty" json:"isolation,omitempty"`
+	Namespace  string          `yaml:"namespace" json:"namespace"`
+	Network    *NetworkSpec    `yaml:"network,omitempty" json:"network,omitempty"`
 	TaskGroups []TaskGroupSpec `yaml:"task_groups" json:"task_groups"`
 }
 
-// IsolationSpec opts a job into the restrictions used by an untrusted tenant.
-// Omitting it preserves Trellis' trusted, single-tenant behaviour.
-type IsolationSpec struct {
-	Runtime string         `yaml:"runtime" json:"runtime"`
-	Network *WireGuardSpec `yaml:"network,omitempty" json:"network,omitempty"`
-	Quota   *ResourcesSpec `yaml:"quota,omitempty" json:"quota,omitempty"`
-}
-
-type WireGuardSpec struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
-	// Network is retained for manifest compatibility. Trellis derives the
-	// effective network from Tenant and never trusts this user-supplied value.
-	Network string `yaml:"network,omitempty" json:"network,omitempty"`
+// NetworkSpec selects an implementation mechanism for the namespace network.
+// Namespace isolation and network identity never depend on this setting.
+type NetworkSpec struct {
+	WireGuard bool `yaml:"wireguard" json:"wireguard"`
 }
 
 type TaskGroupSpec struct {
-	Name  string     `yaml:"name" json:"name"`
-	Count int        `yaml:"count" json:"count"`
-	Tasks []TaskSpec `yaml:"tasks" json:"tasks"`
+	Name    string     `yaml:"name" json:"name"`
+	Count   int        `yaml:"count" json:"count"`
+	Runtime string     `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Tasks   []TaskSpec `yaml:"tasks" json:"tasks"`
 }
 
 type TaskSpec struct {

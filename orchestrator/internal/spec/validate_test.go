@@ -3,7 +3,7 @@ package spec
 import "testing"
 
 func TestParseYAML(t *testing.T) {
-	raw := []byte("name: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        ports:\n          - host_port: 8080\n            container_port: 80\n")
+	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        ports:\n          - host_port: 8080\n            container_port: 80\n")
 	job, err := ParseYAML(raw)
 	if err != nil {
 		t.Fatalf("parse manifest: %v", err)
@@ -18,7 +18,7 @@ func TestParseYAML(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	valid := &JobSpec{Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "example/server:1"}}}}}
+	valid := &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "example/server:1"}}}}}
 	if err := Validate(valid); err != nil {
 		t.Fatalf("valid job rejected: %v", err)
 	}
@@ -29,9 +29,9 @@ func TestValidate(t *testing.T) {
 	}{
 		{"nil", nil},
 		{"missing name", &JobSpec{}},
-		{"zero replicas", &JobSpec{Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
-		{"missing image", &JobSpec{Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server"}}}}}},
-		{"invalid port", &JobSpec{Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Ports: []PortSpec{{ContainerPort: 70000}}}}}}}},
+		{"zero replicas", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
+		{"missing image", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server"}}}}}},
+		{"invalid port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Ports: []PortSpec{{ContainerPort: 70000}}}}}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

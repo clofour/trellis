@@ -43,14 +43,14 @@ type Server struct {
 }
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
-	return s.AllocationLogsForTenant(ctx, "", id, follow, tail)
+	return s.AllocationLogsForNamespace(ctx, "", id, follow, tail)
 }
 
-func (s *Server) AllocationLogsForTenant(ctx context.Context, tenant, id string, follow bool, tail int) (io.ReadCloser, error) {
+func (s *Server) AllocationLogsForNamespace(ctx context.Context, namespace, id string, follow bool, tail int) (io.ReadCloser, error) {
 	s.mu.RLock()
 	var found *Allocation
 	for _, alloc := range s.allocations {
-		if alloc.Name == id && alloc.Tenant == tenant {
+		if alloc.Name == id && alloc.Namespace == namespace {
 			found = alloc
 			break
 		}
@@ -125,14 +125,16 @@ const (
 )
 
 type Allocation struct {
-	Tenant        string
+	Namespace     string
 	JobName       string
 	TaskGroupName string
 	Name          string
-	Task          *spec.TaskSpec
-	Status        AllocationStatus
-	Node          *Node
-	Revision      int
+	Tasks         []spec.TaskSpec
+	// Task is retained only to reload allocations written by older versions.
+	Task     *spec.TaskSpec `json:",omitempty"`
+	Status   AllocationStatus
+	Node     *Node
+	Revision int
 }
 
 func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController) *Server {
@@ -303,11 +305,11 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	return nil
 }
 
-func jobKey(tenant, name string) string {
-	if tenant == "" {
+func jobKey(namespace, name string) string {
+	if namespace == "" {
 		return name
 	}
-	return tenant + "\x00" + name
+	return namespace + "\x00" + name
 }
 
 func requestedResources(jobSpec *spec.JobSpec) (cpu, memory int) {
@@ -322,7 +324,7 @@ func requestedResources(jobSpec *spec.JobSpec) (cpu, memory int) {
 	return
 }
 
-func (s *Server) RegisterJob(ctx context.Context, tenant string, jobSpec *spec.JobSpec) error {
+func (s *Server) RegisterJob(ctx context.Context, namespace string, jobSpec *spec.JobSpec) error {
 	if err := spec.Validate(jobSpec); err != nil {
 		return fmt.Errorf("validate job: %w", err)
 	}
@@ -330,25 +332,11 @@ func (s *Server) RegisterJob(ctx context.Context, tenant string, jobSpec *spec.J
 	defer s.mutationMu.Unlock()
 	s.mu.Lock()
 	revision := 1
-	if jobSpec.Tenant != tenant {
+	if jobSpec.Namespace != namespace {
 		s.mu.Unlock()
-		return fmt.Errorf("job tenant does not match request tenant")
+		return fmt.Errorf("job namespace does not match request namespace")
 	}
-	key := jobKey(tenant, jobSpec.Name)
-	if jobSpec.Isolation != nil {
-		cpu, memory := requestedResources(jobSpec)
-		for existingKey, existing := range s.jobs {
-			if existingKey == key || existing.Spec.Tenant != tenant || existing.Spec.Isolation == nil {
-				continue
-			}
-			ec, em := requestedResources(existing.Spec)
-			cpu, memory = cpu+ec, memory+em
-		}
-		if cpu > jobSpec.Isolation.Quota.CPU || memory > jobSpec.Isolation.Quota.Memory {
-			s.mu.Unlock()
-			return fmt.Errorf("tenant %q quota exceeded: requested cpu=%d memory=%d, quota cpu=%d memory=%d", tenant, cpu, memory, jobSpec.Isolation.Quota.CPU, jobSpec.Isolation.Quota.Memory)
-		}
-	}
+	key := jobKey(namespace, jobSpec.Name)
 	if existing := s.jobs[key]; existing != nil {
 		revision = existing.Revision + 1
 	}
@@ -427,21 +415,21 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (s *Server) ListJobs(tenant string) api.JobListResponse {
+func (s *Server) ListJobs(namespace string) api.JobListResponse {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make(api.JobListResponse, 0, len(s.jobs))
 	for key, job := range s.jobs {
-		if job.Spec.Tenant != tenant {
+		if job.Spec.Namespace != namespace {
 			continue
 		}
 		name := job.Spec.Name
 		r := api.JobStatusResponse{Name: name, Revision: job.Revision}
 		for _, g := range job.Spec.TaskGroups {
-			r.Desired += g.Count * len(g.Tasks)
+			r.Desired += g.Count
 		}
 		for _, a := range s.allocations {
-			if jobKey(a.Tenant, a.JobName) != key {
+			if jobKey(a.Namespace, a.JobName) != key {
 				continue
 			}
 			r.Running++
@@ -454,25 +442,22 @@ func (s *Server) ListJobs(tenant string) api.JobListResponse {
 	return result
 }
 
-func (s *Server) GetJob(tenant, name string) (*api.JobStatusResponse, bool) {
+func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	job, ok := s.jobs[jobKey(tenant, name)]
+	job, ok := s.jobs[jobKey(namespace, name)]
 	if !ok {
 		return nil, false
 	}
 	r := &api.JobStatusResponse{Name: name, Revision: job.Revision}
 	for _, g := range job.Spec.TaskGroups {
-		r.Desired += g.Count * len(g.Tasks)
+		r.Desired += g.Count
 	}
 	for _, a := range s.allocations {
-		if a.Tenant != tenant || a.JobName != name {
+		if a.Namespace != namespace || a.JobName != name {
 			continue
 		}
 		ar := api.AllocationResponse{ID: a.Name, Group: a.TaskGroupName, Status: string(a.Status)}
-		if a.Task != nil {
-			ar.Task = a.Task.Name
-		}
 		if a.Node != nil {
 			ar.NodeID = a.Node.ID
 		}
@@ -485,11 +470,11 @@ func (s *Server) GetJob(tenant, name string) (*api.JobStatusResponse, bool) {
 	return r, true
 }
 
-func (s *Server) DeleteJob(ctx context.Context, tenant, name string) error {
+func (s *Server) DeleteJob(ctx context.Context, namespace, name string) error {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
 	s.mu.RLock()
-	key := jobKey(tenant, name)
+	key := jobKey(namespace, name)
 	_, ok := s.jobs[key]
 	s.mu.RUnlock()
 	if !ok {
