@@ -87,7 +87,11 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 	switch action.Type {
 	case ActionStart:
 		request := &api.AllocationRequest{JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Task: alloc.Task}
+		if err := s.state.PutAllocation(ctx, alloc); err != nil {
+			return fmt.Errorf("persist allocation: %w", err)
+		}
 		if err := s.client.RunAllocation(ctx, address, request); err != nil {
+			_ = s.state.DeleteAllocation(ctx, alloc.Name)
 			return err
 		}
 		s.mu.Lock()
@@ -106,6 +110,9 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 				s.allocations = append(s.allocations[:i], s.allocations[i+1:]...)
 				break
 			}
+		}
+		if err := s.state.DeleteAllocation(ctx, alloc.Name); err != nil {
+			return fmt.Errorf("delete allocation state: %w", err)
 		}
 	}
 	return nil

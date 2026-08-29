@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
 )
 
@@ -61,20 +60,13 @@ func (s *StateController) PutNode(ctx context.Context, id string, node *NodeSumm
 	return nil
 }
 
-func (s *StateController) ListJobs(ctx context.Context, id string, job *spec.JobSpec) ([]spec.JobSpec, error) {
-	prefix := fmt.Sprintf("%s/cluster/%s/jobs", trellisNamespace, s.cluster)
-
-	var jobs []spec.JobSpec
-	err := s.list(ctx, prefix, jobs)
-	if err != nil {
-		return nil, fmt.Errorf("list job: %w", err)
-	}
-
-	return jobs, nil
+func (s *StateController) ListJobs(ctx context.Context) (map[string]*Job, error) {
+	prefix := fmt.Sprintf("%s/%s/jobs/", trellisNamespace, s.cluster)
+	return listValues[Job](ctx, s.store, prefix)
 }
 
-func (s *StateController) PutJob(ctx context.Context, id string, job *spec.JobSpec) error {
-	key := fmt.Sprintf("%s/cluster/%s/jobs/%s/spec", trellisNamespace, s.cluster, id)
+func (s *StateController) PutJob(ctx context.Context, id string, job *Job) error {
+	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, id)
 
 	err := s.put(ctx, key, job)
 	if err != nil {
@@ -85,11 +77,47 @@ func (s *StateController) PutJob(ctx context.Context, id string, job *spec.JobSp
 }
 
 func (s *StateController) DeleteJob(ctx context.Context, id string) error {
-	key := fmt.Sprintf("%s/cluster/%s/jobs/%s/spec", trellisNamespace, s.cluster, id)
+	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, id)
 	if err := s.store.Delete(ctx, key); err != nil {
 		return fmt.Errorf("delete job: %w", err)
 	}
 	return nil
+}
+
+func (s *StateController) ListNodes(ctx context.Context) (map[string]*NodeSummary, error) {
+	prefix := fmt.Sprintf("%s/%s/nodes/", trellisNamespace, s.cluster)
+	return listValues[NodeSummary](ctx, s.store, prefix)
+}
+
+func (s *StateController) ListAllocations(ctx context.Context) (map[string]*Allocation, error) {
+	prefix := fmt.Sprintf("%s/%s/allocations/", trellisNamespace, s.cluster)
+	return listValues[Allocation](ctx, s.store, prefix)
+}
+
+func (s *StateController) PutAllocation(ctx context.Context, allocation *Allocation) error {
+	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, allocation.Name)
+	return s.put(ctx, key, allocation)
+}
+
+func (s *StateController) DeleteAllocation(ctx context.Context, id string) error {
+	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, id)
+	return s.store.Delete(ctx, key)
+}
+
+func listValues[T any](ctx context.Context, store state.StateStore, prefix string) (map[string]*T, error) {
+	raw, err := store.List(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("list prefix %s: %w", prefix, err)
+	}
+	result := make(map[string]*T, len(raw))
+	for key, value := range raw {
+		var item T
+		if err := json.Unmarshal(value, &item); err != nil {
+			return nil, fmt.Errorf("unmarshal %s: %w", key, err)
+		}
+		result[key[len(prefix):]] = &item
+	}
+	return result, nil
 }
 
 func (s *StateController) get(ctx context.Context, key string, value any) (bool, error) {

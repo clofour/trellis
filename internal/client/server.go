@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
@@ -15,6 +16,19 @@ import (
 type ServerClient struct {
 	baseURL string
 	client  *client
+	mu      sync.RWMutex
+}
+
+func (s *ServerClient) SetAddress(addr string) {
+	s.mu.Lock()
+	s.baseURL = normalizeBaseURL(addr)
+	s.mu.Unlock()
+}
+
+func (s *ServerClient) address() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.baseURL
 }
 
 type NodeInfo struct {
@@ -49,7 +63,7 @@ func NewServerClient(token string, addr string) *ServerClient {
 func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, error) {
 	var responseData api.NodeListResponse
 
-	err := s.client.request(ctx, http.MethodGet, s.baseURL+"/v1/nodes", nil, &responseData)
+	err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/nodes", nil, &responseData)
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
@@ -69,7 +83,7 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 	}
 	var responseData api.NodeRegistrationResponse
 
-	err := s.client.request(ctx, http.MethodPost, s.baseURL+"/v1/nodes", requestData, &responseData)
+	err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/nodes", requestData, &responseData)
 	if err != nil {
 		return nil, fmt.Errorf("register node: %w", err)
 	}
@@ -79,7 +93,7 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 
 func (s *ServerClient) GetJob(ctx context.Context, name string) (*api.JobStatusResponse, error) {
 	var response api.JobStatusResponse
-	if err := s.client.request(ctx, http.MethodGet, s.baseURL+"/v1/jobs/"+name, nil, &response); err != nil {
+	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/jobs/"+name, nil, &response); err != nil {
 		return nil, fmt.Errorf("get job: %w", err)
 	}
 	return &response, nil
@@ -90,7 +104,7 @@ func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error 
 		Spec: *spec,
 	}
 
-	err := s.client.request(ctx, http.MethodPost, s.baseURL+"/v1/jobs", requestData, nil)
+	err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/jobs", requestData, nil)
 	if err != nil {
 		return fmt.Errorf("register node: %w", err)
 	}
@@ -99,7 +113,7 @@ func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error 
 }
 
 func (s *ServerClient) DeleteJob(ctx context.Context, name string) error {
-	if err := s.client.request(ctx, http.MethodDelete, s.baseURL+"/v1/jobs/"+name, nil, nil); err != nil {
+	if err := s.client.request(ctx, http.MethodDelete, s.address()+"/v1/jobs/"+name, nil, nil); err != nil {
 		return fmt.Errorf("delete job: %w", err)
 	}
 	return nil
@@ -111,7 +125,7 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbea
 		Timestamp:   heartbeat.Timestamp,
 		Allocations: heartbeat.Allocations,
 	}
-	url := fmt.Sprintf("%s/v1/nodes/%s/heartbeat", s.baseURL, id)
+	url := fmt.Sprintf("%s/v1/nodes/%s/heartbeat", s.address(), id)
 
 	err := s.client.request(ctx, http.MethodPost, url, requestData, nil)
 	if err != nil {

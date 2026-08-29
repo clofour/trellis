@@ -4,26 +4,36 @@ Trellis is a small container scheduler built around containerd and Consul. The
 MVP provides job manifest validation, node registration and heartbeats,
 balanced task placement, allocation lifecycle management, health checks,
 restart handling, port allocation, persistent volumes, and Consul service
-registration.
+registration. Every machine runs the same `trellis-node` daemon. Consul elects
+one node as leader; only that node exposes the control-plane API and reconciles
+jobs. The remaining nodes continue running allocations and automatically take
+part in the next election.
 
 ## Quick start
 
-The demo scripts provision Consul and containerd, then start the server and an
-agent:
+The demo scripts provision Consul and containerd, then start a Trellis node on
+each machine:
 
 ```sh
 vagrant up
 ```
 
-When starting the components manually, run Consul and containerd first, then:
+When starting manually, run Consul and containerd first, provide the same
+cluster token to every node, and advertise addresses reachable by the other
+nodes:
 
 ```sh
-go run ./cmd/trellis-server --data-dir ./data
-go run ./cmd/trellis-agent --cluster-token "$TRELLIS_TOKEN"
+go run ./cmd/trellis-node --data-dir ./data \
+  --agent-advertise node-1.example:8127 \
+  --server-advertise node-1.example:8128 \
+  --cluster-token "$TRELLIS_TOKEN"
 ```
 
-On first startup the server logs the generated cluster token and persists it in
-the server data directory. Pass that token to agents and CLI requests.
+The first node initializes cluster metadata from the token. Later nodes verify
+the same token before joining. Leader ownership is a renewable Consul session;
+loss of that session cancels the leader's API and reconciliation loop, after
+which another node acquires the lock. Agents watch the lock and re-register
+with the elected leader.
 
 Submit a job using a YAML manifest:
 
@@ -51,4 +61,5 @@ go run ./cmd/trellis --server-addr localhost:8128 \
   --cluster-token "$TRELLIS_TOKEN" nodes list
 ```
 
-The server API listens on port `8128` by default; agents listen on `8127`.
+The elected leader API listens on port `8128` by default; every node's agent API
+listens on `8127`.

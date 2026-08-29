@@ -12,7 +12,15 @@ type ConsulStore struct {
 }
 
 func NewConsulStore() (*ConsulStore, error) {
-	client, err := api.NewClient(api.DefaultConfig())
+	return NewConsulStoreWithAddress("")
+}
+
+func NewConsulStoreWithAddress(address string) (*ConsulStore, error) {
+	config := api.DefaultConfig()
+	if address != "" {
+		config.Address = address
+	}
+	client, err := api.NewClient(config)
 	if err != nil {
 		return nil, err
 	}
@@ -20,6 +28,10 @@ func NewConsulStore() (*ConsulStore, error) {
 	return &ConsulStore{
 		client: client,
 	}, nil
+}
+
+func (c *ConsulStore) Client() *api.Client {
+	return c.client
 }
 
 func (c *ConsulStore) Get(ctx context.Context, key string) ([]byte, error) {
