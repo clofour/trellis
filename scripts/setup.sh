@@ -39,6 +39,73 @@ prompt() {
     eval "$var_name=\$value"
 }
 
+# ── Distro helpers ───────────────────────────────────────────────────
+
+# Sets DISTRO_ID (e.g. "ubuntu", "debian") and DISTRO_CODENAME.
+detect_distro() {
+    if [ -f /etc/os-release ]; then
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        DISTRO_ID="${ID:-}"
+        DISTRO_CODENAME="${VERSION_CODENAME:-}"
+    fi
+    if [ -z "${DISTRO_ID:-}" ]; then
+        error "Cannot detect Linux distribution. Only Debian/Ubuntu are supported."
+    fi
+    case "$DISTRO_ID" in
+        debian|ubuntu) ;;
+        *) error "Unsupported distribution: $DISTRO_ID. Only Debian and Ubuntu are supported." ;;
+    esac
+}
+
+install_containerd() {
+    info "Installing containerd from the Docker apt repository..."
+    detect_distro
+    apt-get install -y -qq ca-certificates curl
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL "https://download.docker.com/linux/${DISTRO_ID}/gpg" \
+        -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    cat > /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/${DISTRO_ID}
+Suites: ${DISTRO_CODENAME}
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+    apt-get update -qq
+    apt-get install -y -qq containerd.io
+    # Apply a default config so containerd starts cleanly.
+    containerd config default > /etc/containerd/config.toml
+    systemctl enable --now containerd
+    info "containerd installed and started."
+}
+
+install_gvisor() {
+    info "Installing gVisor (runsc + containerd shim) from the official apt repository..."
+    detect_distro
+    curl -fsSL https://gvisor.dev/archive.key \
+        | gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] \
+https://storage.googleapis.com/gvisor/releases release main" \
+        > /etc/apt/sources.list.d/gvisor.list
+    apt-get update -qq
+    apt-get install -y -qq runsc
+    # Register the runsc runtime with containerd.
+    runsc install
+    systemctl restart containerd
+    info "gVisor installed and containerd restarted."
+}
+
+install_nodejs() {
+    info "Installing Node.js 22 LTS from NodeSource..."
+    detect_distro
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
+    apt-get install -y -qq nodejs
+    info "Node.js $(node --version) installed."
+}
+
 # ── Preflight checks ────────────────────────────────────────────────
 
 [ "$(uname -s)" = "Linux" ] || error "This script only supports Linux."
@@ -49,8 +116,16 @@ for cmd in curl tar systemctl; do
     command -v "$cmd" >/dev/null 2>&1 || error "Required command not found: $cmd"
 done
 
-if ! systemctl is-active --quiet containerd; then
-    error "containerd is not running. Install and start containerd before running this script."
+if ! systemctl is-active --quiet containerd 2>/dev/null; then
+    if command -v containerd >/dev/null 2>&1; then
+        info "containerd is installed but not running. Starting it..."
+        systemctl enable --now containerd
+    else
+        info "containerd is not installed."
+        confirm "Install containerd automatically?" "y" \
+            || error "containerd is required. Install it manually and re-run this script."
+        install_containerd
+    fi
 fi
 
 # ── Download binaries from latest release ────────────────────────────
@@ -83,9 +158,10 @@ if confirm "Enable WireGuard namespace networking?" "n"; then
     apt-get install -y -qq wireguard-tools iproute2 iptables >/dev/null
     info "WireGuard dependencies installed."
     if ! command -v containerd-shim-runsc-v1 >/dev/null 2>&1; then
-        warn "containerd-shim-runsc-v1 (gVisor) not found."
-        warn "WireGuard networking requires the gVisor containerd shim."
-        warn "Install it from https://gvisor.dev/docs/user_guide/install/ before using WireGuard jobs."
+        info "gVisor (containerd-shim-runsc-v1) is required for WireGuard networking."
+        confirm "Install gVisor automatically?" "y" \
+            || error "gVisor is required for WireGuard jobs. Install it from https://gvisor.dev/docs/user_guide/install/ and re-run."
+        install_gvisor
     fi
 fi
 
@@ -168,12 +244,16 @@ fi
 install_ui=false
 if confirm "Install the web dashboard?" "n"; then
     if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-        error "Node.js and npm are required for the dashboard. Install Node.js 20+ and re-run."
+        info "Node.js is required for the dashboard."
+        confirm "Install Node.js 22 LTS automatically?" "y" \
+            || error "Node.js is required for the dashboard. Install Node.js 20+ and re-run."
+        install_nodejs
     fi
 
     node_major="$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')"
     if [ "$node_major" -lt 20 ]; then
-        error "Node.js 20 or later is required (found v$(node --version))."
+        info "Node.js 20 or later is required (found v$(node --version)). Installing Node.js 22 LTS..."
+        install_nodejs
     fi
 
     ui_url="$(printf '%s' "$release_json" \
