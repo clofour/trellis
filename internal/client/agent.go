@@ -3,13 +3,20 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/clofour/trellis/internal/api"
 )
 
 type AgentClient struct {
 	client *client
+}
+
+func (s *AgentClient) Logs(ctx context.Context, address, allocID string, follow bool, tail int) (io.ReadCloser, error) {
+	query := url.Values{"follow": {fmt.Sprint(follow)}, "tail": {fmt.Sprint(tail)}}
+	return s.client.stream(ctx, normalizeBaseURL(address)+"/v1/allocations/"+url.PathEscape(allocID)+"/logs?"+query.Encode())
 }
 
 func NewAgentClient(token string) *AgentClient {

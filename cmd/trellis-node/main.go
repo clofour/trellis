@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -112,6 +113,12 @@ func run(parent context.Context, cfg *config) error {
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "")
 	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), registry, leaderClient, id)
 	ag.SetAdvertiseAddress(agentHost, agentPort)
+	var sysinfo syscall.Sysinfo_t
+	memory := int64(0)
+	if syscall.Sysinfo(&sysinfo) == nil {
+		memory = int64(sysinfo.Totalram) * int64(sysinfo.Unit)
+	}
+	ag.SetResources(goruntime.NumCPU()*1000, memory, goruntime.GOOS, goruntime.GOARCH)
 	if err := ag.Init(ctx); err != nil {
 		return fmt.Errorf("initialize agent: %w", err)
 	}

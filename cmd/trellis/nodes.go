@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/client"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -17,8 +18,23 @@ func NewNodesCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(NewNodesListCmd())
+	cmd.AddCommand(NewNodesDrainCmd())
 
 	return cmd
+}
+
+func NewNodesDrainCmd() *cobra.Command {
+	return &cobra.Command{Use: "drain ID", Args: cobra.ExactArgs(1), Short: "Stop scheduling on a node and migrate its allocations", RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := uuid.Parse(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid node ID: %w", err)
+		}
+		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr).DrainNode(cmd.Context(), id); err != nil {
+			return err
+		}
+		fmt.Println("Node drain started.")
+		return nil
+	}}
 }
 
 func NewNodesListCmd() *cobra.Command {
@@ -40,13 +56,13 @@ func NewNodesListCmd() *cobra.Command {
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 
-			fmt.Fprintln(w, "ID\tAddress\tStatus\tHeartbeat")
+			fmt.Fprintln(w, "ID\tAddress\tStatus\tCPU (m)\tMemory (bytes)\tHeartbeat")
 
 			for _, node := range *nodes {
 				addr := fmt.Sprintf("%s:%d", node.Host, node.Port)
 				heartbeat := node.LastHeartbeat.Format(time.RFC3339)
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", node.ID, addr, node.Status, heartbeat)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, node.CPU, node.Memory, heartbeat)
 			}
 
 			return w.Flush()

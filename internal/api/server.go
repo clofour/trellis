@@ -21,6 +21,8 @@ type NodeResponse struct {
 	Port          int                `json:"port"`
 	Status        NodeStatusResponse `json:"status"`
 	LastHeartbeat time.Time          `json:"last_heartbeat"`
+	CPU           int                `json:"cpu"`
+	Memory        int64              `json:"memory"`
 }
 
 type NodeListResponse = []NodeResponse
