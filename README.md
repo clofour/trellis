@@ -27,6 +27,25 @@ task group, resource limits are selected per task, and `network.wireguard`
 only selects whether Trellis uses WireGuard to implement the namespace network;
 it does not define or disable the namespace isolation model.
 
+## Installation
+
+For a single Debian or Ubuntu server, the setup script is the recommended
+installation method. It installs and configures Consul and containerd, builds
+the Trellis binaries and dashboard, creates a cluster token, and enables the
+systemd services:
+
+```sh
+git clone https://github.com/clofour/trellis-experimental.git
+cd trellis-experimental
+sudo ./setup.sh
+```
+
+The generated cluster token is printed when setup finishes and stored in
+`/etc/trellis/cluster-token.env`. Go 1.26+ and Node.js 20+ must already be
+available. For a headless node, run `sudo ./setup.sh --skip-ui`. To install the
+optional WireGuard system packages as well, add `--with-wireguard`. See all
+configuration options with `./setup.sh --help`.
+
 ## Quick start
 
 The demo scripts provision Consul and containerd, then start a Trellis node on
@@ -90,6 +109,9 @@ This section walks through deploying Trellis with the dashboard UI and
 namespaced workloads on a single server. Unlike the Vagrant demo, this
 targets a real Linux machine (bare metal or VM) and produces a systemd-managed
 stack you can operate in production.
+
+The following steps document the setup script's actions and remain useful when
+you need a customized or fully manual deployment.
 
 ### Prerequisites
 
