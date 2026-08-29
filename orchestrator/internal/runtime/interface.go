@@ -23,6 +23,7 @@ type CreateOptions struct {
 	Memory           int64
 	Runtime          string
 	NetworkNamespace string
+	DNSServers       []string
 }
 
 type ContainerInfo struct {

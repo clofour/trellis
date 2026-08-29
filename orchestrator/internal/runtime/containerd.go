@@ -70,10 +70,23 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 		return "", fmt.Errorf("getting image %s: %w", options.Image, err)
 	}
 
+	allMounts := convertMounts(options.Mounts)
+	if len(options.DNSServers) > 0 {
+		resolvPath := filepath.Join(c.logDir, options.ID+"-resolv.conf")
+		if err := writeDNSConfig(resolvPath, options.DNSServers); err != nil {
+			return "", fmt.Errorf("write resolv.conf for %s: %w", options.ID, err)
+		}
+		allMounts = append(allMounts, specs.Mount{
+			Source:      resolvPath,
+			Destination: "/etc/resolv.conf",
+			Type:        "bind",
+			Options:     []string{"rbind", "ro"},
+		})
+	}
 	ociSpecOpts := []oci.SpecOpts{
 		oci.WithImageConfig(image),
 		oci.WithEnv(convertEnv(options.Env)),
-		oci.WithMounts(convertMounts(options.Mounts)),
+		oci.WithMounts(allMounts),
 	}
 	if options.NetworkNamespace != "" {
 		ociSpecOpts = append(ociSpecOpts, oci.WithLinuxNamespace(specs.LinuxNamespace{
@@ -346,6 +359,14 @@ func convertMounts(mounts []*Mount) []specs.Mount {
 	}
 
 	return result
+}
+
+func writeDNSConfig(path string, servers []string) error {
+	var content string
+	for _, s := range servers {
+		content += "nameserver " + s + "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 func (c *ContainerdRuntime) withNamespace(ctx context.Context) context.Context {

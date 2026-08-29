@@ -17,6 +17,7 @@ import (
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/auth"
+	"github.com/clofour/trellis/internal/catalog"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
@@ -44,6 +45,7 @@ type Server struct {
 	allocations   []*Allocation
 	networkPool   netip.Prefix
 	tokenManager  *auth.TokenManager
+	catalog       *catalog.ServiceCatalog
 	serverAddr    string
 	joiner        ClusterJoiner
 	mu            sync.RWMutex
@@ -158,6 +160,7 @@ func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateCont
 		jobs:         make(map[string]*Job),
 		networkPool:  pool,
 		tokenManager: auth.NewTokenManager(store, cluster),
+		catalog:      catalog.New(),
 		serverAddr:   serverAddr,
 	}
 }
@@ -290,9 +293,9 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 
 func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	node, ok := s.nodes[nodeID]
 	if !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("node not found")
 	}
 
@@ -333,7 +336,9 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 			}
 		}
 	}
+	s.mu.Unlock()
 
+	s.refreshCatalog()
 	return nil
 }
 
@@ -542,16 +547,25 @@ func unwrapPathError(err error) error {
 	}
 }
 
-func (s *Server) ListServices(namespace string) api.ServiceListResponse {
+func (s *Server) ListServices(namespace string, filter *catalog.ListFilter) api.ServiceListResponse {
+	return s.catalog.List(namespace, filter)
+}
+
+func (s *Server) Catalog() *catalog.ServiceCatalog {
+	return s.catalog
+}
+
+func (s *Server) refreshCatalog() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var result api.ServiceListResponse
+
+	namespaced := make(map[string][]catalog.ServiceInstance)
 	for _, a := range s.allocations {
-		if a.Namespace != namespace || a.Status != AllocationStatusHealthy {
+		if a.Status != AllocationStatusHealthy {
 			continue
 		}
-		job := s.jobs[jobKey(a.Namespace, a.JobName)]
 		var labels map[string]string
+		job := s.jobs[jobKey(a.Namespace, a.JobName)]
 		if job != nil {
 			for _, g := range job.Spec.TaskGroups {
 				if g.Name == a.TaskGroupName {
@@ -564,18 +578,26 @@ func (s *Server) ListServices(namespace string) api.ServiceListResponse {
 		if a.Node != nil {
 			address = a.Node.Host
 		}
-		result = append(result, api.ServiceEntry{
-			ID:        a.Name,
-			Job:       a.JobName,
-			Group:     a.TaskGroupName,
-			Namespace: a.Namespace,
-			Labels:    labels,
-			Address:   address,
-			Ports:     a.Ports,
-			Status:    string(a.Status),
+		namespaced[a.Namespace] = append(namespaced[a.Namespace], catalog.ServiceInstance{
+			ID:      a.Name,
+			Job:     a.JobName,
+			Group:   a.TaskGroupName,
+			Address: address,
+			Ports:   a.Ports,
+			Labels:  labels,
 		})
 	}
-	return result
+
+	seen := make(map[string]bool)
+	for ns, instances := range namespaced {
+		s.catalog.Update(ns, instances)
+		seen[ns] = true
+	}
+	for _, a := range s.allocations {
+		if !seen[a.Namespace] {
+			s.catalog.Update(a.Namespace, nil)
+		}
+	}
 }
 
 func (s *Server) TokenManager() *auth.TokenManager {
