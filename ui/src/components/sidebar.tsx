@@ -37,6 +37,16 @@ const navigation = [
       </svg>
     ),
   },
+  {
+    name: "Secrets",
+    href: "/secrets",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="6" cy="9" r="3" />
+        <path d="M9 9h7M13 9v2M15 9v2" />
+      </svg>
+    ),
+  },
 ];
 
 export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWrites: boolean }) {
@@ -50,18 +60,12 @@ export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWr
             <path d="M2 7h10M7 2v10M2 2l10 10M12 2L2 12" />
           </svg>
         </div>
-        <span className="text-[15px] font-semibold tracking-tight text-foreground">
-          Trellis
-        </span>
+        <span className="text-[15px] font-semibold tracking-tight text-foreground">Trellis</span>
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 p-3">
         {navigation.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-
+          const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (
             <Link
               key={item.name}
@@ -70,7 +74,7 @@ export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWr
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
             >
               {item.icon}
@@ -82,12 +86,8 @@ export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWr
 
       <div className="border-t border-border p-4">
         <div className="mb-3">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Namespace
-          </p>
-          <p className="mt-1 truncate font-mono text-xs text-foreground" title={namespace}>
-            {namespace}
-          </p>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Namespace</p>
+          <p className="mt-1 truncate font-mono text-xs text-foreground" title={namespace}>{namespace}</p>
         </div>
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="relative flex h-2 w-2">
@@ -100,7 +100,7 @@ export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWr
           {allowWrites ? (
             <>
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              <span className="text-amber-600 dark:text-amber-400 font-medium">Read-write</span>
+              <span className="font-medium text-amber-600 dark:text-amber-400">Read-write</span>
             </>
           ) : (
             <>
