@@ -1,14 +1,40 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useJob } from "@/hooks/use-api";
+import { useConfig } from "@/components/config-provider";
 import { StatCard } from "./stat-card";
 import { AllocationsTable } from "./allocations-table";
 import { Skeleton } from "./skeleton";
 import { EmptyState } from "./empty-state";
+import { JobForm } from "./job-form";
+import { ConfirmDialog } from "./confirm-dialog";
+import { deleteJob } from "@/lib/api";
 import Link from "next/link";
 
 export function JobDetail({ name }: { name: string }) {
-  const { data: job, isLoading, error } = useJob(name);
+  const { data: job, isLoading, error, mutate } = useJob(name);
+  const { allowWrites } = useConfig();
+  const router = useRouter();
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteJob(name);
+      setDeleteOpen(false);
+      router.push("/jobs");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to stop job");
+      setDeleting(false);
+    }
+  };
 
   if (isLoading) return <JobDetailSkeleton />;
   if (error) {
@@ -54,6 +80,28 @@ export function JobDetail({ name }: { name: string }) {
               {job.healthy} of {job.desired} healthy
             </span>
           )}
+          {allowWrites && (
+            <>
+              <button
+                onClick={() => setEditOpen(true)}
+                className="flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 1.5l2.5 2.5-7 7-3 .5.5-3 7-7z" />
+                </svg>
+                Edit
+              </button>
+              <button
+                onClick={() => setDeleteOpen(true)}
+                className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 3h9M5 3V2h3v1M4 3v7a1 1 0 001 1h3a1 1 0 001-1V3" />
+                </svg>
+                Stop
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -69,6 +117,40 @@ export function JobDetail({ name }: { name: string }) {
         </h2>
         <AllocationsTable allocations={job.allocations} />
       </div>
+
+      {allowWrites && job.spec && (
+        <JobForm
+          open={editOpen}
+          initialSpec={job.spec}
+          onClose={() => setEditOpen(false)}
+          onSuccess={() => {
+            setEditOpen(false);
+            mutate();
+          }}
+        />
+      )}
+
+      {allowWrites && (
+        <>
+          <ConfirmDialog
+            open={deleteOpen}
+            title={`Stop "${job.name}"?`}
+            description="This will stop all allocations and remove the job from the scheduler. This action cannot be undone."
+            confirmLabel={deleting ? "Stopping…" : "Stop Job"}
+            onConfirm={handleDelete}
+            onCancel={() => {
+              if (!deleting) {
+                setDeleteOpen(false);
+                setDeleteError(null);
+              }
+            }}
+            danger
+          />
+          {deleteError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{deleteError}</p>
+          )}
+        </>
+      )}
     </div>
   );
 }

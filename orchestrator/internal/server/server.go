@@ -698,7 +698,8 @@ func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 	if !ok {
 		return nil, false
 	}
-	r := &api.JobStatusResponse{Name: name, Revision: job.Revision}
+	specCopy := *job.Spec
+	r := &api.JobStatusResponse{Name: name, Revision: job.Revision, Spec: &specCopy}
 	for _, g := range job.Spec.TaskGroups {
 		r.Desired += g.Count
 	}

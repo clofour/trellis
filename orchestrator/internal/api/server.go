@@ -89,6 +89,7 @@ type JobStatusResponse struct {
 	Running     int                  `json:"running"`
 	Healthy     int                  `json:"healthy"`
 	Allocations []AllocationResponse `json:"allocations"`
+	Spec        *spec.JobSpec        `json:"spec,omitempty"`
 }
 
 type AllocationResponse struct {

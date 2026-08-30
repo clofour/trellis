@@ -39,7 +39,7 @@ const navigation = [
   },
 ];
 
-export function Sidebar({ namespace }: { namespace: string }) {
+export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWrites: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -89,12 +89,25 @@ export function Sidebar({ namespace }: { namespace: string }) {
             {namespace}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </span>
           Orchestrator
+        </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          {allowWrites ? (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              <span className="text-amber-600 dark:text-amber-400 font-medium">Read-write</span>
+            </>
+          ) : (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
+              <span className="text-muted-foreground">Read-only</span>
+            </>
+          )}
         </div>
       </div>
     </aside>
