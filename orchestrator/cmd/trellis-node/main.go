@@ -49,6 +49,7 @@ type config struct {
 	WireGuardPort                                              int
 	DNSListen                                                  string
 	CACert, CAKey, Cert, Key                                   string
+	Labels                                                     []string
 }
 
 func main() {
@@ -74,6 +75,7 @@ func main() {
 	f.StringVar(&cfg.CAKey, "ca-key", "", "Path to cluster CA private key (PEM)")
 	f.StringVar(&cfg.Cert, "cert", "", "Path to node certificate (PEM)")
 	f.StringVar(&cfg.Key, "key", "", "Path to node private key (PEM)")
+	f.StringArrayVar(&cfg.Labels, "label", nil, "Node label in key=value form (repeatable)")
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -228,6 +230,13 @@ func run(parent context.Context, cfg *config) error {
 		memory = int64(sysinfo.Totalram) * int64(sysinfo.Unit)
 	}
 	ag.SetResources(goruntime.NumCPU()*1000, memory, goruntime.GOOS, goruntime.GOARCH)
+	if len(cfg.Labels) > 0 {
+		labels, err := parseLabels(cfg.Labels)
+		if err != nil {
+			return err
+		}
+		ag.SetLabels(labels)
+	}
 	ag.Init(ctx)
 
 	dnsResolver := trellisdns.NewResolver(log, leaderClient, trellisdns.DefaultDomain)
@@ -547,6 +556,18 @@ func splitAddress(address string) (string, int, error) {
 		return "", 0, err
 	}
 	return host, port, nil
+}
+
+func parseLabels(raw []string) (map[string]string, error) {
+	labels := make(map[string]string, len(raw))
+	for _, s := range raw {
+		k, v, ok := strings.Cut(s, "=")
+		if !ok || k == "" {
+			return nil, fmt.Errorf("label %q must be in key=value form", s)
+		}
+		labels[k] = v
+	}
+	return labels, nil
 }
 
 func acquireNodeID(dataDir string) (uuid.UUID, error) {

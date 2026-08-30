@@ -95,6 +95,7 @@ type NodeRegistration struct {
 	Memory             int64
 	OS                 string
 	Arch               string
+	Labels             map[string]string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
 }
@@ -109,6 +110,7 @@ type Node struct {
 	Memory             int64
 	OS                 string
 	Arch               string
+	Labels             map[string]string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
 }
@@ -129,6 +131,7 @@ type NodeSummary struct {
 	Memory             int64
 	OS                 string
 	Arch               string
+	Labels             map[string]string
 	Status             NodeStatus
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
@@ -416,7 +419,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		Host: nodeRegistration.Host,
 		Port: nodeRegistration.Port,
 		CPU:  nodeRegistration.CPU, Memory: nodeRegistration.Memory,
-		OS: nodeRegistration.OS, Arch: nodeRegistration.Arch, Status: status,
+		OS: nodeRegistration.OS, Arch: nodeRegistration.Arch, Labels: nodeRegistration.Labels, Status: status,
 		WireGuardPublicKey: nodeRegistration.WireGuardPublicKey, WireGuardEndpoint: nodeRegistration.WireGuardEndpoint,
 		LastHeartbeat: s.now().UTC(),
 	})
@@ -438,6 +441,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 	node.LastHeartbeat = time.Now()
 	node.CPU, node.Memory = nodeRegistration.CPU, nodeRegistration.Memory
 	node.OS, node.Arch = nodeRegistration.OS, nodeRegistration.Arch
+	node.Labels = nodeRegistration.Labels
 	node.WireGuardPublicKey, node.WireGuardEndpoint = nodeRegistration.WireGuardPublicKey, nodeRegistration.WireGuardEndpoint
 
 	return nil
@@ -461,7 +465,7 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 			owned = append(owned, allocation)
 		}
 	}
-	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat}
+	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat}
 	s.mu.Unlock()
 	if err := s.state.PutNode(ctx, node.ID.String(), summary); err != nil {
 		return fmt.Errorf("persist node heartbeat: %w", err)
@@ -616,7 +620,7 @@ func (s *Server) Reload(ctx context.Context) error {
 		if summary.Status == NodeStatusDraining {
 			status = NodeStatusDraining
 		}
-		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, OS: summary.OS, Arch: summary.Arch, Status: status, WireGuardPublicKey: summary.WireGuardPublicKey, WireGuardEndpoint: summary.WireGuardEndpoint, LastHeartbeat: summary.LastHeartbeat}
+		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, OS: summary.OS, Arch: summary.Arch, Labels: summary.Labels, Status: status, WireGuardPublicKey: summary.WireGuardPublicKey, WireGuardEndpoint: summary.WireGuardEndpoint, LastHeartbeat: summary.LastHeartbeat}
 	}
 	allocations := make([]*Allocation, 0, len(allocationMap))
 	for _, allocation := range allocationMap {
@@ -643,7 +647,7 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 	}
 	previousStatus := node.Status
 	node.Status = NodeStatusDraining
-	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat}
+	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat}
 	s.mu.Unlock()
 	if err := s.state.PutNode(ctx, id.String(), summary); err != nil {
 		s.mu.Lock()

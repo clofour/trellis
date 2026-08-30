@@ -108,3 +108,52 @@ func TestScheduleProducesNoPlacementsWithoutConstraintMatch(t *testing.T) {
 		t.Fatalf("unexpected placements: %#v", placements)
 	}
 }
+
+func TestScheduleFiltersNodesByLabel(t *testing.T) {
+	gpu := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy, Labels: map[string]string{"gpu": "true", "region": "us-east"}}
+	cpu := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy, Labels: map[string]string{"region": "us-east"}}
+
+	placements := Schedule(&PlacementIntent{
+		Count: 1, Nodes: []*Node{gpu, cpu},
+		Constraints: []spec.ConstraintSpec{{Attribute: "gpu", Value: "true"}},
+	})
+	if len(placements) != 1 || placements[0].NodeID != gpu.ID {
+		t.Fatalf("unexpected placements: %#v", placements)
+	}
+}
+
+func TestScheduleFiltersNodesByLabelAbsence(t *testing.T) {
+	withLabel := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Labels: map[string]string{"zone": "a"}}
+	withoutLabel := &Node{ID: uuid.New(), Status: NodeStatusHealthy}
+
+	// Count=2 with only one eligible node: both placements land on the matching node.
+	placements := Schedule(&PlacementIntent{
+		Count: 2, Nodes: []*Node{withLabel, withoutLabel},
+		Constraints: []spec.ConstraintSpec{{Attribute: "zone", Value: "a"}},
+	})
+	if len(placements) != 2 {
+		t.Fatalf("expected 2 placements, got %d: %#v", len(placements), placements)
+	}
+	for _, p := range placements {
+		if p.NodeID != withLabel.ID {
+			t.Fatalf("placement landed on unlabeled node: %#v", placements)
+		}
+	}
+}
+
+func TestScheduleCombinesBuiltinAndLabelConstraints(t *testing.T) {
+	match := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy, OS: "linux", Arch: "amd64", Labels: map[string]string{"disk": "ssd"}}
+	wrongDisk := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy, OS: "linux", Arch: "amd64", Labels: map[string]string{"disk": "hdd"}}
+	wrongArch := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000003"), Status: NodeStatusHealthy, OS: "linux", Arch: "arm64", Labels: map[string]string{"disk": "ssd"}}
+
+	placements := Schedule(&PlacementIntent{
+		Count: 1, Nodes: []*Node{match, wrongDisk, wrongArch},
+		Constraints: []spec.ConstraintSpec{
+			{Attribute: "arch", Value: "amd64"},
+			{Attribute: "disk", Value: "ssd"},
+		},
+	})
+	if len(placements) != 1 || placements[0].NodeID != match.ID {
+		t.Fatalf("unexpected placements: %#v", placements)
+	}
+}

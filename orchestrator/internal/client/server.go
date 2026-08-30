@@ -50,6 +50,7 @@ type NodeInfo struct {
 	Memory             int64
 	OS                 string
 	Arch               string
+	Labels             map[string]string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
 }
@@ -105,6 +106,7 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 		Memory:             nodeInfo.Memory,
 		OS:                 nodeInfo.OS,
 		Arch:               nodeInfo.Arch,
+		Labels:             nodeInfo.Labels,
 		WireGuardPublicKey: nodeInfo.WireGuardPublicKey,
 		WireGuardEndpoint:  nodeInfo.WireGuardEndpoint,
 	}
