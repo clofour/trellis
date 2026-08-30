@@ -1,6 +1,9 @@
 package spec
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseYAML(t *testing.T) {
 	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        ports:\n          - host_port: 8080\n            container_port: 80\n")
@@ -50,5 +53,59 @@ func TestValidate(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestParseConfigurableHealthAndRestartPolicy(t *testing.T) {
+	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    restart:\n      max_restarts: 5\n      window: 2m\n    tasks:\n      - name: server\n        image: example/server:1\n        health_check:\n          type: tcp\n          port: 8080\n          interval: 15s\n          timeout: 3s\n          threshold: 2\n")
+	job, err := ParseYAML(raw)
+	if err != nil {
+		t.Fatalf("parse manifest: %v", err)
+	}
+	if err := Validate(job); err != nil {
+		t.Fatalf("validate manifest: %v", err)
+	}
+	restart := job.TaskGroups[0].Restart
+	if restart == nil || restart.MaxRestarts != 5 || restart.Window != 2*time.Minute {
+		t.Fatalf("unexpected restart policy: %#v", restart)
+	}
+	health := job.TaskGroups[0].Tasks[0].HealthCheck
+	if health.Interval != 15*time.Second || health.Timeout != 3*time.Second || health.Threshold != 2 {
+		t.Fatalf("unexpected health check timing: %#v", health)
+	}
+}
+
+func TestValidateHealthAndRestartPolicy(t *testing.T) {
+	job := func() *JobSpec {
+		return &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{
+			Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", HealthCheck: &HealthCheckSpec{Type: "tcp", Port: 8080}}},
+		}}}
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*JobSpec)
+	}{
+		{"negative health interval", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].HealthCheck.Interval = -time.Second }},
+		{"negative health timeout", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].HealthCheck.Timeout = -time.Second }},
+		{"negative health threshold", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].HealthCheck.Threshold = -1 }},
+		{"negative max restarts", func(j *JobSpec) { j.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: -1, Window: time.Minute} }},
+		{"zero restart window", func(j *JobSpec) { j.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: 0} }},
+		{"negative restart window", func(j *JobSpec) { j.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: 1, Window: -time.Minute} }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := job()
+			test.mutate(candidate)
+			if err := Validate(candidate); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+
+	valid := job()
+	valid.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: 0, Window: time.Minute}
+	if err := Validate(valid); err != nil {
+		t.Fatalf("zero-restart policy rejected: %v", err)
 	}
 }

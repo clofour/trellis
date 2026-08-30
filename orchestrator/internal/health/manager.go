@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	checkInterval  = 10 * time.Second
-	checkTimeout   = 5 * time.Second
-	checkThreshold = 3
+	defaultCheckInterval  = 10 * time.Second
+	defaultCheckTimeout   = 5 * time.Second
+	defaultCheckThreshold = 3
 )
 
 type HealthSubscriber interface {
@@ -23,11 +23,14 @@ type HealthSubscriber interface {
 }
 
 type HealthConfig struct {
-	Type    string
-	Addr    string
-	Port    int
-	Path    string
-	Command []string
+	Type      string
+	Addr      string
+	Port      int
+	Path      string
+	Command   []string
+	Interval  time.Duration
+	Timeout   time.Duration
+	Threshold int
 }
 
 type trackedTask struct {
@@ -77,24 +80,41 @@ func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *s
 		delete(h.tasks, allocID)
 	}
 
-	config := HealthConfig{
-		Type:    spec.Type,
-		Addr:    "127.0.0.1",
-		Port:    spec.Port,
-		Path:    spec.Path,
-		Command: spec.Command,
-	}
+	config := newHealthConfig(spec)
 
 	newTrackedTask := &trackedTask{
 		allocID:     allocID,
 		containerID: containerID,
 		config:      config,
-		health:      NewTaskHealth(),
+		health:      NewTaskHealth(config.Threshold),
 		cancel:      cancel,
 	}
 	h.tasks[allocID] = newTrackedTask
 
 	go h.runHealthCheckLoop(ctx, newTrackedTask)
+}
+
+func newHealthConfig(spec *spec.HealthCheckSpec) HealthConfig {
+	config := HealthConfig{
+		Type:      spec.Type,
+		Addr:      "127.0.0.1",
+		Port:      spec.Port,
+		Path:      spec.Path,
+		Command:   spec.Command,
+		Interval:  defaultCheckInterval,
+		Timeout:   defaultCheckTimeout,
+		Threshold: defaultCheckThreshold,
+	}
+	if spec.Interval != 0 {
+		config.Interval = spec.Interval
+	}
+	if spec.Timeout != 0 {
+		config.Timeout = spec.Timeout
+	}
+	if spec.Threshold != 0 {
+		config.Threshold = spec.Threshold
+	}
+	return config
 }
 
 func (h *HealthManager) DeregisterTask(allocID string) {
@@ -109,7 +129,7 @@ func (h *HealthManager) DeregisterTask(allocID string) {
 }
 
 func (h *HealthManager) runHealthCheckLoop(ctx context.Context, trackedTask *trackedTask) {
-	ticker := time.NewTicker(checkInterval)
+	ticker := time.NewTicker(trackedTask.config.Interval)
 	defer ticker.Stop()
 
 	for {
@@ -146,7 +166,7 @@ func (h *HealthManager) runHealthCheckLoop(ctx context.Context, trackedTask *tra
 func (h *HealthManager) runHealthCheck(ctx context.Context, trackedTask *trackedTask) (bool, error) {
 	config := trackedTask.config
 
-	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
 
 	switch config.Type {

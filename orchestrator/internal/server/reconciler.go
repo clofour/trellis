@@ -10,6 +10,7 @@ import (
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/network"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
 
@@ -100,17 +101,19 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		var groupRuntime string
 		var groupNetworkMode string
 		var groupAPIAccess bool
+		var groupRestart *spec.RestartPolicySpec
 		for _, group := range job.Spec.TaskGroups {
 			if group.Name == alloc.TaskGroupName {
 				groupRuntime = group.Runtime
 				groupNetworkMode = group.NetworkMode
 				groupAPIAccess = group.APIAccess
+				groupRestart = group.Restart
 				break
 			}
 		}
 		hostMode := groupNetworkMode == "host"
 		wireGuard := job.Spec.Network != nil && job.Spec.Network.WireGuard && !hostMode
-		request := &api.AllocationRequest{Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard, NetworkMode: groupNetworkMode}
+		request := &api.AllocationRequest{Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard, NetworkMode: groupNetworkMode, Restart: groupRestart}
 		if wireGuard {
 			plan, err := s.networkPlan(alloc.Namespace, alloc.Node)
 			if err != nil {
