@@ -13,6 +13,7 @@ set -eu
 INTERVAL="${1:-5}"
 CONF_DIR="/etc/nginx/conf.d"
 CONF_FILE="$CONF_DIR/upstreams.conf"
+BACKUP_FILE="$CONF_DIR/.upstreams.conf.previous"
 
 mkdir -p "$CONF_DIR"
 
@@ -43,25 +44,28 @@ while true; do
         address = ""
         host_port = ""
         status = ""
+        weight = ""
     }
     /"trellis.expose"/ { gsub(/[ "\t]/, "", $2); expose = $2 }
     /"trellis\/domain"/ { gsub(/[ "\t]/, "", $2); domain = $2 }
     /"trellis\/path-prefix"/ { gsub(/[ "\t]/, "", $2); prefix = $2 }
+    /"trellis\/weight"/ { gsub(/[ "\t]/, "", $2); weight = $2 }
     /"address"/ { gsub(/[ "\t]/, "", $2); address = $2 }
     /"host_port"/ { gsub(/[ "\t]/, "", $2); host_port = $2 }
     /"status"/ {
         gsub(/[ "\t]/, "", $2)
         status = $2
-        if (status == "healthy" && expose == "true" && domain != "" && address != "" && host_port != "") {
+        if (status == "healthy" && expose == "true" && domain != "" && address != "" && host_port != "" && host_port != "0") {
             key = domain ":" (prefix != "" ? prefix : "/")
             if (!(key in upstreams)) {
                 upstream_order[++n] = key
                 domains[key] = domain
                 prefixes[key] = (prefix != "" ? prefix : "/")
             }
-            upstreams[key] = upstreams[key] "    server " address ":" host_port ";\n"
+            weight_arg = (weight ~ /^[1-9][0-9]*$/ ? " weight=" weight : "")
+            upstreams[key] = upstreams[key] "    server " address ":" host_port weight_arg ";\n"
         }
-        domain = ""; prefix = ""; expose = ""; address = ""; host_port = ""; status = ""
+        domain = ""; prefix = ""; expose = ""; address = ""; host_port = ""; status = ""; weight = ""
     }
     END {
         for (i = 1; i <= n; i++) {
@@ -129,14 +133,29 @@ while true; do
     }
     ')
 
-    # Only reload Nginx if the config actually changed.
-    new_hash=$(echo "$config" | sha256sum | cut -d' ' -f1)
+    # Only reload Nginx if the config actually changed. Preserve the last
+    # validated file so a bad generated config cannot replace it permanently.
+    new_hash=$(printf %s "$config" | sha256sum | cut -d' ' -f1)
     if [ "$new_hash" != "$prev_hash" ]; then
-        echo "$config" > "$CONF_FILE"
-        nginx -t 2>/dev/null && nginx -s reload 2>/dev/null && \
-            echo "nginx: config reloaded with new upstreams" || \
-            echo "warn: nginx config test failed, keeping previous config"
-        prev_hash="$new_hash"
+        had_previous=false
+        if [ -f "$CONF_FILE" ]; then
+            cp "$CONF_FILE" "$BACKUP_FILE"
+            had_previous=true
+        fi
+
+        printf '%s\n' "$config" > "$CONF_FILE"
+        if nginx -t 2>/dev/null && nginx -s reload 2>/dev/null; then
+            echo "nginx: config reloaded with new upstreams"
+            prev_hash="$new_hash"
+            rm -f "$BACKUP_FILE"
+        else
+            echo "warn: nginx config validation or reload failed; restoring previous config"
+            if [ "$had_previous" = true ]; then
+                mv "$BACKUP_FILE" "$CONF_FILE"
+            else
+                rm -f "$CONF_FILE" "$BACKUP_FILE"
+            fi
+        fi
     fi
 
     sleep "$INTERVAL"
