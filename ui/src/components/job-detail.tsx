@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useJob } from "@/hooks/use-api";
 import { useConfig } from "@/components/config-provider";
 import { StatCard } from "./stat-card";
@@ -11,7 +12,6 @@ import { EmptyState } from "./empty-state";
 import { JobForm } from "./job-form";
 import { ConfirmDialog } from "./confirm-dialog";
 import { deleteJob } from "@/lib/api";
-import Link from "next/link";
 
 export function JobDetail({ name }: { name: string }) {
   const { data: job, isLoading, error, mutate } = useJob(name);
@@ -52,21 +52,17 @@ export function JobDetail({ name }: { name: string }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/jobs" className="hover:text-foreground transition-colors">
-          Jobs
-        </Link>
+        <Link href="/jobs" className="transition-colors hover:text-foreground">Jobs</Link>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d="M5 3l4 4-4 4" />
         </svg>
-        <span className="text-foreground font-medium">{job.name}</span>
+        <span className="font-medium text-foreground">{job.name}</span>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">{job.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Revision {job.revision}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Revision {job.revision}</p>
         </div>
         <div className="flex items-center gap-2">
           {allHealthy ? (
@@ -80,27 +76,29 @@ export function JobDetail({ name }: { name: string }) {
               {job.healthy} of {job.desired} healthy
             </span>
           )}
+          {allowWrites && job.spec && (
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 1.5l2.5 2.5-7 7-3 .5.5-3 7-7z" />
+              </svg>
+              Edit
+            </button>
+          )}
           {allowWrites && (
-            <>
-              <button
-                onClick={() => setEditOpen(true)}
-                className="flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
-              >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 1.5l2.5 2.5-7 7-3 .5.5-3 7-7z" />
-                </svg>
-                Edit
-              </button>
-              <button
-                onClick={() => setDeleteOpen(true)}
-                className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
-              >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M2 3h9M5 3V2h3v1M4 3v7a1 1 0 001 1h3a1 1 0 001-1V3" />
-                </svg>
-                Stop
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+            >
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 3h9M5 3V2h3v1M4 3v7a1 1 0 001 1h3a1 1 0 001-1V3" />
+              </svg>
+              Stop
+            </button>
           )}
         </div>
       </div>
@@ -112,11 +110,22 @@ export function JobDetail({ name }: { name: string }) {
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-medium text-foreground">
-          Allocations
-        </h2>
+        <h2 className="mb-3 text-sm font-medium text-foreground">Allocations</h2>
         <AllocationsTable allocations={job.allocations} />
       </div>
+
+      {job.spec && (
+        <details className="rounded-lg border border-border bg-card" open={false}>
+          <summary className="cursor-pointer select-none px-5 py-4 text-sm font-medium text-foreground">
+            Desired configuration
+          </summary>
+          <div className="border-t border-border p-4">
+            <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-md bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100">
+              {JSON.stringify(job.spec, null, 2)}
+            </pre>
+          </div>
+        </details>
+      )}
 
       {allowWrites && job.spec && (
         <JobForm
