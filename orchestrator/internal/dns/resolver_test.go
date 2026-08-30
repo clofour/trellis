@@ -13,7 +13,7 @@ type mockLookup struct {
 	services *api.ServiceListResponse
 }
 
-func (m *mockLookup) ListServices(_ context.Context) (*api.ServiceListResponse, error) {
+func (m *mockLookup) ListDiscovery(_ context.Context) (*api.ServiceListResponse, error) {
 	return m.services, nil
 }
 
@@ -33,7 +33,7 @@ func TestResolveJobNamespace(t *testing.T) {
 
 	ips = r.resolve("db.acme.trellis.")
 	if len(ips) != 1 {
-		t.Fatalf("expected 1 IP for db.acme, got %d", len(ips))
+		t.Fatalf("expected 1 IPs for db.acme, got %d", len(ips))
 	}
 
 	ips = r.resolve("missing.acme.trellis.")
