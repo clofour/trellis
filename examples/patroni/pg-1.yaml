@@ -22,14 +22,18 @@ task_groups:
           SCOPE: pg-cluster
           PATRONI_NAME: pg-1
 
-          # Replace with the actual IP of the node labelled pg-node=1.
-          POD_IP: 10.0.1.10
+          # Etcd DCS — resolved via Trellis DNS.
+          ETCD_HOSTS: etcd.acme.trellis:2379
 
-          # Etcd DCS endpoint.
-          ETCD_HOSTS: 10.0.1.10:2379
+          # PostgreSQL: listen on all interfaces; advertise via Trellis DNS.
+          # pg-1 has count:1 and is pinned to one node, so pg-1.acme.trellis
+          # always resolves to this allocation's address.
+          PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+          PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-1.acme.trellis:5432
 
           # Patroni REST API.
           PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+          PATRONI_RESTAPI_CONNECT_ADDRESS: pg-1.acme.trellis:8008
         secrets:
           - name: pg-superuser-password
             target: env
