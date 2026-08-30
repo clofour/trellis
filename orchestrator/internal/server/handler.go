@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/clofour/trellis/internal/api"
-	"github.com/clofour/trellis/internal/catalog"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
@@ -43,7 +42,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
-	v1.GET("/services", h.handleListServices)
+	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
 }
 
@@ -173,18 +172,17 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 	return c.NoContent(http.StatusAccepted)
 }
 
-func (h *Handler) handleListServices(c *echo.Context) error {
-	var filter *catalog.ListFilter
-	job := c.QueryParam("job")
-	label := c.QueryParam("label")
-	if job != "" || label != "" {
-		filter = &catalog.ListFilter{Job: job, Label: label}
+func (h *Handler) handleListDiscovery(c *echo.Context) error {
+	// Discovery records are node-internal scheduler data. Namespace-scoped API
+	// tokens must not be able to turn them back into a user-facing resource.
+	if requestNamespace(c) != "" {
+		return echo.NewHTTPError(http.StatusForbidden, "internal discovery is cluster-scoped")
 	}
-	services := h.server.ListServices(requestNamespace(c), filter)
-	if services == nil {
-		services = api.ServiceListResponse{}
+	entries := h.server.ListServices("", nil)
+	if entries == nil {
+		entries = api.ServiceListResponse{}
 	}
-	return c.JSON(200, services)
+	return c.JSON(http.StatusOK, entries)
 }
 
 func (h *Handler) handleRaftJoin(c *echo.Context) error {
