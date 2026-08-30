@@ -80,10 +80,10 @@ type AllocationResponse struct {
 	Task      string            `json:"task,omitempty"`
 	Namespace string            `json:"namespace,omitempty"`
 	NodeID    uuid.UUID         `json:"node_id"`
-	Status    string            `json:"status"`
 	Labels    map[string]string `json:"labels,omitempty"`
 	Address   string            `json:"address,omitempty"`
 	Ports     []PortMapping     `json:"ports,omitempty"`
+	Status    string            `json:"status"`
 }
 
 type AllocationListResponse = []AllocationResponse
