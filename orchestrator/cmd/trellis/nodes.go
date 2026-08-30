@@ -18,8 +18,27 @@ func NewNodesCmd() *cobra.Command {
 
 	cmd.AddCommand(NewNodesListCmd())
 	cmd.AddCommand(NewNodesDrainCmd())
+	cmd.AddCommand(NewNodesRemoveCmd())
 
 	return cmd
+}
+
+func NewNodesRemoveCmd() *cobra.Command {
+	return &cobra.Command{Use: "remove ID", Args: cobra.ExactArgs(1), Short: "Remove a decommissioned node from the cluster and Raft quorum", RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := uuid.Parse(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid node ID: %w", err)
+		}
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).RemoveNode(cmd.Context(), id); err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Node removed.")
+		return nil
+	}}
 }
 
 func NewNodesDrainCmd() *cobra.Command {

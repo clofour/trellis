@@ -261,6 +261,7 @@ func run(parent context.Context, cfg *config) error {
 	}
 	ag.SetWireGuardIdentity(publicKey, endpoint)
 	ag.SetAdvertiseAddress(agentHost, agentPort)
+	ag.SetRaftID(cfg.ServerAdvertise)
 	var sysinfo syscall.Sysinfo_t
 	memory := int64(0)
 	if syscall.Sysinfo(&sysinfo) == nil {

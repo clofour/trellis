@@ -42,6 +42,7 @@ type NodeRegistrationRequest struct {
 	Volumes            []string          `json:"volumes,omitempty"`
 	WireGuardPublicKey string            `json:"wireguard_public_key,omitempty"`
 	WireGuardEndpoint  string            `json:"wireguard_endpoint,omitempty"`
+	RaftID             string            `json:"raft_id,omitempty"`
 }
 
 type NodeRegistrationResponse struct {

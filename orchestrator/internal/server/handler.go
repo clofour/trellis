@@ -45,6 +45,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/nodes", h.handleRegisterNode)
 	v1.POST("/nodes/:id/heartbeat", h.handleHeartbeat)
 	v1.POST("/nodes/:id/drain", h.handleDrainNode)
+	v1.DELETE("/nodes/:id", h.handleRemoveNode)
 	v1.GET("/jobs", h.handleListJobs)
 	v1.POST("/jobs", h.handleRegisterJob)
 	v1.GET("/jobs/:name", h.handleGetJob)
@@ -186,6 +187,17 @@ func (h *Handler) handleDrainNode(c *echo.Context) error {
 	return c.NoContent(http.StatusAccepted)
 }
 
+func (h *Handler) handleRemoveNode(c *echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid node ID")
+	}
+	if err := h.server.RemoveNode(c.Request().Context(), id); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "node not found")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 func (h *Handler) handleListNodes(c *echo.Context) error {
 	nodes := h.server.ListNodes()
 
@@ -218,6 +230,7 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 		Volumes:            request.Volumes,
 		WireGuardPublicKey: request.WireGuardPublicKey,
 		WireGuardEndpoint:  request.WireGuardEndpoint,
+		RaftID:             request.RaftID,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to register node")

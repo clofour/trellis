@@ -35,6 +35,7 @@ const heartbeatInterval = 10 * time.Second
 
 type ClusterJoiner interface {
 	AddVoter(id, address string) error
+	RemoveVoter(id string) error
 }
 
 type Server struct {
@@ -112,6 +113,7 @@ type NodeRegistration struct {
 	Volumes            []string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
+	RaftID             string
 }
 
 type Node struct {
@@ -128,6 +130,7 @@ type Node struct {
 	Volumes            []string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
+	RaftID             string
 }
 
 type NodeStatus string
@@ -152,6 +155,7 @@ type NodeSummary struct {
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
 	LastHeartbeat      time.Time
+	RaftID             string
 }
 
 type Job struct {
@@ -446,6 +450,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		Volumes:            nodeRegistration.Volumes,
 		WireGuardPublicKey: nodeRegistration.WireGuardPublicKey, WireGuardEndpoint: nodeRegistration.WireGuardEndpoint,
 		LastHeartbeat: s.now().UTC(),
+		RaftID:        nodeRegistration.RaftID,
 	})
 	if err != nil {
 		return fmt.Errorf("save node remotely: %w", err)
@@ -468,6 +473,9 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 	node.Labels = nodeRegistration.Labels
 	node.Volumes = append([]string(nil), nodeRegistration.Volumes...)
 	node.WireGuardPublicKey, node.WireGuardEndpoint = nodeRegistration.WireGuardPublicKey, nodeRegistration.WireGuardEndpoint
+	if nodeRegistration.RaftID != "" {
+		node.RaftID = nodeRegistration.RaftID
+	}
 
 	return nil
 }
@@ -648,7 +656,7 @@ func (s *Server) Reload(ctx context.Context) error {
 		if summary.Status == NodeStatusDraining {
 			status = NodeStatusDraining
 		}
-		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, OS: summary.OS, Arch: summary.Arch, Labels: summary.Labels, Status: status, WireGuardPublicKey: summary.WireGuardPublicKey, WireGuardEndpoint: summary.WireGuardEndpoint, LastHeartbeat: summary.LastHeartbeat}
+		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, OS: summary.OS, Arch: summary.Arch, Labels: summary.Labels, Status: status, WireGuardPublicKey: summary.WireGuardPublicKey, WireGuardEndpoint: summary.WireGuardEndpoint, LastHeartbeat: summary.LastHeartbeat, RaftID: summary.RaftID}
 	}
 	allocations := make([]*Allocation, 0, len(allocationMap))
 	for _, allocation := range allocationMap {
@@ -686,6 +694,36 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	s.Reconcile(ctx)
+	return nil
+}
+
+// RemoveNode evicts a node from the Raft quorum and removes it from the
+// cluster's stored state. The node must first be drained so that its
+// allocations are rescheduled before it is permanently removed.
+func (s *Server) RemoveNode(ctx context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	node := s.nodes[id]
+	if node == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("node not found")
+	}
+	raftID := node.RaftID
+	delete(s.nodes, id)
+	s.mu.Unlock()
+
+	if err := s.state.DeleteNode(ctx, id.String()); err != nil {
+		// Put the node back so the cluster view remains consistent.
+		s.mu.Lock()
+		s.nodes[id] = node
+		s.mu.Unlock()
+		return fmt.Errorf("delete node state: %w", err)
+	}
+
+	if raftID != "" && s.joiner != nil {
+		if err := s.joiner.RemoveVoter(raftID); err != nil {
+			s.log.Error("remove node from raft quorum", "node_id", id, "raft_id", raftID, "error", err)
+		}
+	}
 	return nil
 }
 

@@ -171,6 +171,10 @@ func (a *Agent) SetLabels(labels map[string]string) {
 	a.nodeInfo.Labels = labels
 }
 
+func (a *Agent) SetRaftID(id string) {
+	a.nodeInfo.RaftID = id
+}
+
 func (a *Agent) Init(ctx context.Context) {
 	a.health.Subscriber = a
 	a.health.SetContext(ctx)

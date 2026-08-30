@@ -204,6 +204,11 @@ func (r *RaftStore) AddVoter(id, address string) error {
 	return fut.Error()
 }
 
+func (r *RaftStore) RemoveVoter(id string) error {
+	fut := r.raft.RemoveServer(raft.ServerID(id), 0, 10*time.Second)
+	return fut.Error()
+}
+
 func (r *RaftStore) RemoveServer(id string) error {
 	fut := r.raft.RemoveServer(raft.ServerID(id), 0, 10*time.Second)
 	return fut.Error()

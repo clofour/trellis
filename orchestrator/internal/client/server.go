@@ -55,6 +55,7 @@ type NodeInfo struct {
 	Volumes            []string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
+	RaftID             string
 }
 
 type Heartbeat struct {
@@ -100,6 +101,13 @@ func (s *ServerClient) DrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *ServerClient) RemoveNode(ctx context.Context, id uuid.UUID) error {
+	if err := s.client.request(ctx, http.MethodDelete, fmt.Sprintf("%s/v1/nodes/%s", s.address(), id), nil, nil); err != nil {
+		return fmt.Errorf("remove node: %w", err)
+	}
+	return nil
+}
+
 func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*api.NodeRegistrationResponse, error) {
 	requestData := &api.NodeRegistrationRequest{
 		ID:                 nodeInfo.ID,
@@ -113,6 +121,7 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 		Volumes:            nodeInfo.Volumes,
 		WireGuardPublicKey: nodeInfo.WireGuardPublicKey,
 		WireGuardEndpoint:  nodeInfo.WireGuardEndpoint,
+		RaftID:             nodeInfo.RaftID,
 	}
 	var responseData api.NodeRegistrationResponse
 

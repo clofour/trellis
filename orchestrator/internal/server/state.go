@@ -98,6 +98,14 @@ func (s *StateController) ListNodes(ctx context.Context) (map[string]*NodeSummar
 	return listValues[NodeSummary](ctx, s.store, prefix)
 }
 
+func (s *StateController) DeleteNode(ctx context.Context, id string) error {
+	key := fmt.Sprintf("%s/%s/nodes/%s", trellisNamespace, s.cluster, id)
+	if err := s.store.Delete(ctx, key); err != nil {
+		return fmt.Errorf("delete node: %w", err)
+	}
+	return nil
+}
+
 func (s *StateController) ListAllocations(ctx context.Context) (map[string]*Allocation, error) {
 	prefix := fmt.Sprintf("%s/%s/allocations/", trellisNamespace, s.cluster)
 	return listValues[Allocation](ctx, s.store, prefix)
