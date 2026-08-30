@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { orchestratorHeaders, TRELLIS_URL, getAllowWrites } from "@/lib/orchestrator";
+import {
+  orchestratorHeaders,
+  TRELLIS_URL,
+  getAllowWrites,
+} from "@/lib/orchestrator";
 
 export async function GET() {
   try {
@@ -10,7 +14,7 @@ export async function GET() {
     if (!res.ok) {
       return NextResponse.json(
         { error: `Upstream error: ${res.status}` },
-        { status: res.status }
+        { status: res.status },
       );
     }
 
@@ -19,20 +23,35 @@ export async function GET() {
   } catch {
     return NextResponse.json(
       { error: "Failed to connect to orchestrator" },
-      { status: 502 }
+      { status: 502 },
     );
   }
 }
 
 export async function POST(request: NextRequest) {
   if (!getAllowWrites()) {
-    return NextResponse.json({ error: "Dashboard is read-only" }, { status: 403 });
+    return NextResponse.json(
+      { error: "Dashboard is read-only" },
+      { status: 403 },
+    );
   }
   try {
     const body = await request.json();
+    if (!body?.spec || typeof body.spec !== "object") {
+      return NextResponse.json({ error: "Missing job spec" }, { status: 400 });
+    }
+
+    // The dashboard is deliberately scoped to one configured namespace. Never
+    // trust a client-supplied namespace to escape that scope, and always fill it
+    // in so dashboard writes satisfy the orchestrator's namespace invariant.
+    body.spec.namespace = process.env.TRELLIS_NAMESPACE || "";
+
     const res = await fetch(`${TRELLIS_URL}/v1/jobs`, {
       method: "POST",
-      headers: { ...orchestratorHeaders(), "Content-Type": "application/json" },
+      headers: {
+        ...orchestratorHeaders(),
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(body),
     });
 
@@ -40,7 +59,7 @@ export async function POST(request: NextRequest) {
       const text = await res.text();
       return NextResponse.json(
         { error: text || `Upstream error: ${res.status}` },
-        { status: res.status }
+        { status: res.status },
       );
     }
 
@@ -48,7 +67,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json(
       { error: "Failed to connect to orchestrator" },
-      { status: 502 }
+      { status: 502 },
     );
   }
 }
