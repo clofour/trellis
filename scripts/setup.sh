@@ -39,6 +39,66 @@ prompt() {
     eval "$var_name=\$value"
 }
 
+is_ipv4() {
+    local value="$1" octet
+    local -a octets
+    IFS=. read -r -a octets <<< "$value"
+    [ "${#octets[@]}" -eq 4 ] || return 1
+    for octet in "${octets[@]}"; do
+        [[ "$octet" =~ ^[0-9]+$ ]] || return 1
+        (( 10#$octet <= 255 )) || return 1
+    done
+}
+
+is_private_ipv4() {
+    local value="$1" a b c d
+    is_ipv4 "$value" || return 1
+    IFS=. read -r a b c d <<< "$value"
+    [ "$a" -eq 10 ] \
+        || { [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ]; } \
+        || { [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; }
+}
+
+detect_private_ipv4() {
+    local value
+
+    if command -v ip >/dev/null 2>&1; then
+        value="$(ip -4 route get 1.1.1.1 2>/dev/null \
+            | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
+        if [ -n "$value" ] && is_private_ipv4 "$value"; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+
+        while read -r value; do
+            if is_private_ipv4 "$value"; then
+                printf '%s\n' "$value"
+                return 0
+            fi
+        done < <(ip -o -4 addr show scope global 2>/dev/null \
+            | awk '{ sub(/\/.*/, "", $4); print $4 }')
+    fi
+
+    while read -r value; do
+        if is_private_ipv4 "$value"; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done < <(hostname -I 2>/dev/null | tr ' ' '\n')
+
+    return 1
+}
+
+detect_public_ipv4() {
+    local value
+    value="$(curl -4fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+    if is_ipv4 "$value"; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+    return 1
+}
+
 # ── Distro helpers ───────────────────────────────────────────────────
 
 # Sets DISTRO_ID (e.g. "ubuntu", "debian") and DISTRO_CODENAME.
@@ -185,7 +245,20 @@ fi
 # ── Advertise addresses ──────────────────────────────────────────────
 
 default_hostname="$(hostname)"
-prompt advertise_host "Advertise hostname or IP (reachable by other nodes)" "$default_hostname"
+prompt advertise_host "Advertise hostname or IP (reachable by other nodes; public/private to auto-detect)" "$default_hostname"
+case "$advertise_host" in
+    private)
+        advertise_host="$(detect_private_ipv4)" \
+            || error "Could not detect a private IPv4 address. Enter the address explicitly instead."
+        info "Resolved 'private' to ${advertise_host}."
+        ;;
+    public)
+        advertise_host="$(detect_public_ipv4)" \
+            || error "Could not detect the public IPv4 address. Enter the address explicitly instead."
+        info "Resolved 'public' to ${advertise_host}."
+        warn "Public IP discovery reports this node's egress IPv4. Ensure NAT, firewall, and port forwarding allow other nodes to reach it."
+        ;;
+esac
 
 # ── Join an existing cluster? ────────────────────────────────────────
 
