@@ -1,7 +1,7 @@
 # Getting started
 
-This guide builds a local Trellis node, deploys a multi-service application,
-and demonstrates service discovery between containers. It assumes containerd is
+This guide builds a local Trellis node, deploys a multi-job application, and
+demonstrates DNS discovery between containers. It assumes containerd is
 already installed and running on a Linux host. See the
 [operations guide](operations.md) for a persistent systemd deployment.
 
@@ -93,11 +93,12 @@ from `jobs status` to stream its logs:
   jobs logs --tail 100 --follow ALLOCATION_ID
 ```
 
-## 4. Add a backend with service discovery
+## 4. Add a backend and use DNS discovery
 
-Trellis includes built-in DNS so that containers can find each other by name.
-Any container can resolve `<job>.<namespace>.trellis` to the addresses of that
-job's healthy allocations — no configuration required.
+Trellis includes built-in DNS so that containers can find jobs by name. Any
+container can resolve `<job>.<namespace>.trellis` to the addresses of that
+job's healthy allocations — no separate service object or registry is
+required.
 
 Save the following as `backend.yaml`:
 
@@ -129,7 +130,7 @@ Deploy it:
   --cluster-token "$TRELLIS_TOKEN" jobs apply --file backend.yaml
 ```
 
-Once the backend is healthy, the `hello` containers can already reach it at
+Once the backend is healthy, the `hello` containers can already resolve it at
 `backend.examples.trellis`. To verify, exec into a running allocation and
 resolve the name:
 
@@ -143,66 +144,7 @@ The DNS response includes the host addresses of all healthy `backend`
 replicas. When you scale the backend up by changing `count` and reapplying,
 the DNS results update automatically.
 
-## 5. Use labels and the services API
-
-Labels let you attach metadata to task groups. Combined with the services
-API, they become building blocks for patterns like reverse proxies, routing
-tables, and dynamic configuration.
-
-Update `backend.yaml` to add labels:
-
-```yaml
-namespace: examples
-name: backend
-task_groups:
-  - name: api
-    count: 2
-    labels:
-      trellis.expose: "true"
-      trellis/domain: api.example.com
-    api_access: true
-    tasks:
-      - name: api
-        image: docker.io/library/nginx:alpine
-        resources:
-          cpu: 250
-          memory: 134217728
-        ports:
-          - host_port: 0
-            container_port: 80
-        health_check:
-          type: http
-          port: 80
-          path: /
-```
-
-Reapply to update the job. The two new fields:
-
-- **`labels`** — arbitrary key-value metadata, returned by the services API.
-- **`api_access: true`** — injects `TRELLIS_TOKEN` and `TRELLIS_ADDR` into
-  the container, allowing it to query the control-plane API directly.
-
-Query the services API to see what's running:
-
-```sh
-curl -s -H "Authorization: Bearer $TRELLIS_TOKEN" \
-  http://localhost:8128/v1/services | python3 -m json.tool
-```
-
-Filter by label to find only services that opted in to exposure:
-
-```sh
-curl -s -H "Authorization: Bearer $TRELLIS_TOKEN" \
-  "http://localhost:8128/v1/services?label=trellis.expose:true" \
-  | python3 -m json.tool
-```
-
-Each entry includes the job name, allocated ports, host address, health
-status, and labels. This is the foundation for building a dynamic reverse
-proxy — see the [reverse proxy example](../examples/reverse-proxy/) for a
-complete walkthrough.
-
-## 6. Scale and update
+## 5. Scale and update
 
 Edit a manifest's `count` and reapply to scale up or down. Trellis
 reconciles the running allocations to match: new replicas are placed on nodes
@@ -210,7 +152,7 @@ with available capacity, and surplus replicas are stopped.
 
 ```sh
 # Scale the backend to 3 replicas
-sed -i 's/count: 2/count: 3/' backend.yaml
+sed -i 's/count: 1/count: 3/' backend.yaml
 ./bin/trellis --server-addr localhost:8128 \
   --cluster-token "$TRELLIS_TOKEN" jobs apply --file backend.yaml
 ```
