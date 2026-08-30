@@ -10,7 +10,16 @@ export interface Node {
   memory: number;
 }
 
-export type AllocationStatus = "pending" | "healthy" | "unhealthy";
+export type AllocationStatus = AllocationPhase | "pending" | "healthy" | "unhealthy";
+export type AllocationPhase =
+  | "placed"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "failed"
+  | "lost";
+export type AllocationHealth = "unknown" | "healthy" | "unhealthy";
 
 export interface Allocation {
   id: string;
@@ -18,6 +27,12 @@ export interface Allocation {
   task: string;
   node_id: string;
   status: AllocationStatus;
+  phase: AllocationPhase;
+  health: AllocationHealth;
+  generation: number;
+  job_revision: number;
+  reason?: string;
+  message?: string;
 }
 
 export interface Job {

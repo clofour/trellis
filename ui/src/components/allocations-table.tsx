@@ -36,7 +36,13 @@ export function AllocationsTable({
               Node
             </th>
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-              Status
+              Lifecycle
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Health
+            </th>
+            <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+              Generation
             </th>
           </tr>
         </thead>
@@ -55,7 +61,13 @@ export function AllocationsTable({
                 {alloc.node_id ? alloc.node_id.substring(0, 8) : "—"}
               </td>
               <td className="px-4 py-3">
-                <StatusBadge status={alloc.status} />
+                <StatusBadge status={alloc.phase ?? alloc.status} />
+              </td>
+              <td className="px-4 py-3">
+                <StatusBadge status={alloc.health ?? "unknown"} />
+              </td>
+              <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                {alloc.generation ?? 1}
               </td>
             </tr>
           ))}

@@ -35,6 +35,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 | [Core concepts](docs/concepts.md) | Understand nodes, jobs, allocations, namespaces, and leadership |
 | [Job manifest reference](docs/job-manifest.md) | Configure task groups, resources, ports, volumes, and health checks |
 | [Operations guide](docs/operations.md) | Deploy persistently, operate nodes, and enable WireGuard |
+| [Allocation lifecycle](docs/allocation-lifecycle.md) | Understand durable execution, retries, fencing, recovery, and loss semantics |
 | [Dashboard guide](ui/README.md) | Configure, develop, and deploy the web UI |
 | [Vagrant demo](docs/vagrant.md) | Try a multi-node cluster locally with Vagrant |
 | [Contributing](docs/contributing.md) | Build from source and run development checks |
