@@ -5,6 +5,9 @@ task_groups:
     count: 3
     labels:
       slot: green
+      # Keep the route metadata on the inactive slot. Promotion only needs to
+      # add trellis.expose: "true".
+      trellis/domain: app.example.com
     tasks:
       - name: server
         image: your-registry/api:v2
