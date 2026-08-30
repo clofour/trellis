@@ -1,137 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { JobSpec, TaskGroupSpec, TaskSpec, PortSpec, HealthCheckSpec } from "@/lib/types";
+import type { JobSpec, PortSpec } from "@/lib/types";
 import { submitJob } from "@/lib/api";
 
-// ── Internal form state types ────────────────────────────────────────
-
-interface EnvEntry {
-  key: string;
-  value: string;
-}
-
-interface TaskForm {
-  name: string;
-  image: string;
-  envEntries: EnvEntry[];
-  cpuMillicores: string;
-  memoryMB: string;
-  ports: PortSpec[];
-  healthEnabled: boolean;
-  healthType: "http" | "tcp" | "exec";
-  healthPort: string;
-  healthPath: string;
-  healthCommand: string;
-}
-
-interface GroupForm {
-  name: string;
-  count: string;
-  apiAccess: boolean;
-  tasks: TaskForm[];
-}
-
-interface FormState {
-  name: string;
-  groups: GroupForm[];
-}
-
-// ── Conversions ──────────────────────────────────────────────────────
-
-function specToForm(spec: JobSpec): FormState {
-  return {
-    name: spec.name,
-    groups: spec.task_groups.map((g) => ({
-      name: g.name,
-      count: String(g.count),
-      apiAccess: g.api_access ?? false,
-      tasks: g.tasks.map((t) => ({
-        name: t.name,
-        image: t.image,
-        envEntries: Object.entries(t.env ?? {}).map(([key, value]) => ({ key, value })),
-        cpuMillicores: t.resources ? String(t.resources.cpu) : "",
-        memoryMB: t.resources ? String(Math.round(t.resources.memory / (1024 * 1024))) : "",
-        ports: t.ports ?? [],
-        healthEnabled: !!t.health_check,
-        healthType: t.health_check?.type ?? "http",
-        healthPort: t.health_check ? String(t.health_check.port) : "",
-        healthPath: t.health_check?.path ?? "/",
-        healthCommand: t.health_check?.command?.join(" ") ?? "",
-      })),
-    })),
-  };
-}
-
-function formToSpec(form: FormState): JobSpec {
-  return {
-    name: form.name.trim(),
-    task_groups: form.groups.map((g) => {
-      const group: TaskGroupSpec = {
-        name: g.name.trim(),
-        count: parseInt(g.count, 10) || 1,
-        tasks: g.tasks.map((t) => {
-          const env: Record<string, string> = {};
-          for (const { key, value } of t.envEntries) {
-            if (key.trim()) env[key.trim()] = value;
-          }
-          const task: TaskSpec = {
-            name: t.name.trim(),
-            image: t.image.trim(),
-          };
-          if (Object.keys(env).length > 0) task.env = env;
-          if (t.ports.length > 0) task.ports = t.ports;
-          if (t.cpuMillicores || t.memoryMB) {
-            task.resources = {
-              cpu: parseInt(t.cpuMillicores, 10) || 0,
-              memory: (parseInt(t.memoryMB, 10) || 0) * 1024 * 1024,
-            };
-          }
-          if (t.healthEnabled && t.healthPort) {
-            const hc: HealthCheckSpec = {
-              type: t.healthType,
-              port: parseInt(t.healthPort, 10) || 0,
-            };
-            if (t.healthType === "http" && t.healthPath) hc.path = t.healthPath;
-            if (t.healthType === "exec" && t.healthCommand) {
-              hc.command = t.healthCommand.split(/\s+/).filter(Boolean);
-            }
-            task.health_check = hc;
-          }
-          return task;
-        }),
-      };
-      if (g.apiAccess) group.api_access = true;
-      return group;
-    }),
-  };
-}
-
-// ── Blank defaults ───────────────────────────────────────────────────
-
-function blankTask(): TaskForm {
-  return {
-    name: "",
-    image: "",
-    envEntries: [],
-    cpuMillicores: "",
-    memoryMB: "",
-    ports: [],
-    healthEnabled: false,
-    healthType: "http",
-    healthPort: "",
-    healthPath: "/",
-    healthCommand: "",
-  };
-}
-
-function blankGroup(): GroupForm {
-  return { name: "", count: "1", apiAccess: false, tasks: [blankTask()] };
-}
-
-function blankForm(): FormState {
-  return { name: "", groups: [blankGroup()] };
-}
+import {
+  blankForm,
+  blankGroup,
+  blankTask,
+  formToSpec,
+  specToForm,
+  type EnvEntry,
+  type FormState,
+  type GroupForm,
+  type TaskForm,
+} from "./job-form-model";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -149,7 +32,9 @@ function EnvSection({
   onChange: (entries: EnvEntry[]) => void;
 }) {
   const update = (i: number, field: keyof EnvEntry, val: string) => {
-    const next = entries.map((e, idx) => (idx === i ? { ...e, [field]: val } : e));
+    const next = entries.map((e, idx) =>
+      idx === i ? { ...e, [field]: val } : e,
+    );
     onChange(next);
   };
   const remove = (i: number) => onChange(entries.filter((_, idx) => idx !== i));
@@ -182,7 +67,14 @@ function EnvSection({
               className="flex-shrink-0 text-muted-foreground hover:text-red-500 transition-colors px-1"
               title="Remove"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M2 2l10 10M12 2L2 12" />
               </svg>
             </button>
@@ -210,7 +102,7 @@ function PortsSection({
   const update = (i: number, field: keyof PortSpec, val: string) => {
     const n = parseInt(val, 10);
     const next = ports.map((p, idx) =>
-      idx === i ? { ...p, [field]: isNaN(n) ? 0 : n } : p
+      idx === i ? { ...p, [field]: isNaN(n) ? 0 : n } : p,
     );
     onChange(next);
   };
@@ -230,7 +122,9 @@ function PortsSection({
                 className={inputClass()}
                 placeholder="Host port (0 = dynamic)"
                 value={p.host_port === 0 ? "" : String(p.host_port)}
-                onChange={(ev) => update(i, "host_port", ev.target.value || "0")}
+                onChange={(ev) =>
+                  update(i, "host_port", ev.target.value || "0")
+                }
               />
             </div>
             <span className="text-muted-foreground text-sm">→</span>
@@ -247,7 +141,14 @@ function PortsSection({
               onClick={() => remove(i)}
               className="flex-shrink-0 text-muted-foreground hover:text-red-500 transition-colors px-1"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M2 2l10 10M12 2L2 12" />
               </svg>
             </button>
@@ -300,7 +201,9 @@ function TaskEditor({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Name</label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Name
+          </label>
           <input
             className={inputClass(!task.name)}
             placeholder="e.g. web"
@@ -309,7 +212,9 @@ function TaskEditor({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Image</label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Image
+          </label>
           <input
             className={inputClass(!task.image)}
             placeholder="e.g. nginx:latest"
@@ -356,14 +261,18 @@ function TaskEditor({
 
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <label className="text-xs font-medium text-muted-foreground">Health Check</label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Health Check
+          </label>
           <button
             type="button"
             role="switch"
             aria-checked={task.healthEnabled}
             onClick={() => set("healthEnabled", !task.healthEnabled)}
             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              task.healthEnabled ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-600"
+              task.healthEnabled
+                ? "bg-emerald-500"
+                : "bg-zinc-300 dark:bg-zinc-600"
             }`}
           >
             <span
@@ -378,19 +287,28 @@ function TaskEditor({
           <div className="space-y-3 pl-2 border-l-2 border-emerald-500/30">
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Type</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Type
+                </label>
                 <select
                   className={inputClass()}
                   value={task.healthType}
-                  onChange={(e) => set("healthType", e.target.value as "http" | "tcp" | "exec")}
+                  onChange={(e) =>
+                    set(
+                      "healthType",
+                      e.target.value as "http" | "tcp" | "script",
+                    )
+                  }
                 >
                   <option value="http">HTTP</option>
                   <option value="tcp">TCP</option>
-                  <option value="exec">Exec</option>
+                  <option value="script">Script</option>
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Port</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Port
+                </label>
                 <input
                   className={inputClass()}
                   placeholder="e.g. 80"
@@ -401,7 +319,9 @@ function TaskEditor({
             </div>
             {task.healthType === "http" && (
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Path</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Path
+                </label>
                 <input
                   className={inputClass()}
                   placeholder="/"
@@ -410,9 +330,11 @@ function TaskEditor({
                 />
               </div>
             )}
-            {task.healthType === "exec" && (
+            {task.healthType === "script" && (
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Command</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  Command
+                </label>
                 <input
                   className={inputClass()}
                   placeholder="e.g. curl -f http://localhost/"
@@ -447,9 +369,15 @@ function GroupEditor({
 
   const addTask = () => set("tasks", [...group.tasks, blankTask()]);
   const updateTask = (i: number, t: TaskForm) =>
-    set("tasks", group.tasks.map((x, idx) => (idx === i ? t : x)));
+    set(
+      "tasks",
+      group.tasks.map((x, idx) => (idx === i ? t : x)),
+    );
   const removeTask = (i: number) =>
-    set("tasks", group.tasks.filter((_, idx) => idx !== i));
+    set(
+      "tasks",
+      group.tasks.filter((_, idx) => idx !== i),
+    );
 
   return (
     <div className="rounded-lg border border-border p-5 space-y-5">
@@ -470,7 +398,9 @@ function GroupEditor({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Group Name</label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Group Name
+          </label>
           <input
             className={inputClass(!group.name)}
             placeholder="e.g. web"
@@ -479,7 +409,9 @@ function GroupEditor({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Replicas</label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Replicas
+          </label>
           <input
             className={inputClass()}
             type="number"
@@ -499,11 +431,15 @@ function GroupEditor({
           onChange={(e) => set("apiAccess", e.target.checked)}
         />
         <span className="text-sm text-foreground">API access</span>
-        <span className="text-xs text-muted-foreground">(allow tasks to contact the Trellis API)</span>
+        <span className="text-xs text-muted-foreground">
+          (allow tasks to contact the Trellis API)
+        </span>
       </label>
 
       <div className="space-y-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Tasks</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Tasks
+        </p>
         {group.tasks.map((task, i) => (
           <TaskEditor
             key={i}
@@ -555,7 +491,12 @@ interface JobFormProps {
 
 // Outer shell: only mounts the panel while open so inner state always
 // initialises fresh from props rather than needing a reset effect.
-export function JobForm({ open, initialSpec, onClose, onSuccess }: JobFormProps) {
+export function JobForm({
+  open,
+  initialSpec,
+  onClose,
+  onSuccess,
+}: JobFormProps) {
   if (!open) return null;
   return (
     <JobFormPanel
@@ -575,8 +516,8 @@ function JobFormPanel({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [form, setForm] = useState<FormState>(
-    () => initialSpec ? specToForm(initialSpec) : blankForm()
+  const [form, setForm] = useState<FormState>(() =>
+    initialSpec ? specToForm(initialSpec) : blankForm(),
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -598,7 +539,10 @@ function JobFormPanel({
   const addGroup = () =>
     setForm((f) => ({ ...f, groups: [...f.groups, blankGroup()] }));
   const updateGroup = (i: number, g: GroupForm) =>
-    setForm((f) => ({ ...f, groups: f.groups.map((x, idx) => (idx === i ? g : x)) }));
+    setForm((f) => ({
+      ...f,
+      groups: f.groups.map((x, idx) => (idx === i ? g : x)),
+    }));
   const removeGroup = (i: number) =>
     setForm((f) => ({ ...f, groups: f.groups.filter((_, idx) => idx !== i) }));
 
@@ -652,14 +596,24 @@ function JobFormPanel({
             disabled={submitting}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M3 3l12 12M15 3L3 15" />
             </svg>
           </button>
         </div>
 
         {/* Scrollable body */}
-        <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-1 flex-col overflow-hidden"
+        >
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
             {/* Job name */}
             <div>
@@ -671,8 +625,14 @@ function JobFormPanel({
                 placeholder="e.g. my-app"
                 value={form.name}
                 disabled={isEditing}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                style={isEditing ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+                style={
+                  isEditing
+                    ? { opacity: 0.6, cursor: "not-allowed" }
+                    : undefined
+                }
               />
               {isEditing && (
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -707,7 +667,9 @@ function JobFormPanel({
           {/* Footer */}
           <div className="border-t border-border px-6 py-4">
             {error && (
-              <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>
+              <p className="mb-3 text-sm text-red-600 dark:text-red-400">
+                {error}
+              </p>
             )}
             <div className="flex justify-end gap-3">
               <button
@@ -723,7 +685,11 @@ function JobFormPanel({
                 disabled={submitting}
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors disabled:opacity-50 min-w-[100px]"
               >
-                {submitting ? "Saving…" : isEditing ? "Update Job" : "Create Job"}
+                {submitting
+                  ? "Saving…"
+                  : isEditing
+                    ? "Update Job"
+                    : "Create Job"}
               </button>
             </div>
           </div>

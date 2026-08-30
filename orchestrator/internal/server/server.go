@@ -52,6 +52,14 @@ type Server struct {
 	serverAddr   string
 	joiner       ClusterJoiner
 	clientTLS    *tls.Config
+	// Locking contract:
+	//   - mu protects the in-memory cluster, node, job, allocation, epoch, and
+	//     leadership snapshots. It must never be held during network or storage I/O.
+	//   - allocation.mu protects lifecycle fields on that allocation. When both
+	//     locks are required, mu is always acquired before allocation.mu.
+	//   - reconcileMu serializes complete reconciliation passes.
+	//   - mutationMu serializes durable state mutations and is never acquired
+	//     while mu or allocation.mu is held.
 	mu           sync.RWMutex
 	reconcileMu  sync.Mutex
 	mutationMu   sync.Mutex
@@ -683,7 +691,9 @@ func (s *Server) ListJobs(namespace string) api.JobListResponse {
 			r.Desired += g.Count
 		}
 		for _, a := range s.allocations {
+			a.mu.Lock()
 			if jobKey(a.Namespace, a.JobName) != key {
+				a.mu.Unlock()
 				continue
 			}
 			a.normalize(time.Now().UTC())
@@ -693,6 +703,7 @@ func (s *Server) ListJobs(namespace string) api.JobListResponse {
 			if a.Health == lifecycle.HealthHealthy {
 				r.Healthy++
 			}
+			a.mu.Unlock()
 		}
 		result = append(result, r)
 	}
@@ -712,7 +723,9 @@ func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 		r.Desired += g.Count
 	}
 	for _, a := range s.allocations {
+		a.mu.Lock()
 		if a.Namespace != namespace || a.JobName != name {
+			a.mu.Unlock()
 			continue
 		}
 		a.normalize(time.Now().UTC())
@@ -727,6 +740,7 @@ func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 		if a.Health == lifecycle.HealthHealthy {
 			r.Healthy++
 		}
+		a.mu.Unlock()
 	}
 	return r, true
 }
@@ -785,8 +799,10 @@ func (s *Server) refreshCatalog() {
 
 	namespaced := make(map[string][]catalog.ServiceInstance)
 	for _, a := range s.allocations {
+		a.mu.Lock()
 		a.normalize(time.Now().UTC())
 		if a.Phase != lifecycle.PhaseRunning || a.Health != lifecycle.HealthHealthy {
+			a.mu.Unlock()
 			continue
 		}
 		var labels map[string]string
@@ -811,6 +827,7 @@ func (s *Server) refreshCatalog() {
 			Ports:   a.Ports,
 			Labels:  labels,
 		})
+		a.mu.Unlock()
 	}
 
 	seen := make(map[string]bool)

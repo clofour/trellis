@@ -42,10 +42,10 @@ func Validate(spec *JobSpec) error {
 			return fmt.Errorf("duplicate task group %q", group.Name)
 		}
 		groups[group.Name] = struct{}{}
-		if group.Runtime != "" && group.Runtime != "runc" && group.Runtime != "runsc" {
+		if !group.Runtime.Valid() {
 			return fmt.Errorf("task group %q: unsupported runtime %q", group.Name, group.Runtime)
 		}
-		if group.NetworkMode != "" && group.NetworkMode != "host" {
+		if !group.NetworkMode.Valid() {
 			return fmt.Errorf("task group %q: unsupported network_mode %q", group.Name, group.NetworkMode)
 		}
 		if group.Restart != nil {
@@ -131,11 +131,11 @@ func Validate(spec *JobSpec) error {
 					return fmt.Errorf("task group %q task %q: health check threshold must be at least 1", group.Name, task.Name)
 				}
 				switch task.HealthCheck.Type {
-				case "http", "tcp":
+				case HealthCheckHTTP, HealthCheckTCP:
 					if task.HealthCheck.Port < 1 || task.HealthCheck.Port > 65535 {
 						return fmt.Errorf("task group %q task %q: health check port is required", group.Name, task.Name)
 					}
-				case "script":
+				case HealthCheckScript:
 					if len(task.HealthCheck.Command) == 0 {
 						return fmt.Errorf("task group %q task %q: health check command is required", group.Name, task.Name)
 					}
