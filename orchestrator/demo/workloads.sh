@@ -39,7 +39,9 @@ for i in $(seq 1 30); do
     sleep 3
 done
 
-# ── Hello: nginx web server ──────────────────────────────────────────
+# ── Hello: two-replica web server ────────────────────────────────────
+# Uses traefik/whoami: a lightweight server that returns request details,
+# demonstrating dynamic port allocation and placement across nodes.
 
 cat <<'EOF' | ${CLI} jobs apply --file /dev/stdin
 namespace: examples
@@ -49,17 +51,17 @@ task_groups:
     count: 2
     tasks:
       - name: server
-        image: docker.io/library/nginx:alpine
+        image: docker.io/traefik/whoami
         resources:
-          cpu: 250
-          memory: 134217728
+          cpu: 100
+          memory: 16777216
         ports:
           - host_port: 0
             container_port: 80
         health_check:
           type: http
           port: 80
-          path: /
+          path: /health
 EOF
 
 # ── Blog: WordPress + MySQL ──────────────────────────────────────────

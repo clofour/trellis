@@ -4,7 +4,8 @@
 
 ```text
 .
-├── docs/          Operator and user documentation
+├── docs/          User and operator documentation
+├── docs/development/  Developer documentation (this file)
 ├── examples/      Example job manifests and deployment patterns
 ├── orchestrator/  Go node daemon, CLI, scheduler, and Vagrant demo
 ├── scripts/       Installation and setup scripts
@@ -14,13 +15,18 @@
 ## Building from source
 
 Install Go 1.26.4 or later and a running containerd instance, then build
-the node daemon and CLI:
+the node daemon, CLI, and proxy sync utility:
 
 ```sh
 cd orchestrator
 go build -o bin/trellis-node ./cmd/trellis-node
 go build -o bin/trellis ./cmd/trellis
+go build -o bin/trellis-proxy-sync ./cmd/trellis-proxy-sync
 ```
+
+`trellis-proxy-sync` is a standalone daemon used in the reverse-proxy
+example. It polls the Trellis allocations API and regenerates a
+proxy configuration file when upstream membership changes.
 
 ## Development checks
 

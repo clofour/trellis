@@ -5,8 +5,8 @@ three-node Trellis cluster on your local machine. It is intended for
 evaluation and development — trying multi-node scheduling, testing
 failover, and exploring cluster behavior without cloud infrastructure.
 
-The demo provisions the same workloads as the [getting-started guide](getting-started.md):
-a simple nginx web server and a WordPress blog backed by MySQL. Once
+The demo provisions the same workloads as the [getting-started guide](../getting-started.md):
+a simple web server and a WordPress blog backed by MySQL. Once
 `vagrant up` finishes you have a running cluster with example jobs already
 deployed.
 
@@ -69,7 +69,7 @@ variables are pre-set in the shell:
 # List nodes
 trellis nodes list
 
-# Check the nginx job
+# Check the hello job
 trellis --namespace examples jobs status hello
 
 # Check the WordPress + MySQL stack
@@ -87,19 +87,22 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ## What the demo deploys
 
-### nginx web server
+### Hello web server
 
-A two-replica nginx deployment in the `examples` namespace. Demonstrates:
+A two-replica deployment in the `examples` namespace using
+[traefik/whoami](https://github.com/traefik/whoami), a small server that
+returns request details. Demonstrates:
 
 - Dynamic port allocation (`host_port: 0`)
 - HTTP health checks
 - Placement across multiple nodes
 
-Find the allocated ports and open the nginx welcome page:
+Find the allocated ports and open the server in a browser:
 
 ```sh
 trellis --namespace examples jobs status hello
 # Open http://worker-1.trellis.local:<port>
+# The page shows request headers and the server hostname.
 ```
 
 ### WordPress + MySQL

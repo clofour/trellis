@@ -12,7 +12,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 
 **Non-opinionated and flexible.** Trellis provides the necessary building blocks without prescribing how you use them. Reverse proxies, for instance, are ordinary jobs rather than a special first-class service or ingress resource. Trellis does not enforce any organizational scheme; namespaces, teams, and projects are yours to arrange however makes sense. Operators can run Trellis as-is, or build their own frontends and abstractions on top for their specific use case.
 
-**Declarative, and optionally GitOps.** Jobs are defined as YAML manifests submitted through the API or CLI. Trellis supports a GitOps workflow, but does not require one — if your team prefers to apply manifests directly, that works just as well. The choice is yours.
+**Declarative, with open-ended delivery.** Jobs are defined as YAML manifests and submitted through the API or CLI. You can apply them directly from your terminal, drive them from a CI/CD pipeline, build a custom UI on top of the API, or integrate with any tooling that can run a command or make an HTTP request. Trellis accepts manifests; the workflow that generates and submits them is entirely yours.
 
 **Easy to use.** The tension between "flexible building blocks" and "easy to use" is addressed through thorough documentation and first-party examples. Trellis favors clear documentation over opinionated defaults that hide what is actually happening.
 
@@ -23,6 +23,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 - YAML job validation and revisioned job submission
 - Node registration, heartbeats, draining, and balanced placement
 - Allocation lifecycle management, health checks, restart handling, and filterable runtime queries
+- Rolling and recreate update strategies
 - Container resource limits, dynamic host ports, and persistent local volumes
 - Built-in DNS discovery for healthy job allocations and optional WireGuard namespace networking
 - Namespace-scoped, write-only secrets with encrypted persistence and memory-backed delivery
@@ -30,18 +31,25 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 
 ## Documentation
 
+### User documentation
+
 | Guide | Use it to |
 | --- | --- |
 | [Getting started](docs/getting-started.md) | Install Trellis and deploy your first workloads |
 | [Core concepts](docs/concepts.md) | Understand nodes, jobs, allocations, namespaces, and leadership |
-| [Job manifest reference](docs/job-manifest.md) | Configure task groups, resources, ports, volumes, and health checks |
+| [Job manifest reference](docs/job-manifest.md) | Configure task groups, resources, ports, volumes, health checks, and update strategies |
 | [Operations guide](docs/operations.md) | Deploy persistently, operate nodes, and enable WireGuard |
 | [Allocation lifecycle](docs/allocation-lifecycle.md) | Understand durable execution, retries, fencing, recovery, and loss semantics |
 | [Volume semantics](docs/volumes.md) | Configure named host-volume availability and understand the storage responsibility boundary |
-| [Secrets design](docs/secrets.md) | Review the proposed write-only secret model, encryption, delivery, and rotation semantics |
+| [Secrets design](docs/secrets.md) | Review the write-only secret model, encryption, delivery, and rotation semantics |
 | [Dashboard guide](ui/README.md) | Configure, develop, and deploy the web UI |
-| [Vagrant demo](docs/vagrant.md) | Try a multi-node cluster locally with Vagrant |
-| [Contributing](docs/contributing.md) | Build from source and run development checks |
+
+### Developer documentation
+
+| Guide | Use it to |
+| --- | --- |
+| [Vagrant demo](docs/development/vagrant.md) | Try a multi-node cluster locally with Vagrant |
+| [Contributing](docs/development/contributing.md) | Build from source and run development checks |
 
 ## Quick start
 

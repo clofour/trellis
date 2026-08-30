@@ -76,6 +76,7 @@ include `_`, `.`, and `-`.
 | `api_access` | No | When `true`, Trellis injects `TRELLIS_TOKEN` and `TRELLIS_ADDR` environment variables into the group's containers. The token is scoped to the job's namespace and can be used to call documented namespace-scoped control-plane APIs, including allocation queries. |
 | `restart` | No | Restart budget for stopped tasks. Defaults to 3 restarts in a 10-minute window. |
 | `constraints` | No | Node attributes that every placement must match. |
+| `update` | No | Update strategy applied when the job revision changes. Defaults to `recreate`. |
 
 Constraints are a list of attribute/value pairs. Trellis currently exposes `os`
 and `arch` node attributes and compares their values exactly. The attribute
@@ -93,6 +94,27 @@ restarts. Durations use values such as `30s`, `5m`, or `1h`.
 
 Each replica is one scheduling and colocation unit. Resource requests for all
 tasks in a group are therefore multiplied by `count` across the job.
+
+### Update strategy
+
+By default Trellis stops all running allocations before placing replacements
+when a job revision changes. Set `update` to control this:
+
+```yaml
+update:
+  strategy: rolling
+  max_parallel: 1
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `strategy` | `recreate` | `recreate` replaces all allocations at once. `rolling` replaces them in batches to keep the group partially available throughout the update. |
+| `max_parallel` | `1` | Number of allocations replaced simultaneously during a rolling update. Only meaningful when `strategy` is `rolling`. |
+
+With `rolling`, Trellis drains at most `max_parallel` old allocations at a
+time, waits for their replacements to become healthy, then proceeds to the
+next batch. The group therefore runs with at least `count - max_parallel`
+healthy allocations for most of the update window.
 
 ## Task fields
 

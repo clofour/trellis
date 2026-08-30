@@ -103,7 +103,8 @@ documented as weaker because child processes and debugging facilities can
 expose environments; file delivery is preferred.
 
 Job submission validates reference syntax but not existence. This permits a
-GitOps job to be submitted before an out-of-band controller writes its secret.
+job to be submitted ahead of time — for example, via a CI/CD pipeline — before
+an out-of-band controller writes its secret.
 Scheduling may place such a job, but the agent must not start an allocation
 until every referenced secret is available and deliverable. The allocation
 reports a sanitized `secret unavailable` or `secret delivery failed` reason,
