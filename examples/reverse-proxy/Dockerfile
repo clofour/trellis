@@ -1,7 +1,8 @@
 FROM docker.io/library/nginx:alpine
 
-# curl is needed by sync-upstreams.sh to poll the Trellis API.
-RUN apk add --no-cache curl
+# curl polls the Trellis API; jq parses allocation JSON without depending on
+# object field ordering.
+RUN apk add --no-cache curl jq
 
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY sync-upstreams.sh /usr/local/bin/sync-upstreams.sh
