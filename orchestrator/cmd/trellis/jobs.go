@@ -77,7 +77,7 @@ func NewJobsStatusCmd() *cobra.Command {
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Job: %s\nRevision: %d\nDesired: %d\nRunning: %d\nHealthy: %d\n", status.Name, status.Revision, status.Desired, status.Running, status.Healthy)
 		for _, a := range status.Allocations {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s/%s\t%s\t%s\n", a.ID, a.Group, a.Task, a.NodeID, a.Status)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s/%s\t%s\tphase=%s\thealth=%s\tgeneration=%d\n", a.ID, a.Group, a.Task, a.NodeID, a.Phase, a.Health, a.Generation)
 		}
 		return nil
 	}}

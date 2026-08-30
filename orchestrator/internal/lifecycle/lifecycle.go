@@ -1,0 +1,104 @@
+package lifecycle
+
+import (
+	"fmt"
+	"time"
+)
+
+// Phase describes allocation execution. Health is intentionally orthogonal.
+type Phase string
+
+const (
+	PhasePlaced   Phase = "placed"
+	PhaseStarting Phase = "starting"
+	PhaseRunning  Phase = "running"
+	PhaseStopping Phase = "stopping"
+	PhaseStopped  Phase = "stopped"
+	PhaseFailed   Phase = "failed"
+	PhaseLost     Phase = "lost"
+)
+
+type Health string
+
+const (
+	HealthUnknown   Health = "unknown"
+	HealthHealthy   Health = "healthy"
+	HealthUnhealthy Health = "unhealthy"
+)
+
+var transitions = map[Phase]map[Phase]bool{
+	PhasePlaced:   {PhaseStarting: true, PhaseStopping: true, PhaseFailed: true, PhaseLost: true},
+	PhaseStarting: {PhaseRunning: true, PhaseStopping: true, PhaseFailed: true, PhaseLost: true},
+	PhaseRunning:  {PhaseStopping: true, PhaseFailed: true, PhaseLost: true},
+	PhaseStopping: {PhaseStopped: true, PhaseFailed: true, PhaseLost: true},
+	PhaseStopped:  {PhaseStarting: true},
+	PhaseFailed:   {PhaseStarting: true, PhaseStopping: true, PhaseLost: true},
+	PhaseLost:     {PhaseStarting: true, PhaseStopping: true, PhaseStopped: true},
+}
+
+func (p Phase) Valid() bool {
+	_, ok := transitions[p]
+	return ok
+}
+
+func (h Health) Valid() bool {
+	return h == HealthUnknown || h == HealthHealthy || h == HealthUnhealthy
+}
+
+func CanTransition(from, to Phase) bool {
+	return from == to || transitions[from][to]
+}
+
+func Transition(from, to Phase) error {
+	if !from.Valid() || !to.Valid() {
+		return fmt.Errorf("unknown allocation phase transition %q -> %q", from, to)
+	}
+	if !CanTransition(from, to) {
+		return fmt.Errorf("invalid allocation phase transition %q -> %q", from, to)
+	}
+	return nil
+}
+
+// Legacy converts the pre-lifecycle status values without claiming more than
+// the old record actually proves. A healthy or unhealthy allocation had been
+// started; pending only proved placement.
+func Legacy(status string) (Phase, Health) {
+	switch status {
+	case "healthy":
+		return PhaseRunning, HealthHealthy
+	case "unhealthy":
+		return PhaseRunning, HealthUnhealthy
+	case "running":
+		return PhaseRunning, HealthUnknown
+	case "stopped":
+		return PhaseStopped, HealthUnknown
+	case "failed":
+		return PhaseFailed, HealthUnknown
+	case "lost":
+		return PhaseLost, HealthUnknown
+	default:
+		return PhasePlaced, HealthUnknown
+	}
+}
+
+// CompatibilityStatus preserves the old status field for existing clients.
+func CompatibilityStatus(phase Phase, health Health) string {
+	if phase == PhaseRunning {
+		if health == HealthHealthy {
+			return "healthy"
+		}
+		if health == HealthUnhealthy {
+			return "unhealthy"
+		}
+	}
+	return string(phase)
+}
+
+type Diagnostic struct {
+	CreatedAt       time.Time  `json:"created_at"`
+	TransitionedAt  time.Time  `json:"last_transition_at"`
+	Reason          string     `json:"reason,omitempty"`
+	Message         string     `json:"message,omitempty"`
+	Attempt         int        `json:"attempt"`
+	NextRetryAt     *time.Time `json:"next_retry_at,omitempty"`
+}

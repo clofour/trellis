@@ -134,7 +134,7 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to process heartbeat")
 	}
 
-	return c.NoContent(http.StatusNoContent)
+	return c.JSON(http.StatusOK, h.server.HeartbeatResponse(uuid))
 }
 
 func (h *Handler) handleListJobs(c *echo.Context) error {

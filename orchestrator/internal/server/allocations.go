@@ -1,6 +1,10 @@
 package server
 
-import "github.com/clofour/trellis/internal/api"
+import (
+	"time"
+
+	"github.com/clofour/trellis/internal/api"
+)
 
 type AllocationListFilter struct {
 	Job   string
@@ -17,6 +21,7 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 
 	result := make(api.AllocationListResponse, 0, len(s.allocations))
 	for _, allocation := range s.allocations {
+		allocation.normalize(time.Now().UTC())
 		if namespace != "" && allocation.Namespace != namespace {
 			continue
 		}
@@ -30,11 +35,21 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 		}
 
 		response := api.AllocationResponse{
-			ID:        allocation.Name,
+			ID:        allocation.AllocationID(),
 			Job:       allocation.JobName,
 			Group:     allocation.TaskGroupName,
 			Namespace: allocation.Namespace,
 			Status:    string(allocation.Status),
+			Phase:     allocation.Phase,
+			Health:    allocation.Health,
+			Generation: allocation.Generation,
+			JobRevision: allocation.JobRevision,
+			CreatedAt: allocation.CreatedAt,
+			LastTransitionAt: allocation.TransitionedAt,
+			Reason: allocation.Reason,
+			Message: allocation.Message,
+			Attempt: allocation.Attempt,
+			NextRetryAt: allocation.NextRetryAt,
 			Labels:    labels,
 			Ports:     allocation.Ports,
 		}

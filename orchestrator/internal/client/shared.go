@@ -28,6 +28,15 @@ type client struct {
 	client    *http.Client
 }
 
+type HTTPError struct {
+	Status int
+	Body   []byte
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("status %d: %s", e.Status, bytes.TrimSpace(e.Body))
+}
+
 func (c *client) request(ctx context.Context, method string, url string, requestData any, responseData any) error {
 	var requestBody io.Reader = http.NoBody
 	if requestData != nil {
@@ -65,11 +74,7 @@ func (c *client) request(ctx context.Context, method string, url string, request
 	}
 
 	if checkStatusCode(response.StatusCode) {
-		message := string(bytes.TrimSpace(responseBody))
-		if message == "" {
-			return fmt.Errorf("status %d", response.StatusCode)
-		}
-		return fmt.Errorf("status %d: %s", response.StatusCode, message)
+		return &HTTPError{Status: response.StatusCode, Body: responseBody}
 	}
 
 	if responseData != nil {

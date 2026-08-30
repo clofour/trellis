@@ -161,7 +161,7 @@ func (s *ServerClient) ListDiscovery(ctx context.Context) (*api.ServiceListRespo
 	return &responseData, nil
 }
 
-func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbeat *Heartbeat) error {
+func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbeat *Heartbeat) (*api.HeartbeatResponse, error) {
 	requestData := &api.HeartbeatRequest{
 		NodeID:      heartbeat.NodeID,
 		Timestamp:   heartbeat.Timestamp,
@@ -169,12 +169,13 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbea
 	}
 	url := fmt.Sprintf("%s/v1/nodes/%s/heartbeat", s.address(), id)
 
-	err := s.client.request(ctx, http.MethodPost, url, requestData, nil)
+	var response api.HeartbeatResponse
+	err := s.client.request(ctx, http.MethodPost, url, requestData, &response)
 	if err != nil {
-		return fmt.Errorf("send heartbeat: %w", err)
+		return nil, fmt.Errorf("send heartbeat: %w", err)
 	}
 
-	return nil
+	return &response, nil
 }
 
 func normalizeBaseURL(addr string) string {

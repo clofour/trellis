@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +14,32 @@ import (
 
 type AgentClient struct {
 	client *client
+}
+
+type AgentOperationError struct {
+	Response api.OperationResponse
+}
+
+func (e *AgentOperationError) Error() string {
+	return fmt.Sprintf("agent operation %s: %s", e.Response.Code, e.Response.Message)
+}
+
+func decodeOperationError(err error) error {
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		return err
+	}
+	var response api.OperationResponse
+	if json.Unmarshal(httpErr.Body, &response) == nil && response.Code != "" {
+		return &AgentOperationError{Response: response}
+	}
+	var wrapped struct {
+		Message api.OperationResponse `json:"message"`
+	}
+	if json.Unmarshal(httpErr.Body, &wrapped) == nil && wrapped.Message.Code != "" {
+		return &AgentOperationError{Response: wrapped.Message}
+	}
+	return err
 }
 
 func (s *AgentClient) Logs(ctx context.Context, address, allocID string, follow bool, tail int) (io.ReadCloser, error) {
@@ -31,17 +59,19 @@ func NewAgentClient(token string) *AgentClient {
 }
 
 func (s *AgentClient) RunAllocation(ctx context.Context, address string, allocation *api.AllocationRequest) error {
-	err := s.client.request(ctx, http.MethodPost, normalizeBaseURL(address)+"/v1/allocations", allocation, nil)
+	var response api.OperationResponse
+	err := s.client.request(ctx, http.MethodPost, normalizeBaseURL(address)+"/v1/allocations", allocation, &response)
 	if err != nil {
-		return fmt.Errorf("run allocation: %w", err)
+		return fmt.Errorf("run allocation: %w", decodeOperationError(err))
 	}
 	return nil
 }
 
-func (s *AgentClient) StopAllocation(ctx context.Context, address string, allocID string) error {
-	err := s.client.request(ctx, http.MethodDelete, normalizeBaseURL(address)+"/v1/allocations/"+url.PathEscape(allocID), nil, nil)
+func (s *AgentClient) StopAllocation(ctx context.Context, address string, request *api.StopAllocationRequest) error {
+	var response api.OperationResponse
+	err := s.client.request(ctx, http.MethodDelete, normalizeBaseURL(address)+"/v1/allocations/"+url.PathEscape(request.AllocationID), request, &response)
 	if err != nil {
-		return fmt.Errorf("stop allocation: %w", err)
+		return fmt.Errorf("stop allocation: %w", decodeOperationError(err))
 	}
 
 	return nil
