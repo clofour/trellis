@@ -45,19 +45,44 @@ export interface Job {
   spec?: JobSpec;
 }
 
-// Job spec types (mirrors the orchestrator spec package)
+// Job spec types mirror orchestrator/internal/spec. Keep the transport schema
+// here; form-specific editable state belongs in job-form-model.ts.
+
+export type Runtime = "" | "runc" | "runsc";
+export type NetworkMode = "" | "host";
+export type HealthCheckType = "http" | "tcp" | "script";
 
 export interface JobSpec {
   name: string;
   namespace?: string;
+  network?: NetworkSpec;
   task_groups: TaskGroupSpec[];
+}
+
+export interface NetworkSpec {
+  wireguard: boolean;
 }
 
 export interface TaskGroupSpec {
   name: string;
   count: number;
-  api_access?: boolean;
+  runtime?: Runtime;
   tasks: TaskSpec[];
+  labels?: Record<string, string>;
+  network_mode?: NetworkMode;
+  api_access?: boolean;
+  restart?: RestartPolicySpec;
+  constraints?: ConstraintSpec[];
+}
+
+export interface ConstraintSpec {
+  attribute: string;
+  value: string;
+}
+
+export interface RestartPolicySpec {
+  max_restarts: number;
+  window: number;
 }
 
 export interface TaskSpec {
@@ -65,6 +90,7 @@ export interface TaskSpec {
   image: string;
   env?: Record<string, string>;
   ports?: PortSpec[];
+  volumes?: VolumeSpec[];
   resources?: ResourcesSpec;
   health_check?: HealthCheckSpec;
 }
@@ -74,14 +100,22 @@ export interface PortSpec {
   container_port: number;
 }
 
+export interface VolumeSpec {
+  name: string;
+  path: string;
+}
+
 export interface ResourcesSpec {
   cpu: number;
   memory: number;
 }
 
 export interface HealthCheckSpec {
-  type: "http" | "tcp" | "exec";
+  type: HealthCheckType;
   port: number;
   path?: string;
   command?: string[];
+  interval?: number;
+  timeout?: number;
+  threshold?: number;
 }
