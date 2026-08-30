@@ -110,7 +110,6 @@ func TestValidateHealthAndRestartPolicy(t *testing.T) {
 	}
 }
 
-
 func TestParseConstraints(t *testing.T) {
 	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    constraints:\n      - attribute: os\n        value: linux\n      - attribute: arch\n        value: arm64\n    tasks:\n      - name: server\n        image: example/server:1\n")
 	job, err := ParseYAML(raw)

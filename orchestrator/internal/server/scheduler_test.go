@@ -56,7 +56,6 @@ func TestScheduleTreatsTaskGroupAsOneResourceUnit(t *testing.T) {
 	}
 }
 
-
 func TestScheduleSpreadsTaskGroupReplicas(t *testing.T) {
 	a := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy}
 	b := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy}
