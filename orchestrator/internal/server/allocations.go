@@ -62,6 +62,33 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 	return result
 }
 
+// AllocationEvents returns the recent lifecycle event history for a single
+// allocation. The second return value is false when no matching allocation
+// exists. Events are in chronological order and capped at EventRingSize; they
+// are not persisted and reset on leader failover.
+func (s *Server) AllocationEvents(namespace, id string) (api.AllocationEventListResponse, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, a := range s.allocations {
+		if a.AllocationID() != id {
+			continue
+		}
+		if namespace != "" && a.Namespace != namespace {
+			continue
+		}
+		if a.Events == nil {
+			return api.AllocationEventListResponse{}, true
+		}
+		entries := a.Events.Entries()
+		result := make(api.AllocationEventListResponse, len(entries))
+		for i, e := range entries {
+			result[i] = api.AllocationEventResponse{Phase: e.Phase, Reason: e.Reason, Message: e.Message, At: e.At}
+		}
+		return result, true
+	}
+	return nil, false
+}
+
 func (s *Server) allocationLabelsLocked(allocation *Allocation) map[string]string {
 	job := s.jobs[jobKey(allocation.Namespace, allocation.JobName)]
 	if job == nil {
