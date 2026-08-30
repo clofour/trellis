@@ -1,4 +1,4 @@
-package main
+package nodeapp
 
 import (
 	"os"
@@ -34,5 +34,16 @@ func TestSplitAddress(t *testing.T) {
 	}
 	if host != "node.example" || port != 8127 {
 		t.Fatalf("got %s:%d", host, port)
+	}
+}
+
+func TestConfigValidation(t *testing.T) {
+	cfg := &Config{ClusterToken: "token", WireGuardPort: 51820}
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.WireGuardPort = 0
+	if err := cfg.validate(); err == nil {
+		t.Fatal("expected invalid WireGuard port to fail")
 	}
 }
