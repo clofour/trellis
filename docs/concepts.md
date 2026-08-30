@@ -49,7 +49,20 @@ an optional health check. Resource values are per task. The scheduler accounts
 for those values across the task-group replica count.
 
 An allocation records the placement and lifecycle of runnable work on a node.
-Allocation IDs are used for log streaming.
+Allocation IDs are used for log streaming. Allocations are also the public
+runtime query surface for workload discovery: `GET /v1/allocations` returns
+allocation status, task-group labels, node address, and allocated ports.
+
+Allocation queries support optional filters:
+
+```text
+?job=<job-name>
+?label=<key>
+?label=<key>:<value>
+```
+
+This keeps filtering attached to a real scheduler resource rather than
+introducing a separate user-facing service object.
 
 ### Node
 
@@ -96,9 +109,13 @@ not a user-facing `Service` resource.
 
 Task groups with `api_access: true` receive `TRELLIS_TOKEN` and `TRELLIS_ADDR`
 environment variables. The token is scoped to the job's namespace and allows
-the container to call documented control-plane APIs directly. Internal
-scheduler endpoints, including the DNS discovery feed, are not part of that
-namespace-scoped API surface.
+the container to call documented control-plane APIs directly. This includes
+filterable allocation queries, which can support patterns such as dynamic
+reverse-proxy configuration without exposing the internal service-discovery
+catalog.
+
+Internal scheduler endpoints, including the DNS discovery feed, are not part
+of the namespace-scoped API surface.
 
 ## Network model
 
