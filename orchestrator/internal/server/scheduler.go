@@ -66,7 +66,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 			reqMemory = int64(intent.Task.Resources.Memory)
 		}
 		for _, node := range nodes {
-			if node.Status != NodeStatusHealthy || !nodeMatchesConstraints(node, intent.Constraints) {
+			if node.Status != NodeStatusHealthy || !nodeMatchesConstraints(node, intent.Constraints) || !nodeHasTaskVolumes(node, intent.Tasks) {
 				continue
 			}
 			if (node.CPU > 0 && usedCPU[node.ID]+reqCPU > node.CPU) || (node.Memory > 0 && usedMemory[node.ID]+reqMemory > node.Memory) {
@@ -100,6 +100,17 @@ func Schedule(intent *PlacementIntent) []Placement {
 	}
 
 	return result
+}
+
+func nodeHasTaskVolumes(node *Node, tasks []spec.TaskSpec) bool {
+	for _, task := range tasks {
+		for _, volume := range task.Volumes {
+			if volume.HostVolume != "" && !slices.Contains(node.Volumes, volume.HostVolume) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func nodeMatchesConstraints(node *Node, constraints []spec.ConstraintSpec) bool {

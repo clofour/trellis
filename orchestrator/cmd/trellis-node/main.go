@@ -37,6 +37,7 @@ import (
 	containerruntime "github.com/clofour/trellis/internal/runtime"
 	secretstore "github.com/clofour/trellis/internal/secrets"
 	"github.com/clofour/trellis/internal/server"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
 	"github.com/clofour/trellis/internal/tlsutil"
@@ -59,6 +60,7 @@ type config struct {
 	CACert, CAKey, Cert, Key                                   string
 	SecretsKey, SecretsKeyID                                   string
 	Labels                                                     []string
+	HostVolumes                                                []string
 }
 
 func main() {
@@ -87,6 +89,7 @@ func main() {
 	f.StringVar(&cfg.SecretsKey, "secrets-key", "", "Path to a root-readable 32-byte or base64-encoded secrets encryption key")
 	f.StringVar(&cfg.SecretsKeyID, "secrets-key-id", "", "Identifier for the active secrets encryption key")
 	f.StringArrayVar(&cfg.Labels, "label", nil, "Node label in key=value form (repeatable)")
+	f.StringArrayVar(&cfg.HostVolumes, "host-volume", nil, "Available named host volume in name=/absolute/path form (repeatable)")
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -223,7 +226,15 @@ func run(parent context.Context, cfg *config) error {
 	healthMgr := health.NewHealthManager(log, runtimeClient, nil)
 	restartCtl := agent.NewRestartController(runtimeClient, nil)
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "", clientTLS)
-	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), leaderClient, id)
+	volumeManager := agent.NewVolumeManager(cfg.DataDir)
+	if len(cfg.HostVolumes) > 0 {
+		hostVolumes, err := parseHostVolumes(cfg.HostVolumes)
+		if err != nil {
+			return err
+		}
+		volumeManager.SetHostVolumes(hostVolumes)
+	}
+	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), volumeManager, leaderClient, id)
 	ag.ConfigureDurability(local, cfg.Cluster)
 	networkManager, err := network.NewAutomatedWireGuardManager(filepath.Join(cfg.DataDir, "network"), cfg.WireGuardPort)
 	if err != nil {
@@ -691,6 +702,21 @@ func parseLabels(raw []string) (map[string]string, error) {
 		labels[k] = v
 	}
 	return labels, nil
+}
+
+func parseHostVolumes(raw []string) (map[string]string, error) {
+	volumes := make(map[string]string, len(raw))
+	for _, item := range raw {
+		name, path, ok := strings.Cut(item, "=")
+		if !ok || !spec.ValidIdentifier(name) || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return nil, fmt.Errorf("invalid --host-volume %q; expected name=/absolute/path", item)
+		}
+		if _, exists := volumes[name]; exists {
+			return nil, fmt.Errorf("duplicate --host-volume %q", name)
+		}
+		volumes[name] = path
+	}
+	return volumes, nil
 }
 
 func acquireNodeID(dataDir string) (uuid.UUID, error) {

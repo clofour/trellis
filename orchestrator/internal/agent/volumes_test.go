@@ -38,3 +38,23 @@ func TestVolumeManagerCreatePath(t *testing.T) {
 		t.Errorf("directory not created: %v", err)
 	}
 }
+
+func TestVolumeManagerHostVolumeAvailabilityAndMount(t *testing.T) {
+	root := t.TempDir()
+	host := filepath.Join(root, "uploads")
+	manager := NewVolumeManager(root)
+	manager.SetHostVolumes(map[string]string{"uploads": host})
+	if got := manager.AvailableHostVolumes(); len(got) != 0 {
+		t.Fatalf("unmounted volume was advertised: %v", got)
+	}
+	if err := os.Mkdir(host, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	mount, err := manager.Create("default", "app", "web", spec.VolumeSpec{Name: "data", HostVolume: "uploads", Path: "/data", ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mount.HostPath != host || !mount.ReadOnly {
+		t.Fatalf("unexpected mount: %#v", mount)
+	}
+}

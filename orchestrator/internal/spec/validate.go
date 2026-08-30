@@ -151,6 +151,9 @@ func Validate(spec *JobSpec) error {
 				if !identifierPattern.MatchString(volume.Name) || strings.TrimSpace(volume.Path) == "" || !strings.HasPrefix(volume.Path, "/") {
 					return fmt.Errorf("task group %q task %q: volume name and absolute path are required", group.Name, task.Name)
 				}
+				if volume.HostVolume != "" && !identifierPattern.MatchString(volume.HostVolume) {
+					return fmt.Errorf("task group %q task %q: invalid host volume %q", group.Name, task.Name, volume.HostVolume)
+				}
 				if _, exists := volumes[volume.Name]; exists {
 					return fmt.Errorf("task group %q task %q: duplicate volume %q", group.Name, task.Name, volume.Name)
 				}

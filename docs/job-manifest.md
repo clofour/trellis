@@ -104,7 +104,7 @@ tasks in a group are therefore multiplied by `count` across the job.
 | `resources.cpu` | No | CPU request and limit in millicores; must be non-negative. |
 | `resources.memory` | No | Memory request and limit in bytes; must be non-negative. |
 | `ports` | No | Host-to-container port mappings. |
-| `volumes` | No | Named persistent local volumes and absolute mount paths. |
+| `volumes` | No | Managed local volumes or named operator-managed host volumes and absolute mount paths. |
 | `health_check` | No | HTTP, TCP, or script health check. |
 | `secrets` | No | Namespace-scoped secret references delivered as environment variables or memory-backed files. |
 

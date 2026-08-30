@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/clofour/trellis/internal/runtime"
@@ -12,6 +13,7 @@ import (
 
 type VolumeManager struct {
 	dataRootPath string
+	hostVolumes  map[string]string
 }
 
 func NewVolumeManager(dataRoot ...string) *VolumeManager {
@@ -21,10 +23,37 @@ func NewVolumeManager(dataRoot ...string) *VolumeManager {
 	}
 	return &VolumeManager{
 		dataRootPath: root,
+		hostVolumes:  make(map[string]string),
 	}
 }
 
+// SetHostVolumes configures opaque, operator-managed host-volume identities.
+func (vm *VolumeManager) SetHostVolumes(volumes map[string]string) { vm.hostVolumes = volumes }
+
+// AvailableHostVolumes returns configured volumes whose root currently exists.
+func (vm *VolumeManager) AvailableHostVolumes() []string {
+	available := make([]string, 0, len(vm.hostVolumes))
+	for name, path := range vm.hostVolumes {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			available = append(available, name)
+		}
+	}
+	slices.Sort(available)
+	return available
+}
+
 func (vm *VolumeManager) Create(namespace string, jobName string, taskName string, volume spec.VolumeSpec) (*runtime.Mount, error) {
+	if volume.HostVolume != "" {
+		hostPath, ok := vm.hostVolumes[volume.HostVolume]
+		if !ok {
+			return nil, fmt.Errorf("host volume %q is not configured", volume.HostVolume)
+		}
+		info, err := os.Stat(hostPath)
+		if err != nil || !info.IsDir() {
+			return nil, fmt.Errorf("host volume %q is not available", volume.HostVolume)
+		}
+		return &runtime.Mount{HostPath: hostPath, ContainerPath: volume.Path, ReadOnly: volume.ReadOnly}, nil
+	}
 	hostPath, err := vm.getHostPath(namespace, jobName, taskName, volume.Name)
 	if err != nil {
 		return nil, err
@@ -38,6 +67,7 @@ func (vm *VolumeManager) Create(namespace string, jobName string, taskName strin
 	return &runtime.Mount{
 		HostPath:      hostPath,
 		ContainerPath: volume.Path,
+		ReadOnly:      volume.ReadOnly,
 	}, nil
 }
 

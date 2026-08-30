@@ -25,6 +25,7 @@ type NodeResponse struct {
 	CPU           int                `json:"cpu"`
 	Memory        int64              `json:"memory"`
 	Labels        map[string]string  `json:"labels,omitempty"`
+	Volumes       []string           `json:"volumes,omitempty"`
 }
 
 type NodeListResponse = []NodeResponse
@@ -38,6 +39,7 @@ type NodeRegistrationRequest struct {
 	OS                 string            `json:"os"`
 	Arch               string            `json:"arch"`
 	Labels             map[string]string `json:"labels,omitempty"`
+	Volumes            []string          `json:"volumes,omitempty"`
 	WireGuardPublicKey string            `json:"wireguard_public_key,omitempty"`
 	WireGuardEndpoint  string            `json:"wireguard_endpoint,omitempty"`
 }
@@ -50,6 +52,7 @@ type HeartbeatRequest struct {
 	NodeID      uuid.UUID          `json:"id"`
 	Timestamp   time.Time          `json:"timestamp"`
 	Allocations []AllocationStatus `json:"allocations,omitempty"`
+	Volumes     []string           `json:"volumes,omitempty"`
 }
 
 type DesiredAllocation struct {
