@@ -1,34 +1,43 @@
 # Reverse proxy with Nginx
 
 This example deploys Nginx as a Trellis-managed reverse proxy that
-automatically discovers backend services using the Trellis API.
+automatically discovers backend allocations using the Trellis API.
 
 ## How it works
 
-Trellis provides three building blocks that make this possible:
+Trellis provides three building blocks that make this possible without making
+"services" a public resource:
 
 1. **`api_access: true`** — When set on a task group, Trellis injects
-   `TRELLIS_TOKEN` and `TRELLIS_ADDR` into the container. These
-   credentials are scoped to the job's namespace and allow the container
-   to call the Trellis control-plane API.
+   `TRELLIS_TOKEN` and `TRELLIS_ADDR` into the container. These credentials are
+   scoped to the job's namespace and allow the container to call the Trellis
+   control-plane API.
 
-2. **`GET /v1/services`** — Returns all healthy allocations in the
-   namespace, including their labels, host addresses, and port mappings.
+2. **`GET /v1/allocations`** — Returns allocation runtime information including
+   task-group labels, node addresses, port mappings, and status. The endpoint
+   supports `job` and `label` filters.
 
-3. **Labels** — Task groups carry arbitrary key-value labels that flow
-   through to the services API. The proxy uses labels to decide which
-   services to expose and how to route to them.
+3. **Labels** — Task groups carry arbitrary key-value labels. The proxy uses
+   labels to decide which allocations to expose and how to route to them.
 
-The proxy job runs with `network_mode: host` so it can bind ports 80 and
-443 directly. A sidecar script polls the services API every few seconds,
-filters for task groups labeled `trellis.expose: "true"`, reads each
-service's `trellis/domain` and `trellis/path-prefix` labels, and
-regenerates the Nginx configuration.
+The proxy job runs with `network_mode: host` so it can bind ports 80 and 443
+directly. A sidecar script polls:
+
+```text
+GET /v1/allocations?label=trellis.expose:true
+```
+
+It keeps healthy allocations, reads their `trellis/domain` and
+`trellis/path-prefix` labels, and regenerates the Nginx configuration.
+
+The internal service-discovery catalog remains an implementation detail used by
+Trellis DNS. This example depends only on allocations and task-group metadata,
+which are public scheduler concepts.
 
 ## Label conventions
 
-These labels are just conventions used by this example — Trellis itself
-is not opinionated about them.
+These labels are just conventions used by this example — Trellis itself is not
+opinionated about them.
 
 | Label | Purpose | Example |
 | --- | --- | --- |
@@ -42,7 +51,7 @@ is not opinionated about them.
 | --- | --- |
 | `proxy.yaml` | Trellis job manifest for the Nginx reverse proxy |
 | `app.yaml` | Example backend job with the appropriate labels |
-| `sync-upstreams.sh` | Script that polls the services API and regenerates Nginx config |
+| `sync-upstreams.sh` | Script that polls the allocations API and regenerates Nginx config |
 | `nginx.conf.template` | Base Nginx configuration template |
 
 ## Deploying
@@ -57,10 +66,10 @@ trellis jobs apply --file proxy.yaml
 
 ## Customization
 
-This example uses a simple shell script for service sync. For production
-use, you might build a small purpose-built container image that:
+This example uses a simple shell script for allocation sync. For production use,
+you might build a small purpose-built container image that:
 
-- Watches the services API for changes instead of polling
+- Watches allocation changes instead of polling
 - Handles TLS certificate management (e.g., via Let's Encrypt)
 - Supports more routing rules (header-based, weighted, etc.)
 - Validates the generated config before reloading Nginx

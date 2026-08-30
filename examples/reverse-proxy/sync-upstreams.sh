@@ -1,7 +1,7 @@
 #!/bin/sh
 #
-# Polls the Trellis services API and regenerates Nginx upstream
-# configuration for services labeled with trellis.expose=true.
+# Polls the Trellis allocations API and regenerates Nginx upstream
+# configuration for healthy allocations labeled with trellis.expose=true.
 #
 # Expects TRELLIS_TOKEN and TRELLIS_ADDR to be set (injected by Trellis
 # when api_access is true on the task group).
@@ -19,17 +19,17 @@ mkdir -p "$CONF_DIR"
 prev_hash=""
 
 while true; do
-    # Fetch healthy services from the Trellis API.
+    # Fetch allocations whose task group opted in to proxy exposure.
     response=$(curl -sf \
         -H "Authorization: Bearer $TRELLIS_TOKEN" \
-        "$TRELLIS_ADDR/v1/services" 2>/dev/null) || {
-        echo "warn: failed to reach services API, retrying in ${INTERVAL}s"
+        "$TRELLIS_ADDR/v1/allocations?label=trellis.expose:true" 2>/dev/null) || {
+        echo "warn: failed to reach allocations API, retrying in ${INTERVAL}s"
         sleep "$INTERVAL"
         continue
     }
 
-    # Build the Nginx config from the services response.
-    # Each service entry has: job, group, labels, address, ports[], status.
+    # Build the Nginx config from the allocation response.
+    # Each allocation entry has: job, group, labels, address, ports[], status.
     #
     # We group by (domain, path-prefix) to form upstreams, then emit a
     # server block per domain and a location block per path-prefix.
@@ -42,6 +42,7 @@ while true; do
         expose = ""
         address = ""
         host_port = ""
+        status = ""
     }
     /"trellis.expose"/ { gsub(/[ "\t]/, "", $2); expose = $2 }
     /"trellis\/domain"/ { gsub(/[ "\t]/, "", $2); domain = $2 }
@@ -49,7 +50,9 @@ while true; do
     /"address"/ { gsub(/[ "\t]/, "", $2); address = $2 }
     /"host_port"/ { gsub(/[ "\t]/, "", $2); host_port = $2 }
     /"status"/ {
-        if (expose == "true" && domain != "" && address != "" && host_port != "") {
+        gsub(/[ "\t]/, "", $2)
+        status = $2
+        if (status == "healthy" && expose == "true" && domain != "" && address != "" && host_port != "") {
             key = domain ":" (prefix != "" ? prefix : "/")
             if (!(key in upstreams)) {
                 upstream_order[++n] = key
@@ -58,7 +61,7 @@ while true; do
             }
             upstreams[key] = upstreams[key] "    server " address ":" host_port ";\n"
         }
-        domain = ""; prefix = ""; expose = ""; address = ""; host_port = ""
+        domain = ""; prefix = ""; expose = ""; address = ""; host_port = ""; status = ""
     }
     END {
         for (i = 1; i <= n; i++) {
