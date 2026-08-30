@@ -33,6 +33,7 @@ type Port struct {
 type Mount struct {
 	HostPath      string
 	ContainerPath string
+	ReadOnly      bool
 }
 
 func NewContainerdRuntime(socketPath string) (*ContainerdRuntime, error) {
@@ -378,11 +379,15 @@ func convertMounts(mounts []*Mount) []specs.Mount {
 
 	for i, m := range mounts {
 
+		mode := "rw"
+		if m.ReadOnly {
+			mode = "ro"
+		}
 		result[i] = specs.Mount{
 			Source:      m.HostPath,
 			Destination: m.ContainerPath,
 			Type:        "bind",
-			Options:     []string{"rbind", "rw"},
+			Options:     []string{"rbind", mode},
 		}
 
 	}

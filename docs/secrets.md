@@ -1,10 +1,9 @@
 # Secrets design
 
-> **Status: proposed; not implemented.** This document is the required design
-> pass for a native Trellis secret primitive. The API, manifest fields, and CLI
-> described below must not be treated as available until an implementation has
-> shipped. Implementation is gated on the security requirements in
-> [Rollout](#rollout-and-acceptance-criteria).
+> **Status: implemented (initial version).** Secret storage is enabled only
+> when every node is configured with `--secrets-key`. The implementation covers
+> write-only APIs, encrypted Raft persistence, CLI management, and allocation
+> delivery. The rollout criteria remain the operational security contract.
 
 ## Purpose and boundaries
 
@@ -189,14 +188,12 @@ closed if encrypted secrets exist and the required key ID is unavailable.
 File permissions and length are validated before the node becomes eligible for
 leadership. The cluster token must not be reused as a KEK.
 
-The configuration supports an active key plus an ordered keyring of old keys.
-KEK rotation is an explicit, resumable operation: distribute the new keyring,
-activate the new key ID, rewrap every DEK without decrypting secret values,
-verify all records use the new ID, then remove the old key on every node.
-Interrupted rewraps remain readable using the keyring. DEK/value rotation is a
-normal versioned `set`. Operators must retain old KEKs for backups they intend
-to restore and securely destroy retired keys only after the backup-retention
-window. Losing all applicable KEKs makes values unrecoverable by design.
+The initial implementation accepts one active KEK. Secret-value rotation is a
+normal versioned `set`. Changing that KEK is not yet an online operation: keep
+the configured KEK stable and rotate values instead. A future keyring/rewrap
+operation must distribute the new keyring, rewrap every DEK, verify all records,
+and only then remove an old key. Operators must retain the configured KEK for
+backups they intend to restore. Losing it makes values unrecoverable by design.
 
 Ciphertext and metadata are deterministic state-machine inputs replicated by
 Raft; encryption happens once on the leader before proposing the command.
@@ -265,8 +262,7 @@ events, errors, metrics, state snapshots, and CLI output.
 
 ## Rollout and acceptance criteria
 
-Implementation should be split into reviewable phases and remain feature-gated
-until all phases are complete:
+The implementation and future changes are gated by these criteria:
 
 1. Add authenticated TLS and distinct node identities/capabilities to internal
    traffic; document certificate issuance and rotation.
@@ -281,5 +277,5 @@ until all phases are complete:
    authorization bypass, path traversal/symlinks, leader failover, backup and
    restore, missing/old keys, concurrent rotation, and crash cleanup.
 
-No plaintext-read endpoint, provider plug-in, or delivery over the current
+No plaintext-read endpoint, provider plug-in, or delivery over a
 bearer-token-only transport may be introduced as an intermediate shortcut.

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -152,6 +153,42 @@ func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error 
 func (s *ServerClient) DeleteJob(ctx context.Context, name string) error {
 	if err := s.client.request(ctx, http.MethodDelete, s.address()+"/v1/jobs/"+url.PathEscape(name), nil, nil); err != nil {
 		return fmt.Errorf("delete job: %w", err)
+	}
+	return nil
+}
+
+func (s *ServerClient) SetSecret(ctx context.Context, namespace, name string, value []byte, expected *uint64) (*api.SecretMetadata, error) {
+	request := api.SecretWriteRequest{ValueBase64: base64.StdEncoding.EncodeToString(value), ExpectedVersion: expected}
+	var response api.SecretMetadata
+	path := fmt.Sprintf("%s/v1/namespaces/%s/secrets/%s", s.address(), url.PathEscape(namespace), url.PathEscape(name))
+	if err := s.client.request(ctx, http.MethodPut, path, &request, &response); err != nil {
+		return nil, fmt.Errorf("set secret: %w", err)
+	}
+	return &response, nil
+}
+
+func (s *ServerClient) ListSecrets(ctx context.Context, namespace string) (*api.SecretListResponse, error) {
+	var response api.SecretListResponse
+	path := fmt.Sprintf("%s/v1/namespaces/%s/secrets", s.address(), url.PathEscape(namespace))
+	if err := s.client.request(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return nil, fmt.Errorf("list secrets: %w", err)
+	}
+	return &response, nil
+}
+
+func (s *ServerClient) GetSecretMetadata(ctx context.Context, namespace, name string) (*api.SecretMetadata, error) {
+	var response api.SecretMetadata
+	path := fmt.Sprintf("%s/v1/namespaces/%s/secrets/%s", s.address(), url.PathEscape(namespace), url.PathEscape(name))
+	if err := s.client.request(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return nil, fmt.Errorf("describe secret: %w", err)
+	}
+	return &response, nil
+}
+
+func (s *ServerClient) DeleteSecret(ctx context.Context, namespace, name string) error {
+	path := fmt.Sprintf("%s/v1/namespaces/%s/secrets/%s", s.address(), url.PathEscape(namespace), url.PathEscape(name))
+	if err := s.client.request(ctx, http.MethodDelete, path, nil, nil); err != nil {
+		return fmt.Errorf("delete secret: %w", err)
 	}
 	return nil
 }

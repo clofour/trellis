@@ -1,12 +1,16 @@
 package server
 
 import (
+	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/catalog"
+	secretstore "github.com/clofour/trellis/internal/secrets"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -19,6 +23,7 @@ type Handler struct {
 type contextKey string
 
 const NamespaceContextKey contextKey = "trellis-namespace"
+const AdminContextKey contextKey = "trellis-admin"
 
 func requestNamespace(c *echo.Context) string {
 	if ns, ok := c.Request().Context().Value(NamespaceContextKey).(string); ok && ns != "" {
@@ -49,6 +54,95 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
 	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
+	v1.PUT("/namespaces/:namespace/secrets/:name", h.handleSetSecret)
+	v1.GET("/namespaces/:namespace/secrets", h.handleListSecrets)
+	v1.GET("/namespaces/:namespace/secrets/:name", h.handleGetSecret)
+	v1.DELETE("/namespaces/:namespace/secrets/:name", h.handleDeleteSecret)
+}
+
+func secretNamespace(c *echo.Context) (string, error) {
+	c.Response().Header().Set("Cache-Control", "no-store")
+	if admin, _ := c.Request().Context().Value(AdminContextKey).(bool); !admin {
+		return "", echo.NewHTTPError(http.StatusForbidden, "secret management requires cluster authorization")
+	}
+	ns := c.Param("namespace")
+	if !spec.ValidIdentifier(ns) {
+		return "", echo.NewHTTPError(http.StatusBadRequest, "invalid namespace")
+	}
+	if requested := requestNamespace(c); requested != "" && requested != ns {
+		return "", echo.NewHTTPError(http.StatusForbidden, "namespace does not match token scope")
+	}
+	return ns, nil
+}
+
+func (h *Handler) handleSetSecret(c *echo.Context) error {
+	ns, err := secretNamespace(c)
+	if err != nil {
+		return err
+	}
+	if !spec.ValidIdentifier(c.Param("name")) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid secret name")
+	}
+	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 96<<10)
+	var request api.SecretWriteRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	value, err := base64.StdEncoding.DecodeString(request.ValueBase64)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "value_base64 is invalid")
+	}
+	defer clear(value)
+	meta, err := h.server.SetSecret(c.Request().Context(), ns, c.Param("name"), value, request.ExpectedVersion)
+	if errors.Is(err, secretstore.ErrVersionConflict) {
+		return echo.NewHTTPError(http.StatusConflict, "secret version conflict")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "unable to store secret")
+	}
+	return c.JSON(http.StatusOK, meta)
+}
+
+func (h *Handler) handleListSecrets(c *echo.Context) error {
+	ns, err := secretNamespace(c)
+	if err != nil {
+		return err
+	}
+	items, err := h.server.ListSecrets(c.Request().Context(), ns)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "unable to list secrets")
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) handleGetSecret(c *echo.Context) error {
+	ns, err := secretNamespace(c)
+	if err != nil {
+		return err
+	}
+	meta, err := h.server.GetSecretMetadata(c.Request().Context(), ns, c.Param("name"))
+	if errors.Is(err, secretstore.ErrNotFound) {
+		return echo.NewHTTPError(http.StatusNotFound, "secret not found")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "unable to read secret metadata")
+	}
+	return c.JSON(http.StatusOK, meta)
+}
+
+func (h *Handler) handleDeleteSecret(c *echo.Context) error {
+	ns, err := secretNamespace(c)
+	if err != nil {
+		return err
+	}
+	err = h.server.DeleteSecret(c.Request().Context(), ns, c.Param("name"))
+	if errors.Is(err, secretstore.ErrNotFound) {
+		return echo.NewHTTPError(http.StatusNotFound, "secret not found")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "unable to delete secret")
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handler) handleAllocationEvents(c *echo.Context) error {

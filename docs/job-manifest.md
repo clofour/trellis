@@ -106,6 +106,28 @@ tasks in a group are therefore multiplied by `count` across the job.
 | `ports` | No | Host-to-container port mappings. |
 | `volumes` | No | Named persistent local volumes and absolute mount paths. |
 | `health_check` | No | HTTP, TCP, or script health check. |
+| `secrets` | No | Namespace-scoped secret references delivered as environment variables or memory-backed files. |
+
+### Secrets
+
+Jobs reference secret names; values never appear in manifests. File delivery
+is preferred over environment delivery:
+
+```yaml
+secrets:
+  - name: database-password
+    target: env
+    env: DATABASE_PASSWORD
+  - name: tls-key
+    target: file
+    path: /run/trellis-secrets/tls.key
+    mode: 0400
+```
+
+Secret names must be unique within a task. File paths must be clean absolute
+paths below `/run/trellis-secrets`; modes may be `0400` (the default) or
+`0600`. Referenced secrets are resolved when an allocation starts. Updating a
+secret does not modify an already-running allocation.
 
 ### Ports
 
@@ -155,4 +177,3 @@ a non-empty command. All check types accept these optional timing fields:
 | `interval` | `10s` | Time between checks; must be a positive duration when set. |
 | `timeout` | `5s` | Maximum time for one check; must be a positive duration when set. |
 | `threshold` | `3` | Consecutive passes or failures required to change health state; must be at least 1 when set. |
-

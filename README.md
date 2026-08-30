@@ -25,6 +25,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 - Allocation lifecycle management, health checks, restart handling, and filterable runtime queries
 - Container resource limits, dynamic host ports, and persistent local volumes
 - Built-in DNS discovery for healthy job allocations and optional WireGuard namespace networking
+- Namespace-scoped, write-only secrets with encrypted persistence and memory-backed delivery
 - A CLI and a read-only Next.js operations dashboard
 
 ## Documentation

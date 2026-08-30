@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
@@ -64,6 +67,7 @@ type Allocation struct {
 	ContainerID string
 	Ports       []*runtime.Port
 	Mounts      []*runtime.Mount
+	SecretDir   string
 	Network     *network.Attachment
 	Status      string
 	Health      string
@@ -375,7 +379,7 @@ func (a *Agent) reconcileDesired(ctx context.Context, response *api.HeartbeatRes
 	}
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, generation uint64, jobRevision int, executionHash, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan, networkMode string, envOverrides map[string]string, restartPolicy *spec.RestartPolicySpec) error {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, generation uint64, jobRevision int, executionHash, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan, networkMode string, envOverrides map[string]string, delivered []api.DeliveredSecret, restartPolicy *spec.RestartPolicySpec) error {
 	spec := taskSpec
 	if spec == nil {
 		return fmt.Errorf("task spec is required")
@@ -408,6 +412,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	healthRegistered := false
 	var netAttachment *network.Attachment
 	var ports []*runtime.Port
+	var secretDir string
 	defer func() {
 		if committed {
 			return
@@ -427,6 +432,9 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		_ = a.network.Detach(context.WithoutCancel(ctx), netAttachment)
 		for _, p := range ports {
 			_ = a.ports.Release(p)
+		}
+		if secretDir != "" {
+			_ = os.RemoveAll(secretDir)
 		}
 		a.mu.Lock()
 		delete(a.allocations, allocID)
@@ -489,6 +497,16 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	for k, v := range envOverrides {
 		env[k] = v
 	}
+	secretDir, secretEnv, secretMounts, err := prepareSecrets(allocID, taskName, delivered)
+	if err != nil {
+		return err
+	}
+	alloc.SecretDir = secretDir
+	for k, v := range secretEnv {
+		env[k] = v
+	}
+	mounts = append(mounts, secretMounts...)
+	alloc.Mounts = append([]*runtime.Mount(nil), mounts...)
 	labels := map[string]string{
 		"trellis.cluster":               a.cluster,
 		"trellis.allocation-id":         schedulerID,
@@ -574,6 +592,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		ContainerID: containerID,
 		Ports:       ports,
 		Mounts:      mounts,
+		SecretDir:   secretDir,
 		Network:     netAttachment,
 		Status:      "running",
 		Health:      "unknown",
@@ -639,6 +658,11 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	if err := a.runtime.Remove(ctx, containerID); err != nil {
 		errs = append(errs, fmt.Errorf("remove container %s: %w", containerID, err))
 	}
+	if alloc.SecretDir != "" {
+		if err := os.RemoveAll(alloc.SecretDir); err != nil {
+			errs = append(errs, fmt.Errorf("remove secret files: %w", err))
+		}
+	}
 
 	for _, p := range alloc.Ports {
 		err := a.ports.Release(p)
@@ -657,6 +681,61 @@ func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	a.mu.Unlock()
 
 	return nil
+}
+
+func prepareSecrets(allocID, taskName string, delivered []api.DeliveredSecret) (string, map[string]string, []*runtime.Mount, error) {
+	env := map[string]string{}
+	var taskSecrets []api.DeliveredSecret
+	for _, secret := range delivered {
+		if secret.Task == taskName {
+			taskSecrets = append(taskSecrets, secret)
+		}
+	}
+	if len(taskSecrets) == 0 {
+		return "", env, nil, nil
+	}
+	dir, err := os.MkdirTemp("/dev/shm", "trellis-secret-"+filepath.Base(allocID)+"-")
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("create memory-backed secret directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", nil, nil, err
+	}
+	var mounts []*runtime.Mount
+	for i, secret := range taskSecrets {
+		switch secret.Target {
+		case spec.SecretTargetEnv:
+			env[secret.Env] = string(secret.Value)
+		case spec.SecretTargetFile:
+			hostPath := filepath.Join(dir, fmt.Sprintf("secret-%d", i))
+			mode := os.FileMode(secret.Mode)
+			if mode == 0 {
+				mode = 0o400
+			}
+			file, err := os.OpenFile(hostPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, mode)
+			if err != nil {
+				_ = os.RemoveAll(dir)
+				return "", nil, nil, fmt.Errorf("create secret file: %w", err)
+			}
+			if _, err = file.Write(secret.Value); err == nil {
+				err = file.Sync()
+			}
+			closeErr := file.Close()
+			if err == nil {
+				err = closeErr
+			}
+			if err != nil {
+				_ = os.RemoveAll(dir)
+				return "", nil, nil, fmt.Errorf("write secret file: %w", err)
+			}
+			mounts = append(mounts, &runtime.Mount{HostPath: hostPath, ContainerPath: secret.Path, ReadOnly: true})
+		default:
+			_ = os.RemoveAll(dir)
+			return "", nil, nil, fmt.Errorf("unsupported secret target")
+		}
+	}
+	return dir, env, mounts, nil
 }
 
 // OnHealthy and OnUnhealthy are observation callbacks from the health manager.
