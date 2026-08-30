@@ -1,86 +1,84 @@
 # Sidecar pattern
 
-This example shows how to colocate a helper container alongside your main
-application using multiple tasks in a single task group.
+This example shows how to colocate a helper container alongside a main
+application by placing multiple tasks in one task group.
 
-## How it works
+## What Trellis guarantees
 
-A task group can contain more than one task. All tasks in a group are placed
-together on the same node as part of one allocation. Tasks share the same
-host-network namespace, which means they can reach each other via `localhost`.
-They can also share data through named volumes declared in the task group.
+A task group is the scheduling unit. Every task in one replica is placed on the
+same node and started/stopped as part of the same allocation lifecycle.
 
-Common sidecar patterns:
-
-| Sidecar | Purpose |
-| --- | --- |
-| Log shipper (e.g. Fluent Bit) | Tail and forward application logs |
-| Metrics exporter | Scrape `/metrics` and push to a metrics store |
-| Secrets agent | Rotate secrets and write them to a shared volume |
-| Service mesh proxy | Intercept traffic for mTLS and observability |
+Colocation does **not** implicitly make separately declared managed volumes the
+same directory, and tasks do not automatically share one container network
+namespace. If two tasks need to share files, configure an explicit storage
+mechanism that both can mount. If they need to communicate, use an address/port
+that is actually reachable between their containers rather than assuming
+`localhost` refers to the other task.
 
 ## Manifest
 
-`app.yaml` defines a task group with two tasks: `app` (the main service) and
-`log-shipper` (Fluent Bit). Both tasks land on the same node for every
-allocation.
+`app.yaml` defines two colocated tasks:
 
-The `app` task writes logs to `/var/log/api`. The `log-shipper` mounts the same
-path via the `logs` volume and tails the files. Trellis creates the volume on
-the node and mounts it into both containers.
+- `app` — the primary application
+- `log-shipper` — a Fluent Bit helper
+
+The example intentionally uses one replica and an operator-provided host volume
+named `api-logs`. Register that volume on the node before applying the job, for
+example:
+
+```sh
+trellis-node ... --host-volume api-logs=/srv/trellis/api-logs
+```
+
+Both tasks reference the same `host_volume` identity, so Trellis schedules the
+allocation only on a node that advertises it and mounts the same backing
+directory into both containers:
 
 ```yaml
 tasks:
   - name: app
-    …
-    env:
-      LOG_DIR: /var/log/api
     volumes:
-      - name: logs        # app writes to this volume
+      - name: logs
         path: /var/log/api
+        host_volume: api-logs
 
   - name: log-shipper
-    …
     volumes:
-      - name: logs        # shipper reads from the same volume
+      - name: logs
         path: /var/log/api
+        host_volume: api-logs
+        read_only: true
 ```
 
-## Resources
+This is different from merely giving both tasks a managed volume named `logs`.
+Managed local volume paths are scoped by task name, so equal names in two tasks
+do not make them shared.
 
-Each task gets its own resource allocation. The example gives the app 500 CPU
-millicores and 256 MiB, and the log shipper 50 millicores and 32 MiB. Set
-these based on your observed usage — a log shipper typically needs very few
-resources.
+## Replication
 
-## Localhost communication
+A single operator host-volume identity represents one backing path on each node
+that advertises it. If you raise this example's `count`, multiple replicas that
+land on the same node can therefore see the same host directory. For replicated
+applications, design shared or per-replica storage explicitly rather than
+assuming Trellis creates one private shared volume per task-group replica.
 
-Because both tasks share the host network, the sidecar can reach the app on
-`localhost:8080` without any additional configuration. This is useful for a
-metrics exporter that scrapes the app's `/metrics` endpoint:
+## Resources and health
 
-```yaml
-- name: metrics-exporter
-  image: your-registry/exporter:latest
-  resources:
-    cpu: 50
-    memory: 16777216
-  env:
-    SCRAPE_TARGET: http://localhost:8080/metrics
-```
+Each task gets its own resource request. The example gives the app 500 CPU
+millicores and 256 MiB, and the log shipper 50 millicores and 32 MiB.
 
-## Health checks
-
-Health checks are per task. A task group allocation is considered healthy only
-when all tasks with health checks pass. The example only defines a health check
-on the `app` task; the log shipper has no health check and is treated as healthy
-once it starts.
+Health checks are per task. The allocation's combined health reflects the tasks
+that Trellis is checking; a task without a health check is treated as healthy
+once it is running.
 
 ## Deploying
+
+After configuring `api-logs` on an eligible node:
 
 ```sh
 trellis --namespace acme jobs apply --file app.yaml
 trellis --namespace acme jobs status api
 ```
 
-All three allocations each start two containers: `app` and `log-shipper`.
+The allocation contains both tasks and the scheduler keeps them colocated on
+the same node.
