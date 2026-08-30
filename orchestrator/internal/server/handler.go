@@ -42,6 +42,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/jobs", h.handleRegisterJob)
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
+	v1.GET("/allocations", h.handleListAllocations)
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
 	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
@@ -171,6 +172,20 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusAccepted)
+}
+
+func (h *Handler) handleListAllocations(c *echo.Context) error {
+	var filter *AllocationListFilter
+	job := c.QueryParam("job")
+	label := c.QueryParam("label")
+	if job != "" || label != "" {
+		filter = &AllocationListFilter{Job: job, Label: label}
+	}
+	allocations := h.server.ListAllocations(requestNamespace(c), filter)
+	if allocations == nil {
+		allocations = api.AllocationListResponse{}
+	}
+	return c.JSON(http.StatusOK, allocations)
 }
 
 func (h *Handler) handleListDiscovery(c *echo.Context) error {
