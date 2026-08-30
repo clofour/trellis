@@ -7,9 +7,6 @@ DATA_DIR="/var/lib/trellis/data"
 CONFIG_DIR="/etc/trellis"
 ENV_FILE="${CONFIG_DIR}/trellis.env"
 SERVICE_FILE="/etc/systemd/system/trellis-node.service"
-UI_DIR="/opt/trellis/ui"
-UI_SERVICE_FILE="/etc/systemd/system/trellis-ui.service"
-UI_USER="trellis-ui"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
@@ -158,14 +155,6 @@ https://storage.googleapis.com/gvisor/releases release main" \
     info "gVisor installed and containerd restarted."
 }
 
-install_nodejs() {
-    info "Installing Node.js 22 LTS from NodeSource..."
-    detect_distro
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
-    apt-get install -y -qq nodejs
-    info "Node.js $(node --version) installed."
-}
-
 # ── Preflight checks ────────────────────────────────────────────────
 
 [ "$(uname -s)" = "Linux" ] || error "This script only supports Linux."
@@ -193,6 +182,11 @@ fi
 info "Fetching latest release from GitHub..."
 release_json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" \
     || error "Failed to find a release. Make sure the repository has at least one tagged release."
+
+release_tag="$(printf '%s' "$release_json" \
+    | grep -oP '"tag_name":\s*"\K[^"]+')" \
+    || error "Latest release is missing a tag name."
+ui_image="ghcr.io/clofour/trellis-ui:${release_tag}"
 
 bin_url="$(printf '%s' "$release_json" \
     | grep -oP '"browser_download_url":\s*"\K[^"]*trellis_linux_x64\.tar\.gz')" \
@@ -263,6 +257,7 @@ esac
 # ── Join an existing cluster? ────────────────────────────────────────
 
 join_flag=""
+join_addr=""
 if confirm "Join an existing cluster?" "n"; then
     prompt join_addr "Address of an existing cluster node (host:8128)" ""
     if [ -n "$join_addr" ]; then
@@ -315,81 +310,61 @@ fi
 # ── Dashboard (optional) ─────────────────────────────────────────────
 
 install_ui=false
+ui_namespace=""
 if confirm "Install the web dashboard?" "n"; then
-    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-        info "Node.js is required for the dashboard."
-        confirm "Install Node.js 22 LTS automatically?" "y" \
-            || error "Node.js is required for the dashboard. Install Node.js 20+ and re-run."
-        install_nodejs
+    prompt ui_namespace "Dashboard namespace (jobs and allocations shown by the dashboard)" "default"
+    [[ "$ui_namespace" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] \
+        || error "Dashboard namespace must be a safe identifier (1-63 letters, numbers, '_', '.', or '-')."
+
+    dashboard_server_addr="${join_addr:-${advertise_host}:8128}"
+    prompt dashboard_server_addr "Trellis leader API address (host:port)" "$dashboard_server_addr"
+
+    if ! systemctl is-active --quiet trellis-node 2>/dev/null && [ -z "$join_addr" ]; then
+        error "Cannot deploy the dashboard before trellis-node is running. Start trellis-node and re-run setup."
     fi
 
-    node_major="$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')"
-    if [ "$node_major" -lt 20 ]; then
-        info "Node.js 20 or later is required (found v$(node --version)). Installing Node.js 22 LTS..."
-        install_nodejs
-    fi
-
-    ui_url="$(printf '%s' "$release_json" \
-        | grep -oP '"browser_download_url":\s*"\K[^"]*trellis_ui\.tar\.gz')" \
-        || error "Release is missing the trellis_ui.tar.gz asset."
-
-    info "Downloading dashboard source..."
-    curl -fSL -o "${tmp}/trellis_ui.tar.gz" "$ui_url"
-
-    info "Installing dashboard to ${UI_DIR}..."
-    install -d -m 0755 "$UI_DIR"
-    tar -xzf "${tmp}/trellis_ui.tar.gz" -C "$UI_DIR"
-
-    info "Installing npm dependencies and building..."
-    (cd "$UI_DIR" && npm ci --ignore-scripts --no-audit --no-fund && npm run build) \
-        || error "Dashboard build failed."
-
-    prompt api_url "Trellis leader API URL" "http://${advertise_host}:8128"
-
-    cluster_token="$(grep -oP '(?<=TRELLIS_TOKEN=).+' "$ENV_FILE")"
-    cat > "${UI_DIR}/.env.local" <<ENVEOF
-TRELLIS_API_URL=${api_url}
-TRELLIS_API_TOKEN=${cluster_token}
-ENVEOF
-
-    if ! id "$UI_USER" >/dev/null 2>&1; then
-        useradd --system --no-create-home --shell /usr/sbin/nologin "$UI_USER"
-    fi
-    chown -R "${UI_USER}:${UI_USER}" "$UI_DIR"
-    chmod 600 "${UI_DIR}/.env.local"
-
-    info "Writing systemd unit to ${UI_SERVICE_FILE}..."
-    cat > "$UI_SERVICE_FILE" <<EOF
-[Unit]
-Description=Trellis dashboard
-After=network-online.target trellis-node.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=${UI_USER}
-Group=${UI_USER}
-WorkingDirectory=${UI_DIR}
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/npm run start
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=multi-user.target
+    dashboard_manifest="${tmp}/trellis-dashboard.yaml"
+    cat > "$dashboard_manifest" <<EOF
+namespace: ${ui_namespace}
+name: trellis-dashboard
+task_groups:
+  - name: web
+    count: 1
+    api_access: true
+    tasks:
+      - name: dashboard
+        image: ${ui_image}
+        env:
+          TRELLIS_NAMESPACE: ${ui_namespace}
+        resources:
+          cpu: 250
+          memory: 536870912
+        ports:
+          - host_port: 3000
+            container_port: 3000
+        health_check:
+          type: http
+          port: 3000
+          path: /
 EOF
 
-    systemctl daemon-reload
+    cluster_token="$(grep -oP '(?<=TRELLIS_TOKEN=).+' "$ENV_FILE")"
+    info "Deploying dashboard as Trellis job ${ui_namespace}/trellis-dashboard..."
+    dashboard_applied=false
+    for attempt in $(seq 1 30); do
+        if "${INSTALL_DIR}/trellis" \
+            --server-addr "$dashboard_server_addr" \
+            --cluster-token "$cluster_token" \
+            jobs apply --file "$dashboard_manifest" >/dev/null 2>&1; then
+            dashboard_applied=true
+            break
+        fi
+        sleep 2
+    done
+    [ "$dashboard_applied" = true ] \
+        || error "Failed to deploy the dashboard through Trellis at ${dashboard_server_addr}."
 
-    if confirm "Start the dashboard now?" "y"; then
-        systemctl enable --now trellis-ui
-        info "Dashboard is running at http://localhost:3000"
-    else
-        systemctl enable trellis-ui
-        info "Dashboard is enabled but not started."
-        info "Start it with: sudo systemctl start trellis-ui"
-    fi
-
+    info "Dashboard job submitted. Trellis will pull ${ui_image} and keep it running."
     install_ui=true
 fi
 
@@ -397,5 +372,6 @@ echo
 info "Setup complete!"
 info "CLI usage: trellis --server-addr ${advertise_host}:8128 --cluster-token \"\$(. ${ENV_FILE} && echo \$TRELLIS_TOKEN)\" nodes list"
 if [ "$install_ui" = true ]; then
-    info "Dashboard: http://localhost:3000"
+    info "Dashboard status: trellis --server-addr ${dashboard_server_addr} --cluster-token \"\$(. ${ENV_FILE} && echo \$TRELLIS_TOKEN)\" --namespace ${ui_namespace} jobs status trellis-dashboard"
+    info "Dashboard listens on port 3000 of the node where Trellis places its allocation."
 fi
