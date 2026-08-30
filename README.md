@@ -12,7 +12,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 
 **Non-opinionated and flexible.** Trellis provides the necessary building blocks without prescribing how you use them. Reverse proxies, for instance, are ordinary jobs rather than a special first-class service or ingress resource. Trellis does not enforce any organizational scheme; namespaces, teams, and projects are yours to arrange however makes sense. Operators can run Trellis as-is, or build their own frontends and abstractions on top for their specific use case.
 
-**Declarative, with open-ended delivery.** Jobs are defined as YAML manifests and submitted through the API or CLI. You can apply them directly from your terminal, drive them from a CI/CD pipeline, build a custom UI on top of the API, or integrate with any tooling that can run a command or make an HTTP request. Trellis accepts manifests; the workflow that generates and submits them is entirely yours.
+**Declarative, with open-ended delivery.** Jobs are defined as YAML manifests and submitted through the API or CLI. You can apply them directly from your terminal, drive them from a CI/CD pipeline, use the first-party dashboard, build a custom UI on top of the API, or integrate with any tooling that can run a command or make an HTTP request. Trellis accepts manifests; the workflow that generates and submits them is entirely yours.
 
 **Easy to use.** The tension between "flexible building blocks" and "easy to use" is addressed through thorough documentation and first-party examples. Trellis favors clear documentation over opinionated defaults that hide what is actually happening.
 
@@ -27,7 +27,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 - Container resource limits, dynamic host ports, and persistent local volumes
 - Built-in DNS discovery for healthy job allocations and optional WireGuard namespace networking
 - Namespace-scoped, write-only secrets with encrypted persistence and memory-backed delivery
-- A CLI and a read-only Next.js operations dashboard
+- A Next.js operations dashboard for cluster health, job/allocation diagnostics, node draining, secret management, and opt-in job writes
 
 ## Documentation
 
