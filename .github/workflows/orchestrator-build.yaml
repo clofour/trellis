@@ -1,4 +1,4 @@
-name: build
+name: orchestrator-build
 on:
   push:
     branches:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   build:
-    name: build
+    name: orchestrator-build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

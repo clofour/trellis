@@ -1,4 +1,4 @@
-name: UI lint
+name: ui-lint
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   lint:
-    name: UI lint
+    name: ui-lint
     runs-on: ubuntu-latest
     defaults:
       run:

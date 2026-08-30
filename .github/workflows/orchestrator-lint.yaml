@@ -1,4 +1,4 @@
-name: lint
+name: orchestrator-lint
 on:
   push:
     branches:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   lint:
-    name: lint
+    name: orchestrator-lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
