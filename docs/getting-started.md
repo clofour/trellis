@@ -1,7 +1,7 @@
 # Getting started
 
 This guide builds a local Trellis node, deploys a multi-job application, and
-demonstrates DNS discovery between containers. It assumes containerd is
+demonstrates DNS discovery and allocation queries. It assumes containerd is
 already installed and running on a Linux host. See the
 [operations guide](operations.md) for a persistent systemd deployment.
 
@@ -107,7 +107,10 @@ namespace: examples
 name: backend
 task_groups:
   - name: api
-    count: 1
+    count: 2
+    labels:
+      trellis.role: backend
+      trellis.expose: "true"
     tasks:
       - name: api
         image: docker.io/library/nginx:alpine
@@ -141,18 +144,51 @@ sudo ctr -n trellis tasks exec --exec-id test ALLOCATION_ID \
 ```
 
 The DNS response includes the host addresses of all healthy `backend`
-replicas. When you scale the backend up by changing `count` and reapplying,
-the DNS results update automatically.
+replicas. When you scale the backend, the DNS results update automatically.
 
-## 5. Scale and update
+## 5. Query allocations by job or label
 
-Edit a manifest's `count` and reapply to scale up or down. Trellis
-reconciles the running allocations to match: new replicas are placed on nodes
-with available capacity, and surplus replicas are stopped.
+Allocations are the public runtime resource for inspecting where work is
+running. The allocations API includes task-group labels, runtime status, node
+address, and allocated ports.
+
+Scope the request to the `examples` namespace and filter by job:
+
+```sh
+curl -s \
+  -H "Authorization: Bearer $TRELLIS_TOKEN" \
+  -H "X-Trellis-Namespace: examples" \
+  "http://localhost:8128/v1/allocations?job=backend" \
+  | python3 -m json.tool
+```
+
+Or filter by a label key/value pair:
+
+```sh
+curl -s \
+  -H "Authorization: Bearer $TRELLIS_TOKEN" \
+  -H "X-Trellis-Namespace: examples" \
+  "http://localhost:8128/v1/allocations?label=trellis.expose:true" \
+  | python3 -m json.tool
+```
+
+A key-only filter such as `?label=trellis.role` matches allocations whose task
+group carries that label regardless of its value. Job and label filters may be
+combined.
+
+This is useful for dynamic configuration and tooling without turning the
+internal DNS service catalog into a user-facing resource. See the
+[reverse-proxy example](../examples/reverse-proxy/) for one such pattern.
+
+## 6. Scale and update
+
+Edit a manifest's `count` and reapply to scale up or down. Trellis reconciles
+the running allocations to match: new replicas are placed on nodes with
+available capacity, and surplus replicas are stopped.
 
 ```sh
 # Scale the backend to 3 replicas
-sed -i 's/count: 1/count: 3/' backend.yaml
+sed -i 's/count: 2/count: 3/' backend.yaml
 ./bin/trellis --server-addr localhost:8128 \
   --cluster-token "$TRELLIS_TOKEN" jobs apply --file backend.yaml
 ```
