@@ -3,12 +3,16 @@ package spec
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
 var identifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 var labelKeyPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._/-]{0,62}$`)
+var envPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func ValidIdentifier(value string) bool { return identifierPattern.MatchString(value) }
 
 func Validate(spec *JobSpec) error {
 	if spec == nil {
@@ -95,6 +99,43 @@ func Validate(spec *JobSpec) error {
 				return fmt.Errorf("task group %q: duplicate task %q", group.Name, task.Name)
 			}
 			tasks[task.Name] = struct{}{}
+			secretNames, secretEnvs, secretPaths := map[string]struct{}{}, map[string]struct{}{}, map[string]struct{}{}
+			for _, secret := range task.Secrets {
+				if !ValidIdentifier(secret.Name) {
+					return fmt.Errorf("task group %q task %q: invalid secret name %q", group.Name, task.Name, secret.Name)
+				}
+				if _, ok := secretNames[secret.Name]; ok {
+					return fmt.Errorf("task group %q task %q: duplicate secret %q", group.Name, task.Name, secret.Name)
+				}
+				secretNames[secret.Name] = struct{}{}
+				switch secret.Target {
+				case SecretTargetEnv:
+					if !envPattern.MatchString(secret.Env) || secret.Path != "" || secret.Mode != 0 {
+						return fmt.Errorf("task group %q task %q: env secret %q requires only a valid env name", group.Name, task.Name, secret.Name)
+					}
+					if _, ok := secretEnvs[secret.Env]; ok {
+						return fmt.Errorf("task group %q task %q: duplicate secret env %q", group.Name, task.Name, secret.Env)
+					}
+					if _, ok := task.Env[secret.Env]; ok {
+						return fmt.Errorf("task group %q task %q: secret env %q conflicts with env", group.Name, task.Name, secret.Env)
+					}
+					secretEnvs[secret.Env] = struct{}{}
+				case SecretTargetFile:
+					clean := filepath.Clean(secret.Path)
+					if secret.Env != "" || clean != secret.Path || !strings.HasPrefix(clean, "/run/trellis-secrets/") {
+						return fmt.Errorf("task group %q task %q: file secret %q requires a clean path below /run/trellis-secrets", group.Name, task.Name, secret.Name)
+					}
+					if secret.Mode != 0 && secret.Mode != 0o400 && secret.Mode != 0o600 {
+						return fmt.Errorf("task group %q task %q: file secret %q mode must be 0400 or 0600", group.Name, task.Name, secret.Name)
+					}
+					if _, ok := secretPaths[clean]; ok {
+						return fmt.Errorf("task group %q task %q: duplicate secret path %q", group.Name, task.Name, clean)
+					}
+					secretPaths[clean] = struct{}{}
+				default:
+					return fmt.Errorf("task group %q task %q: secret %q target must be env or file", group.Name, task.Name, secret.Name)
+				}
+			}
 			if strings.TrimSpace(task.Image) == "" {
 				return fmt.Errorf("task group %q task %q: image is required", group.Name, task.Name)
 			}

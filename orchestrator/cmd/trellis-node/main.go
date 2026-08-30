@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +35,7 @@ import (
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/network"
 	containerruntime "github.com/clofour/trellis/internal/runtime"
+	secretstore "github.com/clofour/trellis/internal/secrets"
 	"github.com/clofour/trellis/internal/server"
 	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
@@ -53,6 +57,7 @@ type config struct {
 	WireGuardPort                                              int
 	DNSListen                                                  string
 	CACert, CAKey, Cert, Key                                   string
+	SecretsKey, SecretsKeyID                                   string
 	Labels                                                     []string
 }
 
@@ -79,6 +84,8 @@ func main() {
 	f.StringVar(&cfg.CAKey, "ca-key", "", "Path to cluster CA private key (PEM)")
 	f.StringVar(&cfg.Cert, "cert", "", "Path to node certificate (PEM)")
 	f.StringVar(&cfg.Key, "key", "", "Path to node private key (PEM)")
+	f.StringVar(&cfg.SecretsKey, "secrets-key", "", "Path to a root-readable 32-byte or base64-encoded secrets encryption key")
+	f.StringVar(&cfg.SecretsKeyID, "secrets-key-id", "", "Identifier for the active secrets encryption key")
 	f.StringArrayVar(&cfg.Labels, "label", nil, "Node label in key=value form (repeatable)")
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -170,6 +177,19 @@ func run(parent context.Context, cfg *config) error {
 
 	stateCtl := server.NewStateController(raftStore, cfg.Cluster)
 	control := server.NewServer(log, local, stateCtl, raftStore, cfg.Cluster, cfg.ServerAdvertise)
+	if cfg.SecretsKey != "" {
+		key, keyID, err := loadSecretsKey(cfg.SecretsKey, cfg.SecretsKeyID)
+		if err != nil {
+			return err
+		}
+		store, err := secretstore.NewStore(raftStore, cfg.Cluster, keyID, key)
+		clear(key)
+		if err != nil {
+			return fmt.Errorf("configure secrets: %w", err)
+		}
+		control.SetSecretStore(store)
+		log.Info("secrets enabled", "key_id", keyID)
+	}
 	control.SetClusterJoiner(raftStore)
 	control.SetClientTLS(clientTLS)
 	if err := control.SetNetworkPool(cfg.WireGuardPool); err != nil {
@@ -319,6 +339,34 @@ func run(parent context.Context, cfg *config) error {
 			}
 		}
 	}
+}
+
+func loadSecretsKey(path, configuredID string) ([]byte, string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("stat secrets key: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, "", fmt.Errorf("secrets key must not be accessible by group or others")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("read secrets key: %w", err)
+	}
+	key := raw
+	if decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw))); err == nil && len(decoded) == 32 {
+		key = decoded
+	}
+	if len(key) != 32 {
+		return nil, "", fmt.Errorf("secrets key must contain exactly 32 raw bytes or their base64 encoding")
+	}
+	key = append([]byte(nil), key...)
+	keyID := configuredID
+	if keyID == "" {
+		sum := sha256.Sum256(key)
+		keyID = hex.EncodeToString(sum[:8])
+	}
+	return key, keyID, nil
 }
 
 func loadOrBootstrapTLS(ctx context.Context, log *slog.Logger, cfg *config, local *storage.LocalStorage) (*tlsutil.Materials, error) {
@@ -603,6 +651,8 @@ func leaderAuthMiddleware(clusterToken string, tokenManager *auth.TokenManager) 
 		},
 		Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
 			if subtle.ConstantTimeCompare([]byte(key), []byte(clusterToken)) == 1 {
+				ctx := context.WithValue(c.Request().Context(), server.AdminContextKey, true)
+				c.SetRequest(c.Request().WithContext(ctx))
 				return true, nil
 			}
 			scope, err := tokenManager.ValidateToken(c.Request().Context(), key)

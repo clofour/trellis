@@ -22,6 +22,7 @@ import (
 	"github.com/clofour/trellis/internal/catalog"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/lifecycle"
+	secretstore "github.com/clofour/trellis/internal/secrets"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
@@ -67,7 +68,10 @@ type Server struct {
 	leaderSince  time.Time
 	now          func() time.Time
 	metrics      *Metrics
+	secrets      *secretstore.Store
 }
+
+func (s *Server) SetSecretStore(store *secretstore.Store) { s.secrets = store }
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
 	return s.AllocationLogsForNamespace(ctx, "", id, follow, tail)

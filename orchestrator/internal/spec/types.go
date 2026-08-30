@@ -83,6 +83,22 @@ type TaskSpec struct {
 	Volumes     []VolumeSpec      `yaml:"volumes" json:"volumes,omitempty"`
 	Resources   *ResourcesSpec    `yaml:"resources" json:"resources,omitempty"`
 	HealthCheck *HealthCheckSpec  `yaml:"health_check" json:"health_check,omitempty"`
+	Secrets     []SecretRefSpec   `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+}
+
+type SecretTarget string
+
+const (
+	SecretTargetEnv  SecretTarget = "env"
+	SecretTargetFile SecretTarget = "file"
+)
+
+type SecretRefSpec struct {
+	Name   string       `yaml:"name" json:"name"`
+	Target SecretTarget `yaml:"target" json:"target"`
+	Env    string       `yaml:"env,omitempty" json:"env,omitempty"`
+	Path   string       `yaml:"path,omitempty" json:"path,omitempty"`
+	Mode   uint32       `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
 type PortSpec struct {

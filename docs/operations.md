@@ -105,6 +105,8 @@ sudo journalctl -u trellis-node -f
 | `--data-dir` | `/var/lib/trellis/data` | Local state and volume directory. |
 | `--cluster` | `default` | Cluster name. |
 | `--cluster-token` | none | Required shared API and cluster token. |
+| `--secrets-key` | none | Root-readable file containing the 32-byte secrets KEK (raw or base64); enables native secrets. |
+| `--secrets-key-id` | derived | Non-sensitive identifier recorded with encrypted secret metadata. |
 | `--containerd-sock` | `/run/containerd/containerd.sock` | containerd socket. |
 | `--dns-listen` | `:8053` | DNS resolver listen address for service discovery. |
 | `--wireguard-pool` | `10.64.0.0/10` | Cluster namespace address pool. |
@@ -113,6 +115,23 @@ sudo journalctl -u trellis-node -f
 
 Run `trellis-node --help` against the installed version before deployment; its
 output is authoritative if it differs from this page.
+
+## Native secrets
+
+Generate one encryption key, distribute the same root-only file to every node,
+and add `--secrets-key /etc/trellis/secrets.key` to the service command:
+
+```sh
+umask 077
+head -c 32 /dev/urandom | base64 > /etc/trellis/secrets.key
+trellis --namespace acme secrets set database-password --stdin < password.txt
+trellis --namespace acme secrets list
+```
+
+The key is independent of the cluster token and data directory. Back it up
+separately: encrypted secrets cannot be recovered without it. Secret values
+are never returned by list or describe operations. Updating a secret affects
+new or restarted allocations only.
 
 ## Routine operations
 

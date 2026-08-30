@@ -22,6 +22,7 @@ type AllocationRequest struct {
 	NetworkMode   string                  `json:"network_mode,omitempty"`
 	EnvOverrides  map[string]string       `json:"env_overrides,omitempty"`
 	Restart       *spec.RestartPolicySpec `json:"restart,omitempty"`
+	Secrets       []DeliveredSecret       `json:"secrets,omitempty"`
 }
 
 type StopAllocationRequest struct {

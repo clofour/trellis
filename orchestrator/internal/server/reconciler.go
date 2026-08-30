@@ -194,8 +194,29 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 			request.NetworkPlan = plan
 		}
 		s.mu.RUnlock()
+		for _, task := range request.Tasks {
+			for _, ref := range task.Secrets {
+				if s.secrets == nil {
+					return fmt.Errorf("secret %s is unavailable: secrets are not configured", ref.Name)
+				}
+				value, version, err := s.secrets.Resolve(ctx, alloc.Namespace, ref.Name)
+				if err != nil {
+					return fmt.Errorf("secret %s is unavailable", ref.Name)
+				}
+				request.Secrets = append(request.Secrets, api.DeliveredSecret{Task: task.Name, Name: ref.Name, Version: version, Target: ref.Target, Env: ref.Env, Path: ref.Path, Mode: ref.Mode, Value: value})
+			}
+		}
+		defer func() {
+			for i := range request.Secrets {
+				clear(request.Secrets[i].Value)
+			}
+		}()
 		hashInput := *request
 		hashInput.Epoch, hashInput.ExecutionHash = 0, ""
+		hashInput.Secrets = append([]api.DeliveredSecret(nil), request.Secrets...)
+		for i := range hashInput.Secrets {
+			hashInput.Secrets[i].Value = nil
+		}
 		raw, _ := json.Marshal(hashInput)
 		hash := sha256.Sum256(raw)
 		request.ExecutionHash = hex.EncodeToString(hash[:])

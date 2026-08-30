@@ -25,6 +25,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 - Allocation lifecycle management, health checks, restart handling, and filterable runtime queries
 - Container resource limits, dynamic host ports, and persistent local volumes
 - Built-in DNS discovery for healthy job allocations and optional WireGuard namespace networking
+- Namespace-scoped, write-only secrets with encrypted persistence and memory-backed delivery
 - A CLI and a read-only Next.js operations dashboard
 
 ## Documentation
@@ -36,6 +37,7 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 | [Job manifest reference](docs/job-manifest.md) | Configure task groups, resources, ports, volumes, and health checks |
 | [Operations guide](docs/operations.md) | Deploy persistently, operate nodes, and enable WireGuard |
 | [Allocation lifecycle](docs/allocation-lifecycle.md) | Understand durable execution, retries, fencing, recovery, and loss semantics |
+| [Secrets design](docs/secrets.md) | Review the proposed write-only secret model, encryption, delivery, and rotation semantics |
 | [Dashboard guide](ui/README.md) | Configure, develop, and deploy the web UI |
 | [Vagrant demo](docs/vagrant.md) | Try a multi-node cluster locally with Vagrant |
 | [Contributing](docs/contributing.md) | Build from source and run development checks |
