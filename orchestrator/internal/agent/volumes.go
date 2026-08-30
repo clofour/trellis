@@ -24,8 +24,8 @@ func NewVolumeManager(dataRoot ...string) *VolumeManager {
 	}
 }
 
-func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.VolumeSpec) (*runtime.Mount, error) {
-	hostPath, err := vm.getHostPath(jobName, taskName, volume.Name)
+func (vm *VolumeManager) Create(namespace string, jobName string, taskName string, volume spec.VolumeSpec) (*runtime.Mount, error) {
+	hostPath, err := vm.getHostPath(namespace, jobName, taskName, volume.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +41,8 @@ func (vm *VolumeManager) Create(jobName string, taskName string, volume spec.Vol
 	}, nil
 }
 
-func (vm *VolumeManager) Check(jobName string, taskName string, volume spec.VolumeSpec) (bool, error) {
-	hostPath, err := vm.getHostPath(jobName, taskName, volume.Name)
+func (vm *VolumeManager) Check(namespace string, jobName string, taskName string, volume spec.VolumeSpec) (bool, error) {
+	hostPath, err := vm.getHostPath(namespace, jobName, taskName, volume.Name)
 	if err != nil {
 		return false, err
 	}
@@ -55,8 +55,8 @@ func (vm *VolumeManager) Check(jobName string, taskName string, volume spec.Volu
 	return info.IsDir(), nil
 }
 
-func (vm *VolumeManager) Delete(jobName string, taskName string, volume spec.VolumeSpec) error {
-	hostPath, err := vm.getHostPath(jobName, taskName, volume.Name)
+func (vm *VolumeManager) Delete(namespace string, jobName string, taskName string, volume spec.VolumeSpec) error {
+	hostPath, err := vm.getHostPath(namespace, jobName, taskName, volume.Name)
 	if err != nil {
 		return err
 	}
@@ -69,12 +69,12 @@ func (vm *VolumeManager) Delete(jobName string, taskName string, volume spec.Vol
 	return nil
 }
 
-func (vm *VolumeManager) getHostPath(jobName string, taskName string, volumeName string) (string, error) {
-	parts := []string{jobName, taskName, volumeName}
+func (vm *VolumeManager) getHostPath(namespace string, jobName string, taskName string, volumeName string) (string, error) {
+	parts := []string{namespace, jobName, taskName, volumeName}
 	for _, part := range parts {
 		if part == "" || part == "." || part == ".." || filepath.Base(part) != part || strings.ContainsAny(part, `/\\`) {
 			return "", fmt.Errorf("invalid volume path component %q", part)
 		}
 	}
-	return filepath.Join(append([]string{vm.dataRootPath}, parts...)...), nil
+	return filepath.Join(vm.dataRootPath, "namespaces", namespace, jobName, taskName, volumeName), nil
 }
