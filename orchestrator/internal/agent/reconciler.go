@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/runtime"
+	"github.com/clofour/trellis/internal/spec"
 )
 
 const (
-	reconcileInterval = 3 * time.Second
-	maxRestarts       = 3
-	restartWindow     = 10 * time.Minute
+	reconcileInterval    = 3 * time.Second
+	defaultMaxRestarts   = 3
+	defaultRestartWindow = 10 * time.Minute
 )
 
 // AllocationReconciler is the single authority for local allocation lifecycle
@@ -36,6 +37,8 @@ type allocationReconcileState struct {
 	restarting    bool
 	attempts      int
 	window        time.Time
+	maxRestarts   int
+	restartWindow time.Duration
 }
 
 func NewAllocationReconciler(runtime runtime.ContainerRuntime, subscriber AllocationReconcileSubscriber) *AllocationReconciler {
@@ -46,13 +49,21 @@ func NewAllocationReconciler(runtime runtime.ContainerRuntime, subscriber Alloca
 	}
 }
 
-func (r *AllocationReconciler) Track(allocID string, healthManaged bool) {
+func (r *AllocationReconciler) Track(allocID string, healthManaged bool, policy *spec.RestartPolicySpec) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	maxRestarts := defaultMaxRestarts
+	restartWindow := defaultRestartWindow
+	if policy != nil {
+		maxRestarts = policy.MaxRestarts
+		restartWindow = policy.Window
+	}
 	r.states[allocID] = &allocationReconcileState{
 		healthManaged: healthManaged,
 		window:        time.Now(),
+		maxRestarts:   maxRestarts,
+		restartWindow: restartWindow,
 	}
 }
 
@@ -150,11 +161,11 @@ func (r *AllocationReconciler) restart(ctx context.Context, allocID string) erro
 	state.restarting = true
 
 	now := time.Now()
-	if now.Sub(state.window) > restartWindow {
+	if now.Sub(state.window) > state.restartWindow {
 		state.attempts = 0
 		state.window = now
 	}
-	if state.attempts >= maxRestarts {
+	if state.attempts >= state.maxRestarts {
 		state.restarting = false
 		r.mu.Unlock()
 		r.publishStatus(allocID, "unhealthy")

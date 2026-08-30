@@ -48,6 +48,27 @@ func Validate(spec *JobSpec) error {
 		if group.NetworkMode != "" && group.NetworkMode != "host" {
 			return fmt.Errorf("task group %q: unsupported network_mode %q", group.Name, group.NetworkMode)
 		}
+		if group.Restart != nil {
+			if group.Restart.MaxRestarts < 0 {
+				return fmt.Errorf("task group %q: restart max_restarts must be at least 0", group.Name)
+			}
+			if group.Restart.Window <= 0 {
+				return fmt.Errorf("task group %q: restart window must be positive", group.Name)
+			}
+		}
+		constraints := make(map[string]struct{}, len(group.Constraints))
+		for _, constraint := range group.Constraints {
+			if !labelKeyPattern.MatchString(constraint.Attribute) {
+				return fmt.Errorf("task group %q: invalid constraint attribute %q", group.Name, constraint.Attribute)
+			}
+			if strings.TrimSpace(constraint.Value) == "" {
+				return fmt.Errorf("task group %q: constraint %q requires a value", group.Name, constraint.Attribute)
+			}
+			if _, exists := constraints[constraint.Attribute]; exists {
+				return fmt.Errorf("task group %q: duplicate constraint attribute %q", group.Name, constraint.Attribute)
+			}
+			constraints[constraint.Attribute] = struct{}{}
+		}
 		for k, v := range group.Labels {
 			if !labelKeyPattern.MatchString(k) {
 				return fmt.Errorf("task group %q: invalid label key %q", group.Name, k)
@@ -100,6 +121,15 @@ func Validate(spec *JobSpec) error {
 				}
 			}
 			if task.HealthCheck != nil {
+				if task.HealthCheck.Interval != 0 && task.HealthCheck.Interval <= 0 {
+					return fmt.Errorf("task group %q task %q: health check interval must be positive", group.Name, task.Name)
+				}
+				if task.HealthCheck.Timeout != 0 && task.HealthCheck.Timeout <= 0 {
+					return fmt.Errorf("task group %q task %q: health check timeout must be positive", group.Name, task.Name)
+				}
+				if task.HealthCheck.Threshold != 0 && task.HealthCheck.Threshold < 1 {
+					return fmt.Errorf("task group %q task %q: health check threshold must be at least 1", group.Name, task.Name)
+				}
 				switch task.HealthCheck.Type {
 				case "http", "tcp":
 					if task.HealthCheck.Port < 1 || task.HealthCheck.Port > 65535 {

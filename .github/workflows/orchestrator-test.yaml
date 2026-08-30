@@ -1,14 +1,21 @@
-name: lint
+name: orchestrator-test
+
 on:
+  pull_request:
   push:
     branches:
       - main
+
 permissions:
   contents: read
+
 jobs:
-  lint:
-    name: lint
+  test:
+    name: orchestrator-test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orchestrator
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -16,11 +23,8 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
-          go-version: 1.26.4
+          go-version-file: orchestrator/go.mod
+          cache-dependency-path: orchestrator/go.sum
 
-      - name: Run lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
-        with:
-          version: v2.12.2
-          working-directory: orchestrator
-          
+      - name: Run tests
+        run: go test ./...

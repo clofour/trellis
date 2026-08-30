@@ -10,6 +10,7 @@ import (
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/network"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
 
@@ -60,7 +61,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 				actions = append(actions, Action{Type: ActionStop, Allocation: current[len(current)-1]})
 				current = current[:len(current)-1]
 			}
-			placements := Schedule(&PlacementIntent{JobName: jobName, TaskGroupName: group.Name, Count: group.Count - len(current), Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks})
+			placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: group.Count - len(current), Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints})
 			for _, placement := range placements {
 				node := s.nodes[placement.NodeID]
 				name := fmt.Sprintf("%s-%s-%s-%s", namespace, jobName, group.Name, uuid.NewString()[:8])
@@ -100,17 +101,19 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		var groupRuntime string
 		var groupNetworkMode string
 		var groupAPIAccess bool
+		var groupRestart *spec.RestartPolicySpec
 		for _, group := range job.Spec.TaskGroups {
 			if group.Name == alloc.TaskGroupName {
 				groupRuntime = group.Runtime
 				groupNetworkMode = group.NetworkMode
 				groupAPIAccess = group.APIAccess
+				groupRestart = group.Restart
 				break
 			}
 		}
 		hostMode := groupNetworkMode == "host"
 		wireGuard := job.Spec.Network != nil && job.Spec.Network.WireGuard && !hostMode
-		request := &api.AllocationRequest{Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard, NetworkMode: groupNetworkMode}
+		request := &api.AllocationRequest{Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.Name, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard, NetworkMode: groupNetworkMode, Restart: groupRestart}
 		if wireGuard {
 			plan, err := s.networkPlan(alloc.Namespace, alloc.Node)
 			if err != nil {

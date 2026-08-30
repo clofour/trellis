@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"text/tabwriter"
 
 	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/spec"
@@ -17,11 +18,39 @@ func NewJobsCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(NewJobsApplyCmd())
+	cmd.AddCommand(NewJobsListCmd())
 	cmd.AddCommand(NewJobsStatusCmd())
 	cmd.AddCommand(NewJobsDestroyCmd())
 	cmd.AddCommand(NewJobsLogsCmd())
 
 	return cmd
+}
+
+func NewJobsListCmd() *cobra.Command {
+	return &cobra.Command{Use: "list", Short: "List jobs in a cluster", RunE: func(cmd *cobra.Command, args []string) error {
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		jobs, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).ListJobs(cmd.Context())
+		if err != nil {
+			return err
+		}
+		if config.Output == "json" {
+			return writeJSON(cmd.OutOrStdout(), jobs)
+		}
+		if len(*jobs) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "No jobs")
+			return nil
+		}
+
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "Name\tDesired\tRunning\tHealthy\tRevision")
+		for _, job := range *jobs {
+			fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\n", job.Name, job.Desired, job.Running, job.Healthy, job.Revision)
+		}
+		return w.Flush()
+	}}
 }
 
 func NewJobsLogsCmd() *cobra.Command {
@@ -54,6 +83,9 @@ func NewJobsStatusCmd() *cobra.Command {
 		status, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).GetJob(cmd.Context(), args[0])
 		if err != nil {
 			return err
+		}
+		if config.Output == "json" {
+			return writeJSON(cmd.OutOrStdout(), status)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Job: %s\nRevision: %d\nDesired: %d\nRunning: %d\nHealthy: %d\n", status.Name, status.Revision, status.Desired, status.Running, status.Healthy)
 		for _, a := range status.Allocations {

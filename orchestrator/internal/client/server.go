@@ -126,6 +126,14 @@ func (s *ServerClient) GetJob(ctx context.Context, name string) (*api.JobStatusR
 	return &response, nil
 }
 
+func (s *ServerClient) ListJobs(ctx context.Context) (*api.JobListResponse, error) {
+	var response api.JobListResponse
+	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/jobs", nil, &response); err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	return &response, nil
+}
+
 func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error {
 	requestData := &api.JobRegistrationRequest{
 		Spec: *spec,

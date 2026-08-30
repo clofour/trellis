@@ -125,7 +125,7 @@ func (a *Agent) GetAllocations() []*Allocation {
 	return result
 }
 
-func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan, networkMode string, envOverrides map[string]string) error {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan, networkMode string, envOverrides map[string]string, restartPolicy *spec.RestartPolicySpec) error {
 	spec := taskSpec
 	if spec == nil {
 		return fmt.Errorf("task spec is required")
@@ -265,7 +265,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 		healthRegistered = true
 	}
 
-	a.reconciler.Track(allocID, spec.HealthCheck != nil)
+	a.reconciler.Track(allocID, spec.HealthCheck != nil, restartPolicy)
 	tracked = true
 
 	ready := &Allocation{
