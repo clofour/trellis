@@ -19,6 +19,11 @@ task_groups:
   - name: web
     count: 2
     runtime: runsc
+    constraints:
+      - attribute: os
+        value: linux
+      - attribute: arch
+        value: amd64
     restart:
       max_restarts: 5
       window: 10m
@@ -70,6 +75,17 @@ include `_`, `.`, and `-`.
 | `network_mode` | No | Set to `host` to give the group's containers direct access to the host's network namespace instead of an isolated one. |
 | `api_access` | No | When `true`, Trellis injects `TRELLIS_TOKEN` and `TRELLIS_ADDR` environment variables into the group's containers. The token is scoped to the job's namespace and can be used to call documented namespace-scoped control-plane APIs, including allocation queries. |
 | `restart` | No | Restart budget for stopped tasks. Defaults to 3 restarts in a 10-minute window. |
+| `constraints` | No | Node attributes that every placement must match. |
+
+Constraints are a list of attribute/value pairs. Trellis currently exposes `os`
+and `arch` node attributes and compares their values exactly. The attribute
+format permits future node attributes; until a node reports such an attribute,
+a constraint using it will not match any node. Constraint attributes must be
+unique within a task group and each value must be non-empty.
+
+Replica anti-affinity is soft: the scheduler uses replica count as a tiebreaker
+between otherwise equal best-fit nodes. A group can still place multiple
+replicas on one node when that is the only node with capacity.
 
 When `restart` is present, `max_restarts` must be non-negative and `window`
 must be a positive duration. Setting `max_restarts: 0` disables automatic

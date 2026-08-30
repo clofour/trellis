@@ -9,12 +9,14 @@ import (
 )
 
 type PlacementIntent struct {
+	Namespace     string
 	JobName       string
 	TaskGroupName string
 	Count         int
 	Nodes         []*Node
 	Allocations   []*Allocation
 	Tasks         []spec.TaskSpec
+	Constraints   []spec.ConstraintSpec
 	// Task is deprecated; Tasks represents the colocated scheduling unit.
 	Task *spec.TaskSpec
 }
@@ -37,7 +39,9 @@ func Schedule(intent *PlacementIntent) []Placement {
 	usedMemory := make(map[uuid.UUID]int64)
 	for _, alloc := range intent.Allocations {
 		if alloc.Node != nil {
-			replicaCounts[alloc.Node.ID]++
+			if alloc.Namespace == intent.Namespace && alloc.JobName == intent.JobName && alloc.TaskGroupName == intent.TaskGroupName {
+				replicaCounts[alloc.Node.ID]++
+			}
 			for _, task := range alloc.Tasks {
 				if task.Resources != nil {
 					usedCPU[alloc.Node.ID] += task.Resources.CPU
@@ -62,21 +66,21 @@ func Schedule(intent *PlacementIntent) []Placement {
 			reqMemory = int64(intent.Task.Resources.Memory)
 		}
 		for _, node := range nodes {
-			if node.Status != NodeStatusHealthy {
+			if node.Status != NodeStatusHealthy || !nodeMatchesConstraints(node, intent.Constraints) {
 				continue
 			}
 			if (node.CPU > 0 && usedCPU[node.ID]+reqCPU > node.CPU) || (node.Memory > 0 && usedMemory[node.ID]+reqMemory > node.Memory) {
 				continue
 			}
 			better := target == nil
-			if reqCPU == 0 && reqMemory == 0 {
-				better = target == nil || replicaCounts[node.ID] < replicaCounts[target.ID]
-			} else if target != nil {
+			if target != nil {
 				// Best fit compares normalized utilization rather than adding
-				// incomparable CPU and byte units.
+				// incomparable CPU and byte units. Replica count is a soft
+				// anti-affinity tiebreaker after the best-fit score.
 				utilization := placementUtilization(node, usedCPU[node.ID]+reqCPU, usedMemory[node.ID]+reqMemory)
 				targetUtilization := placementUtilization(target, usedCPU[target.ID]+reqCPU, usedMemory[target.ID]+reqMemory)
-				better = utilization > targetUtilization
+				better = utilization > targetUtilization ||
+					utilization == targetUtilization && replicaCounts[node.ID] < replicaCounts[target.ID]
 			}
 			if better {
 				target = node
@@ -96,6 +100,24 @@ func Schedule(intent *PlacementIntent) []Placement {
 	}
 
 	return result
+}
+
+func nodeMatchesConstraints(node *Node, constraints []spec.ConstraintSpec) bool {
+	for _, constraint := range constraints {
+		var value string
+		switch constraint.Attribute {
+		case "os":
+			value = node.OS
+		case "arch":
+			value = node.Arch
+		default:
+			return false
+		}
+		if value != constraint.Value {
+			return false
+		}
+	}
+	return true
 }
 
 func placementUtilization(node *Node, cpu int, memory int64) float64 {

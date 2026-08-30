@@ -61,7 +61,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 				actions = append(actions, Action{Type: ActionStop, Allocation: current[len(current)-1]})
 				current = current[:len(current)-1]
 			}
-			placements := Schedule(&PlacementIntent{JobName: jobName, TaskGroupName: group.Name, Count: group.Count - len(current), Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks})
+			placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: group.Count - len(current), Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints})
 			for _, placement := range placements {
 				node := s.nodes[placement.NodeID]
 				name := fmt.Sprintf("%s-%s-%s-%s", namespace, jobName, group.Name, uuid.NewString()[:8])
