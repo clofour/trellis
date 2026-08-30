@@ -164,6 +164,7 @@ func run(parent context.Context, cfg *config) error {
 	restartCtl := agent.NewRestartController(runtimeClient, nil)
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "")
 	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), agent.NewVolumeManager(cfg.DataDir), leaderClient, id)
+	ag.ConfigureDurability(local, cfg.Cluster)
 	networkManager, err := network.NewAutomatedWireGuardManager(filepath.Join(cfg.DataDir, "network"), cfg.WireGuardPort)
 	if err != nil {
 		return fmt.Errorf("initialize WireGuard identity: %w", err)
@@ -240,6 +241,11 @@ func run(parent context.Context, cfg *config) error {
 			if event.Elected {
 				if err := control.Reload(ctx); err != nil {
 					log.Error("load leader state failed", "error", err)
+					stop()
+					continue
+				}
+				if err := control.AcquireLeadership(ctx); err != nil {
+					log.Error("advance leadership epoch failed", "error", err)
 					stop()
 					continue
 				}

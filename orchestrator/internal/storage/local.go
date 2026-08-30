@@ -105,11 +105,44 @@ func (s *LocalStorage) Delete(key string) error {
 	}
 
 	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("delete key %s: %w", key, err)
 	}
 
 	return nil
+}
+
+// ListRaw reads independent records below a key. Errors are returned per file
+// so one malformed or unreadable allocation cannot block recovery of others.
+func (s *LocalStorage) ListRaw(key string) (map[string]json.RawMessage, []error) {
+	root := s.formatPath(key)
+	if root == "" {
+		return nil, []error{fmt.Errorf("invalid storage key %q", key)}
+	}
+	result := make(map[string]json.RawMessage)
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return result, nil
+	}
+	if err != nil {
+		return result, []error{err}
+	}
+	var errs []error
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(root, entry.Name()))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read %s: %w", entry.Name(), err))
+			continue
+		}
+		result[entry.Name()] = content
+	}
+	return result, errs
 }
 
 func (s *LocalStorage) formatPath(key string) string {
