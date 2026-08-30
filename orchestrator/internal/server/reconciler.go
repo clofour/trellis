@@ -175,8 +175,8 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		var groupRestart *spec.RestartPolicySpec
 		for _, group := range job.Spec.TaskGroups {
 			if group.Name == alloc.TaskGroupName {
-				groupRuntime = group.Runtime
-				groupNetworkMode = group.NetworkMode
+				groupRuntime = string(group.Runtime)
+				groupNetworkMode = string(group.NetworkMode)
 				groupAPIAccess = group.APIAccess
 				groupRestart = group.Restart
 				break

@@ -96,7 +96,7 @@ func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *s
 
 func newHealthConfig(spec *spec.HealthCheckSpec) HealthConfig {
 	config := HealthConfig{
-		Type:      spec.Type,
+		Type:      string(spec.Type),
 		Addr:      "127.0.0.1",
 		Port:      spec.Port,
 		Path:      spec.Path,

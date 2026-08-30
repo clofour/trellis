@@ -52,6 +52,14 @@ type Server struct {
 	serverAddr   string
 	joiner       ClusterJoiner
 	clientTLS    *tls.Config
+	// Locking contract:
+	//   - mu protects the in-memory cluster, node, job, allocation, epoch, and
+	//     leadership snapshots. It must never be held during network or storage I/O.
+	//   - allocation.mu protects lifecycle fields on that allocation. When both
+	//     locks are required, mu is always acquired before allocation.mu.
+	//   - reconcileMu serializes complete reconciliation passes.
+	//   - mutationMu serializes durable state mutations and is never acquired
+	//     while mu or allocation.mu is held.
 	mu           sync.RWMutex
 	reconcileMu  sync.Mutex
 	mutationMu   sync.Mutex
