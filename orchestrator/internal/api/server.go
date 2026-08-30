@@ -74,12 +74,19 @@ type JobStatusResponse struct {
 }
 
 type AllocationResponse struct {
-	ID     string    `json:"id"`
-	Group  string    `json:"group"`
-	Task   string    `json:"task"`
-	NodeID uuid.UUID `json:"node_id"`
-	Status string    `json:"status"`
+	ID        string            `json:"id"`
+	Job       string            `json:"job,omitempty"`
+	Group     string            `json:"group"`
+	Task      string            `json:"task,omitempty"`
+	Namespace string            `json:"namespace,omitempty"`
+	NodeID    uuid.UUID         `json:"node_id"`
+	Status    string            `json:"status"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	Address   string            `json:"address,omitempty"`
+	Ports     []PortMapping     `json:"ports,omitempty"`
 }
+
+type AllocationListResponse = []AllocationResponse
 
 type JobListResponse = []JobStatusResponse
 
