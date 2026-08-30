@@ -47,6 +47,9 @@ func NewNodesListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("list nodes: %w", err)
 			}
+			if config.Output == "json" {
+				return writeJSON(cmd.OutOrStdout(), nodes)
+			}
 
 			if len(*nodes) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No nodes")
