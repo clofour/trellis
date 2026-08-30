@@ -1,22 +1,23 @@
 # Rolling update
 
-This example shows how to deploy a new version of a job without downtime
-using Trellis's rolling update strategy.
+This example shows how to replace a job revision incrementally with Trellis's
+rolling update strategy.
 
 ## How it works
 
-By default, when you reapply a job with a changed revision Trellis stops all
-existing allocations before starting replacements (`recreate` strategy). That
-causes a brief outage.
+By default, when a task-group execution change creates a new job revision,
+Trellis stops the old allocations before placing replacements (`recreate`).
 
-Setting `update.strategy: rolling` instead replaces allocations in batches:
+Setting `update.strategy: rolling` changes that sequence. Trellis keeps the old
+allocations running while it places up to `max_parallel` replacement
+allocations. Once replacements become healthy, Trellis stops the corresponding
+number of old allocations and continues with the next replacements.
 
-1. Drain `max_parallel` old allocations.
-2. Wait for their replacements to become healthy.
-3. Repeat until all allocations are on the new revision.
-
-At most `count - max_parallel` allocations are unavailable at any point during
-the update, so the group keeps serving traffic throughout.
+This is a **surge-style** rolling update: Trellis does not intentionally stop a
+healthy old allocation before a healthy replacement exists. As a consequence,
+the cluster needs enough spare capacity to place the in-flight replacements. If
+there is no spare CPU, memory, port, volume, or constraint-compatible capacity,
+the rollout waits rather than taking an old allocation down to make room.
 
 ## Manifests
 
@@ -29,8 +30,9 @@ update:
   max_parallel: 1
 ```
 
-With three replicas and `max_parallel: 1`, Trellis replaces one allocation per
-batch. Two healthy replicas serve traffic throughout the update.
+With three replicas and `max_parallel: 1`, Trellis starts one v2 replacement
+while the three v1 allocations remain desired. After that replacement is
+healthy, one v1 allocation is stopped and the next v2 replacement can start.
 
 ## Deploying
 
@@ -55,37 +57,41 @@ Watch the update proceed:
 trellis --namespace acme jobs status api
 ```
 
-The status output shows desired, running, and healthy counts. During the
-update you will see one allocation stopping and its replacement starting while
-the other two remain healthy. The group never drops below two healthy
-allocations.
+With sufficient spare capacity and healthy replacements, the old allocations
+remain available until replacements are ready. During a `max_parallel: 1`
+rollout you may briefly see four running allocations: three old allocations plus
+one in-flight replacement.
 
 ### Rollback
 
-Rolling back is identical to updating — reapply the previous manifest:
+Rolling back is the same operation in the other direction: reapply the previous
+manifest.
 
 ```sh
 trellis --namespace acme jobs apply --file app-v1.yaml
 ```
 
-Trellis detects the revision change and rolls back one allocation at a time
-using the same strategy.
+The image change creates another revision and Trellis rolls back using the same
+strategy.
 
 ## Tuning
 
 | `max_parallel` | Behavior |
 | --- | --- |
-| `1` (default) | One replacement at a time. Slowest but keeps the most replicas healthy. |
-| `2` | Two replacements at a time. Faster update, one fewer healthy replica during each batch. |
-| equal to `count` | Effectively `recreate` — all replaced at once. |
+| `1` (default) | At most one not-yet-healthy replacement is in flight. Requires capacity for roughly one extra allocation. |
+| `2` | Up to two replacements can be in flight. Faster when the cluster can fit them. |
+| equal to `count` | Trellis may start a full replacement set before stopping the old set; this is not the same as `recreate`. |
 
-Larger values reduce update duration but increase the number of allocations
-temporarily unavailable. Set `max_parallel` to at most `count - 1` to keep at
-least one allocation healthy at all times.
+A larger value increases possible rollout concurrency and the temporary surge
+in resource usage. It does not tell Trellis to make that many old allocations
+unavailable.
 
 ## Health-check timing
 
-Trellis gates each batch on the replacement allocations becoming healthy. If a
-deployment introduces a regression that causes health checks to fail, the
-update stalls: the remaining old allocations continue serving traffic, and you
-can either fix the image tag and reapply, or roll back to the previous version.
+Trellis waits for replacement allocations to become healthy before retiring the
+old allocations they replace. If a new revision never becomes healthy, the
+rollout stalls and the remaining healthy old allocations stay in service.
+
+Jobs without a health check are considered healthy once they are running, so
+use a meaningful health check when a replacement must prove readiness before an
+old allocation is removed.
