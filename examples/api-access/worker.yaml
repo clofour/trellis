@@ -12,6 +12,9 @@ task_groups:
         resources:
           cpu: 500
           memory: 268435456
+        ports:
+          - host_port: 0
+            container_port: 9090
         health_check:
           type: http
           port: 9090
