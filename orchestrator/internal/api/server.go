@@ -58,6 +58,7 @@ type HeartbeatRequest struct {
 type DesiredAllocation struct {
 	ID         string `json:"id"`
 	Generation uint64 `json:"generation"`
+	Draining   bool   `json:"draining,omitempty"`
 }
 
 type HeartbeatResponse struct {
@@ -108,6 +109,7 @@ type AllocationResponse struct {
 	Status           string            `json:"status"`
 	Phase            lifecycle.Phase   `json:"phase"`
 	Health           lifecycle.Health  `json:"health"`
+	Draining         bool              `json:"draining,omitempty"`
 	Generation       uint64            `json:"generation"`
 	JobRevision      int               `json:"job_revision"`
 	CreatedAt        time.Time         `json:"created_at"`

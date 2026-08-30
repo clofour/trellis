@@ -157,6 +157,9 @@ type NodeSummary struct {
 type Job struct {
 	Spec     *spec.JobSpec
 	Revision int
+	// ContentHashes stores the content hash of each task group's non-label
+	// fields, keyed by group name. Set at registration time.
+	ContentHashes map[string]string `json:"content_hashes,omitempty"`
 }
 
 type AllocationStatus string
@@ -190,6 +193,10 @@ type Allocation struct {
 	Node     *Node
 	Revision int               `json:"revision,omitempty"`
 	Ports    []api.PortMapping `json:"ports,omitempty"`
+	// Draining marks an allocation whose job revision is superseded under
+	// a rolling update strategy. Draining allocations are not restarted on
+	// failure and are not counted toward the desired count.
+	Draining bool `json:"draining,omitempty"`
 	// Events is an in-memory ring buffer of recent phase transitions.
 	// It is not persisted and resets on leader failover.
 	Events *lifecycle.RingBuffer `json:"-"`
@@ -283,6 +290,7 @@ func (a *Allocation) UnmarshalJSON(data []byte) error {
 	a.Node = decoded.Node
 	a.Revision = decoded.Revision
 	a.Ports = decoded.Ports
+	a.Draining = decoded.Draining
 	a.normalize(time.Now().UTC())
 	return nil
 }
@@ -571,7 +579,7 @@ func (s *Server) HeartbeatResponse(nodeID uuid.UUID) api.HeartbeatResponse {
 	for _, allocation := range allocations {
 		allocation.mu.Lock()
 		if allocation.Node != nil && allocation.Node.ID == nodeID && allocation.Phase != lifecycle.PhaseStopped && allocation.Phase != lifecycle.PhaseFailed && allocation.Phase != lifecycle.PhaseLost {
-			response.Desired = append(response.Desired, api.DesiredAllocation{ID: allocation.AllocationID(), Generation: allocation.Generation})
+			response.Desired = append(response.Desired, api.DesiredAllocation{ID: allocation.AllocationID(), Generation: allocation.Generation, Draining: allocation.Draining})
 		}
 		allocation.mu.Unlock()
 	}
@@ -604,18 +612,30 @@ func (s *Server) RegisterJob(ctx context.Context, namespace string, jobSpec *spe
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
 	s.mu.Lock()
-	revision := 1
 	if jobSpec.Namespace != namespace {
 		s.mu.Unlock()
 		return fmt.Errorf("job namespace does not match request namespace")
 	}
 	key := jobKey(namespace, jobSpec.Name)
+
+	hashes := make(map[string]string, len(jobSpec.TaskGroups))
+	for i := range jobSpec.TaskGroups {
+		hashes[jobSpec.TaskGroups[i].Name] = spec.TaskGroupContentHash(&jobSpec.TaskGroups[i])
+	}
+
+	revision := 1
+	labelOnly := false
 	if existing := s.jobs[key]; existing != nil {
 		revision = existing.Revision + 1
+		if isLabelOnlyChange(existing, jobSpec, hashes) {
+			revision = existing.Revision
+			labelOnly = true
+		}
 	}
 	job := &Job{
-		Spec:     jobSpec,
-		Revision: revision,
+		Spec:          jobSpec,
+		Revision:      revision,
+		ContentHashes: hashes,
 	}
 	s.mu.Unlock()
 	if err := s.state.PutJob(ctx, key, job); err != nil {
@@ -625,7 +645,30 @@ func (s *Server) RegisterJob(ctx context.Context, namespace string, jobSpec *spe
 	s.jobs[key] = job
 	s.mu.Unlock()
 
+	if labelOnly {
+		s.refreshCatalog()
+	}
+
 	return nil
+}
+
+// isLabelOnlyChange returns true when the new job spec differs from the
+// existing one only in task group labels (and count/update policy). The
+// content hashes must have been computed from newSpec.
+func isLabelOnlyChange(existing *Job, newSpec *spec.JobSpec, newHashes map[string]string) bool {
+	if len(existing.Spec.TaskGroups) != len(newSpec.TaskGroups) {
+		return false
+	}
+	if existing.ContentHashes == nil {
+		return false
+	}
+	for name, newHash := range newHashes {
+		oldHash, ok := existing.ContentHashes[name]
+		if !ok || oldHash != newHash {
+			return false
+		}
+	}
+	return true
 }
 
 // Reload reconstructs the durable control-plane state before a leadership term starts.
@@ -741,7 +784,7 @@ func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 			continue
 		}
 		a.normalize(time.Now().UTC())
-		ar := api.AllocationResponse{ID: a.AllocationID(), Group: a.TaskGroupName, Status: string(a.Status), Phase: a.Phase, Health: a.Health, Generation: a.Generation, JobRevision: a.JobRevision, CreatedAt: a.CreatedAt, LastTransitionAt: a.TransitionedAt, Reason: a.Reason, Message: a.Message, Attempt: a.Attempt, NextRetryAt: a.NextRetryAt}
+		ar := api.AllocationResponse{ID: a.AllocationID(), Group: a.TaskGroupName, Status: string(a.Status), Phase: a.Phase, Health: a.Health, Draining: a.Draining, Generation: a.Generation, JobRevision: a.JobRevision, CreatedAt: a.CreatedAt, LastTransitionAt: a.TransitionedAt, Reason: a.Reason, Message: a.Message, Attempt: a.Attempt, NextRetryAt: a.NextRetryAt}
 		if a.Node != nil {
 			ar.NodeID = a.Node.ID
 		}

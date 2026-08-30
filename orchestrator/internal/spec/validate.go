@@ -60,6 +60,14 @@ func Validate(spec *JobSpec) error {
 				return fmt.Errorf("task group %q: restart window must be positive", group.Name)
 			}
 		}
+		if group.Update != nil {
+			if !group.Update.Strategy.Valid() {
+				return fmt.Errorf("task group %q: unsupported update strategy %q", group.Name, group.Update.Strategy)
+			}
+			if group.Update.MaxParallel < 0 {
+				return fmt.Errorf("task group %q: update max_parallel must be at least 0", group.Name)
+			}
+		}
 		constraints := make(map[string]struct{}, len(group.Constraints))
 		for _, constraint := range group.Constraints {
 			if !labelKeyPattern.MatchString(constraint.Attribute) {

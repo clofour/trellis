@@ -1,6 +1,22 @@
 package spec
 
-import "time"
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"time"
+)
+
+// UpdateStrategy controls how old allocations are replaced during a job revision.
+type UpdateStrategy string
+
+const (
+	UpdateRecreate UpdateStrategy = "recreate"
+	UpdateRolling  UpdateStrategy = "rolling"
+)
+
+func (s UpdateStrategy) Valid() bool {
+	return s == "" || s == UpdateRecreate || s == UpdateRolling
+}
 
 // Runtime identifies the OCI runtime used for a task group.
 type Runtime string
@@ -53,6 +69,11 @@ type NetworkSpec struct {
 	WireGuard bool `yaml:"wireguard" json:"wireguard"`
 }
 
+type UpdateSpec struct {
+	Strategy    UpdateStrategy `yaml:"strategy" json:"strategy"`
+	MaxParallel int            `yaml:"max_parallel,omitempty" json:"max_parallel,omitempty"`
+}
+
 type TaskGroupSpec struct {
 	Name        string             `yaml:"name" json:"name"`
 	Count       int                `yaml:"count" json:"count"`
@@ -63,6 +84,7 @@ type TaskGroupSpec struct {
 	APIAccess   bool               `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
 	Constraints []ConstraintSpec   `yaml:"constraints,omitempty" json:"constraints,omitempty"`
+	Update      *UpdateSpec        `yaml:"update,omitempty" json:"update,omitempty"`
 }
 
 type ConstraintSpec struct {
@@ -126,4 +148,30 @@ type VolumeSpec struct {
 	Path       string `yaml:"path" json:"path"`
 	HostVolume string `yaml:"host_volume,omitempty" json:"host_volume,omitempty"`
 	ReadOnly   bool   `yaml:"read_only,omitempty" json:"read_only,omitempty"`
+}
+
+// TaskGroupContentHash returns a SHA-256 hex digest of the task group fields
+// that affect running containers. Labels, update strategy, and count are
+// excluded so that changes to those fields can be detected as metadata-only.
+func TaskGroupContentHash(g *TaskGroupSpec) string {
+	hashable := struct {
+		Name        string
+		Runtime     Runtime
+		Tasks       []TaskSpec
+		NetworkMode NetworkMode
+		APIAccess   bool
+		Restart     *RestartPolicySpec
+		Constraints []ConstraintSpec
+	}{
+		Name:        g.Name,
+		Runtime:     g.Runtime,
+		Tasks:       g.Tasks,
+		NetworkMode: g.NetworkMode,
+		APIAccess:   g.APIAccess,
+		Restart:     g.Restart,
+		Constraints: g.Constraints,
+	}
+	raw, _ := json.Marshal(hashable)
+	h := sha256.Sum256(raw)
+	return string(h[:])
 }
