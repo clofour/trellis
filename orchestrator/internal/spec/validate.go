@@ -60,10 +60,7 @@ func Validate(spec *JobSpec) error {
 				return fmt.Errorf("task group %q: restart window must be positive", group.Name)
 			}
 		}
-		if group.Update != nil && group.Update.MaxUnavailable < 1 {
-			return fmt.Errorf("task group %q: update max_unavailable must be at least 1", group.Name)
-		}
-		constraints := make(map[string]struct{}, len(group.Constraints))
+constraints := make(map[string]struct{}, len(group.Constraints))
 		for _, constraint := range group.Constraints {
 			if !labelKeyPattern.MatchString(constraint.Attribute) {
 				return fmt.Errorf("task group %q: invalid constraint attribute %q", group.Name, constraint.Attribute)

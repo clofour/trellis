@@ -402,14 +402,37 @@ func (s *Server) SetClientTLS(cfg *tls.Config) {
 	s.clientTLS = cfg
 }
 
+// ClusterCA returns the cluster CA certificate and key from Raft-backed state,
+// falling back to local storage for nodes that have not yet migrated.
 func (s *Server) ClusterCA() (certPEM, keyPEM string, err error) {
-	if err := s.storage.Get("tls/ca-cert", &certPEM); err != nil {
+	cert, key, err := s.state.GetClusterCA(context.Background())
+	if err != nil {
+		return "", "", fmt.Errorf("load cluster CA from state: %w", err)
+	}
+	if cert != "" {
+		return cert, key, nil
+	}
+	// Fallback: bootstrap nodes that pre-date Raft-backed CA storage.
+	if err := s.storage.Get("tls/ca-cert", &cert); err != nil {
 		return "", "", fmt.Errorf("load CA cert: %w", err)
 	}
-	if err := s.storage.Get("tls/ca-key", &keyPEM); err != nil {
+	if err := s.storage.Get("tls/ca-key", &key); err != nil {
 		return "", "", fmt.Errorf("load CA key: %w", err)
 	}
-	return certPEM, keyPEM, nil
+	return cert, key, nil
+}
+
+// EnsureClusterCA stores the CA certificate and key in Raft-backed state if
+// not already present. Called once by the bootstrap node after Raft is ready.
+func (s *Server) EnsureClusterCA(ctx context.Context, caCert, caKey []byte) error {
+	existing, _, err := s.state.GetClusterCA(ctx)
+	if err != nil {
+		return fmt.Errorf("check cluster CA: %w", err)
+	}
+	if existing != "" {
+		return nil
+	}
+	return s.state.PutClusterCA(ctx, string(caCert), string(caKey))
 }
 
 func validateToken(cluster *Cluster, token string) bool {

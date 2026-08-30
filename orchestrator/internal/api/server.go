@@ -152,5 +152,6 @@ type RaftJoinRequest struct {
 
 type RaftJoinResponse struct {
 	CACert string `json:"ca_cert"`
-	CAKey  string `json:"ca_key"`
+	Cert   string `json:"cert"`
+	Key    string `json:"key"`
 }

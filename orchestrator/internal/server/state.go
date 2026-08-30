@@ -24,6 +24,26 @@ func NewStateController(store state.StateStore, cluster string) *StateController
 	}
 }
 
+type clusterCARecord struct {
+	Cert string `json:"cert"`
+	Key  string `json:"key"`
+}
+
+func (s *StateController) GetClusterCA(ctx context.Context) (certPEM, keyPEM string, err error) {
+	key := fmt.Sprintf("%s/%s/ca", trellisNamespace, s.cluster)
+	var record clusterCARecord
+	found, err := s.get(ctx, key, &record)
+	if err != nil || !found {
+		return "", "", err
+	}
+	return record.Cert, record.Key, nil
+}
+
+func (s *StateController) PutClusterCA(ctx context.Context, certPEM, keyPEM string) error {
+	key := fmt.Sprintf("%s/%s/ca", trellisNamespace, s.cluster)
+	return s.put(ctx, key, clusterCARecord{Cert: certPEM, Key: keyPEM})
+}
+
 func (s *StateController) GetCluster(ctx context.Context) (*Cluster, error) {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
 

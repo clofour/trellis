@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"strings"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
@@ -75,10 +74,6 @@ func (s *Server) Reconcile(ctx context.Context) {
 	}
 	var actions []Action
 	valid := make([]*Allocation, 0, len(s.allocations))
-	// staleByGroup collects allocations that need rolling replacement keyed by
-	// "namespace\x00jobName\x00groupName". Job-deleted allocations bypass this
-	// and are stopped immediately.
-	staleByGroup := make(map[string][]*Allocation)
 	for _, allocation := range s.allocations {
 		allocation.mu.Lock()
 		allocation.normalize(now)
@@ -92,16 +87,8 @@ func (s *Server) Reconcile(ctx context.Context) {
 			allocation.mu.Unlock()
 			continue
 		}
-		if job == nil {
-			// Job was deleted — stop immediately, no rolling logic.
+		if job == nil || allocation.JobRevision < job.Revision {
 			actions = append(actions, Action{Type: ActionStop, Allocation: allocation})
-			allocation.mu.Unlock()
-			continue
-		}
-		if allocation.JobRevision < job.Revision {
-			// Job was updated — queue for rolling replacement.
-			gk := allocation.Namespace + "\x00" + allocation.JobName + "\x00" + allocation.TaskGroupName
-			staleByGroup[gk] = append(staleByGroup[gk], allocation)
 			allocation.mu.Unlock()
 			continue
 		}
@@ -122,33 +109,6 @@ func (s *Server) Reconcile(ctx context.Context) {
 		}
 		valid = append(valid, allocation)
 		allocation.mu.Unlock()
-	}
-
-	// Apply MaxUnavailable: stop at most maxUnavailable stale allocations per
-	// group per reconcile pass; keep the rest as valid so the scheduler does not
-	// over-provision replacements.
-	for gk, stale := range staleByGroup {
-		// Derive maxUnavailable from the job spec. Default to len(stale) to
-		// preserve the old "replace all at once" behaviour when unset.
-		maxUnavailable := len(stale)
-		parts := strings.SplitN(gk, "\x00", 3)
-		if len(parts) == 3 {
-			if job := s.jobs[jobKey(parts[0], parts[1])]; job != nil {
-				for _, g := range job.Spec.TaskGroups {
-					if g.Name == parts[2] && g.Update != nil && g.Update.MaxUnavailable > 0 {
-						maxUnavailable = g.Update.MaxUnavailable
-						break
-					}
-				}
-			}
-		}
-		stopCount := min(len(stale), maxUnavailable)
-		for i := 0; i < stopCount; i++ {
-			actions = append(actions, Action{Type: ActionStop, Allocation: stale[i]})
-		}
-		for i := stopCount; i < len(stale); i++ {
-			valid = append(valid, stale[i])
-		}
 	}
 
 	for _, job := range s.jobs {

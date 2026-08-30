@@ -214,6 +214,15 @@ func run(parent context.Context, cfg *config) error {
 		}
 	}
 
+	// Bootstrap nodes store the CA key in Raft-backed state so any node that
+	// later becomes leader can sign certificates for new joiners, without ever
+	// sending the CA key over the wire to joining nodes.
+	if cfg.Join == "" {
+		if err := control.EnsureClusterCA(ctx, tlsMaterials.CACert, tlsMaterials.CAKey); err != nil {
+			return fmt.Errorf("store cluster CA: %w", err)
+		}
+	}
+
 	runtimeClient, err := containerruntime.NewContainerdRuntime(cfg.ContainerdSock)
 	if err != nil {
 		return fmt.Errorf("init runtime: %w", err)
@@ -394,13 +403,14 @@ func loadOrBootstrapTLS(ctx context.Context, log *slog.Logger, cfg *config, loca
 		if err != nil {
 			return nil, fmt.Errorf("join cluster for TLS: %w", err)
 		}
-		caCert := []byte(resp.CACert)
-		caKey := []byte(resp.CAKey)
-		nodeCert, nodeKey, err := tlsutil.GenerateNodeCert(caCert, caKey)
-		if err != nil {
-			return nil, fmt.Errorf("generate node cert: %w", err)
+		// The leader generates a node-specific certificate; we receive only the
+		// CA certificate (to verify peers) and our own signed cert+key. The CA
+		// private key is never sent to joining nodes.
+		m := &tlsutil.Materials{
+			CACert: []byte(resp.CACert),
+			Cert:   []byte(resp.Cert),
+			Key:    []byte(resp.Key),
 		}
-		m := &tlsutil.Materials{CACert: caCert, CAKey: caKey, Cert: nodeCert, Key: nodeKey}
 		if err := saveTLSToStorage(local, m); err != nil {
 			return nil, fmt.Errorf("save TLS materials: %w", err)
 		}
@@ -444,11 +454,8 @@ func loadTLSFromFiles(cfg *config) (*tlsutil.Materials, error) {
 }
 
 func loadTLSFromStorage(local *storage.LocalStorage) (*tlsutil.Materials, error) {
-	var caCert, caKey, cert, key string
+	var caCert, cert, key string
 	if err := local.Get("tls/ca-cert", &caCert); err != nil {
-		return nil, err
-	}
-	if err := local.Get("tls/ca-key", &caKey); err != nil {
 		return nil, err
 	}
 	if err := local.Get("tls/node-cert", &cert); err != nil {
@@ -457,6 +464,10 @@ func loadTLSFromStorage(local *storage.LocalStorage) (*tlsutil.Materials, error)
 	if err := local.Get("tls/node-key", &key); err != nil {
 		return nil, err
 	}
+	// The CA key is only present on bootstrap nodes; joining nodes do not
+	// receive it. The optional load ensures both node types can reload state.
+	var caKey string
+	_ = local.Get("tls/ca-key", &caKey)
 	return &tlsutil.Materials{
 		CACert: []byte(caCert),
 		CAKey:  []byte(caKey),
@@ -469,8 +480,10 @@ func saveTLSToStorage(local *storage.LocalStorage, m *tlsutil.Materials) error {
 	if err := local.Put("tls/ca-cert", string(m.CACert)); err != nil {
 		return err
 	}
-	if err := local.Put("tls/ca-key", string(m.CAKey)); err != nil {
-		return err
+	if len(m.CAKey) > 0 {
+		if err := local.Put("tls/ca-key", string(m.CAKey)); err != nil {
+			return err
+		}
 	}
 	if err := local.Put("tls/node-cert", string(m.Cert)); err != nil {
 		return err

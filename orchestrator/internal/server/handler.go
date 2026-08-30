@@ -11,6 +11,7 @@ import (
 	"github.com/clofour/trellis/internal/catalog"
 	secretstore "github.com/clofour/trellis/internal/secrets"
 	"github.com/clofour/trellis/internal/spec"
+	"github.com/clofour/trellis/internal/tlsutil"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -346,10 +347,14 @@ func (h *Handler) handleRaftJoin(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	caCert, caKey, err := h.server.ClusterCA()
-	if err != nil {
+	if err != nil || caCert == "" || caKey == "" {
 		return echo.NewHTTPError(http.StatusInternalServerError, "cluster CA unavailable")
 	}
-	return c.JSON(http.StatusOK, api.RaftJoinResponse{CACert: caCert, CAKey: caKey})
+	nodeCert, nodeKey, err := tlsutil.GenerateNodeCert([]byte(caCert), []byte(caKey))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "generate node certificate failed")
+	}
+	return c.JSON(http.StatusOK, api.RaftJoinResponse{CACert: caCert, Cert: string(nodeCert), Key: string(nodeKey)})
 }
 
 func (h *Handler) handleMetrics(c *echo.Context) error {

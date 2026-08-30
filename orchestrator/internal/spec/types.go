@@ -63,14 +63,6 @@ type TaskGroupSpec struct {
 	APIAccess   bool               `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
 	Constraints []ConstraintSpec   `yaml:"constraints,omitempty" json:"constraints,omitempty"`
-	Update      *UpdateSpec        `yaml:"update,omitempty" json:"update,omitempty"`
-}
-
-// UpdateSpec controls rolling-update behaviour when a job revision changes.
-// MaxUnavailable limits how many allocations in the group may be stopped at
-// once during a rollout. Zero means use the group count (replace all at once).
-type UpdateSpec struct {
-	MaxUnavailable int `yaml:"max_unavailable" json:"max_unavailable"`
 }
 
 type ConstraintSpec struct {
