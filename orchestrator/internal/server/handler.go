@@ -222,7 +222,11 @@ func (h *Handler) handleRaftJoin(c *echo.Context) error {
 	if err := h.server.joiner.AddVoter(req.ID, req.RaftAddress); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	return c.NoContent(http.StatusOK)
+	caCert, caKey, err := h.server.ClusterCA()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "cluster CA unavailable")
+	}
+	return c.JSON(http.StatusOK, api.RaftJoinResponse{CACert: caCert, CAKey: caKey})
 }
 
 func (h *Handler) convertNode(node *Node) *api.NodeResponse {

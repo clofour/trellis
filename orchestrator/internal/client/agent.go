@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,14 +20,14 @@ func (s *AgentClient) Logs(ctx context.Context, address, allocID string, follow 
 	return s.client.stream(ctx, normalizeBaseURL(address)+"/v1/allocations/"+url.PathEscape(allocID)+"/logs?"+query.Encode())
 }
 
-func NewAgentClient(token string) *AgentClient {
-	client := &client{
+func NewAgentClient(token string, tlsConfig *tls.Config) *AgentClient {
+	c := &client{
 		token:  token,
-		client: newHTTPClient(),
+		client: newHTTPClient(tlsConfig),
 	}
 
 	return &AgentClient{
-		client: client,
+		client: c,
 	}
 }
 

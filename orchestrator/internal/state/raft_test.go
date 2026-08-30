@@ -2,12 +2,41 @@ package state
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/clofour/trellis/internal/tlsutil"
 )
+
+var (
+	testCACert, testCAKey []byte
+)
+
+func init() {
+	var err error
+	testCACert, testCAKey, err = tlsutil.GenerateCA()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func testTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+	cert, key, err := tlsutil.GenerateNodeCert(testCACert, testCAKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &tlsutil.Materials{CACert: testCACert, CAKey: testCAKey, Cert: cert, Key: key}
+	cfg, err := tlsutil.PeerTLSConfig(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
 
 func freePort(t *testing.T) int {
 	t.Helper()
@@ -31,6 +60,7 @@ func newTestRaftStore(t *testing.T, bootstrap bool) *RaftStore {
 		Advertise: bind,
 		ServerID:  bind,
 		Bootstrap: bootstrap,
+		TLS:       testTLSConfig(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +140,7 @@ func TestRaftStore_Replication(t *testing.T) {
 		Advertise: followerBind,
 		ServerID:  followerBind,
 		Bootstrap: false,
+		TLS:       testTLSConfig(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +190,7 @@ func TestRaftStore_Snapshot(t *testing.T) {
 		Advertise: followerBind,
 		ServerID:  followerBind,
 		Bootstrap: false,
+		TLS:       testTLSConfig(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -186,8 +218,9 @@ func TestRaftStore_RejoinExistingState(t *testing.T) {
 	dir := t.TempDir()
 	port := freePort(t)
 	bind := fmt.Sprintf("127.0.0.1:%d", port)
+	tlsCfg := testTLSConfig(t)
 
-	store1, err := NewRaftStore(RaftConfig{DataDir: dir, BindAddr: bind, Advertise: bind, ServerID: bind, Bootstrap: true})
+	store1, err := NewRaftStore(RaftConfig{DataDir: dir, BindAddr: bind, Advertise: bind, ServerID: bind, Bootstrap: true, TLS: tlsCfg})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +228,7 @@ func TestRaftStore_RejoinExistingState(t *testing.T) {
 	store1.Put(context.Background(), "persist", []byte("yes"))
 	store1.Close()
 
-	store2, err := NewRaftStore(RaftConfig{DataDir: dir, BindAddr: bind, Advertise: bind, ServerID: bind, Bootstrap: true})
+	store2, err := NewRaftStore(RaftConfig{DataDir: dir, BindAddr: bind, Advertise: bind, ServerID: bind, Bootstrap: true, TLS: tlsCfg})
 	if err != nil {
 		t.Fatal(err)
 	}

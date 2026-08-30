@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,21 +60,21 @@ type Heartbeat struct {
 	Allocations []api.AllocationStatus `json:"allocations,omitempty"`
 }
 
-func NewServerClient(token string, addr string) *ServerClient {
-	return NewNamespaceServerClient(token, addr, "")
+func NewServerClient(token string, addr string, tlsConfig *tls.Config) *ServerClient {
+	return NewNamespaceServerClient(token, addr, "", tlsConfig)
 }
 
-func NewNamespaceServerClient(token string, addr string, namespace string) *ServerClient {
+func NewNamespaceServerClient(token string, addr string, namespace string, tlsConfig *tls.Config) *ServerClient {
 	baseURL := normalizeBaseURL(addr)
-	client := &client{
+	c := &client{
 		token:     token,
 		namespace: namespace,
-		client:    newHTTPClient(),
+		client:    newHTTPClient(tlsConfig),
 	}
 
 	return &ServerClient{
 		baseURL: baseURL,
-		client:  client,
+		client:  c,
 	}
 }
 
@@ -183,7 +184,7 @@ func normalizeBaseURL(addr string) string {
 		return ""
 	}
 	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
-		addr = "http://" + addr
+		addr = "https://" + addr
 	}
 	return addr
 }

@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +32,41 @@ type RaftConfig struct {
 	Advertise string
 	ServerID  string
 	Bootstrap bool
+	TLS       *tls.Config
+}
+
+type tlsStreamLayer struct {
+	net.Listener
+	advertise net.Addr
+	tlsCfg    *tls.Config
+}
+
+func (t *tlsStreamLayer) Addr() net.Addr {
+	if t.advertise != nil {
+		return t.advertise
+	}
+	return t.Listener.Addr()
+}
+
+func (t *tlsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
+	conn, err := net.DialTimeout("tcp", string(address), timeout)
+	if err != nil {
+		return nil, err
+	}
+	tlsConn := tls.Client(conn, t.tlsCfg)
+	if err := tlsConn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err := tlsConn.Handshake(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err := tlsConn.SetDeadline(time.Time{}); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return tlsConn, nil
 }
 
 func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
@@ -69,9 +105,20 @@ func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 		return nil, fmt.Errorf("resolve raft advertise address: %w", err)
 	}
 
-	transport, err := raft.NewTCPTransport(cfg.BindAddr, advAddr, 3, 10*time.Second, io.Discard)
-	if err != nil {
-		return nil, fmt.Errorf("create raft transport: %w", err)
+	var transport raft.Transport
+	if cfg.TLS != nil {
+		ln, err := tls.Listen("tcp", cfg.BindAddr, cfg.TLS)
+		if err != nil {
+			return nil, fmt.Errorf("create TLS listener: %w", err)
+		}
+		stream := &tlsStreamLayer{Listener: ln, advertise: advAddr, tlsCfg: cfg.TLS}
+		transport = raft.NewNetworkTransport(stream, 3, 10*time.Second, io.Discard)
+	} else {
+		t, err := raft.NewTCPTransport(cfg.BindAddr, advAddr, 3, 10*time.Second, io.Discard)
+		if err != nil {
+			return nil, fmt.Errorf("create raft transport: %w", err)
+		}
+		transport = t
 	}
 
 	raftCfg := raft.DefaultConfig()
