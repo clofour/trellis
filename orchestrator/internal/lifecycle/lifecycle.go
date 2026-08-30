@@ -95,10 +95,10 @@ func CompatibilityStatus(phase Phase, health Health) string {
 }
 
 type Diagnostic struct {
-	CreatedAt       time.Time  `json:"created_at"`
-	TransitionedAt  time.Time  `json:"last_transition_at"`
-	Reason          string     `json:"reason,omitempty"`
-	Message         string     `json:"message,omitempty"`
-	Attempt         int        `json:"attempt"`
-	NextRetryAt     *time.Time `json:"next_retry_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	TransitionedAt time.Time  `json:"last_transition_at"`
+	Reason         string     `json:"reason,omitempty"`
+	Message        string     `json:"message,omitempty"`
+	Attempt        int        `json:"attempt"`
+	NextRetryAt    *time.Time `json:"next_retry_at,omitempty"`
 }

@@ -34,10 +34,19 @@ func decodeOperationError(err error) error {
 		return &AgentOperationError{Response: response}
 	}
 	var wrapped struct {
-		Message api.OperationResponse `json:"message"`
+		Message json.RawMessage `json:"message"`
 	}
-	if json.Unmarshal(httpErr.Body, &wrapped) == nil && wrapped.Message.Code != "" {
-		return &AgentOperationError{Response: wrapped.Message}
+	if json.Unmarshal(httpErr.Body, &wrapped) == nil && len(wrapped.Message) > 0 {
+		var inner api.OperationResponse
+		if json.Unmarshal(wrapped.Message, &inner) == nil && inner.Code != "" {
+			return &AgentOperationError{Response: inner}
+		}
+		var str string
+		if json.Unmarshal(wrapped.Message, &str) == nil {
+			if json.Unmarshal([]byte(str), &inner) == nil && inner.Code != "" {
+				return &AgentOperationError{Response: inner}
+			}
+		}
 	}
 	return err
 }

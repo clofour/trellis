@@ -12,8 +12,8 @@ func TestLegacyAllocationStatusLoadsSafely(t *testing.T) {
 		phase  lifecycle.Phase
 		health lifecycle.Health
 	}{
-		"pending": {lifecycle.PhasePlaced, lifecycle.HealthUnknown},
-		"healthy": {lifecycle.PhaseRunning, lifecycle.HealthHealthy},
+		"pending":   {lifecycle.PhasePlaced, lifecycle.HealthUnknown},
+		"healthy":   {lifecycle.PhaseRunning, lifecycle.HealthHealthy},
 		"unhealthy": {lifecycle.PhaseRunning, lifecycle.HealthUnhealthy},
 	} {
 		var allocation Allocation
@@ -21,7 +21,7 @@ func TestLegacyAllocationStatusLoadsSafely(t *testing.T) {
 			t.Fatal(err)
 		}
 		if allocation.ID != "legacy" || allocation.Generation != 1 || allocation.JobRevision != 2 || allocation.Phase != expected.phase || allocation.Health != expected.health {
-			t.Fatalf("legacy %s decoded as %#v", legacy, allocation)
+			t.Fatalf("legacy %s decoded as id=%s gen=%d rev=%d phase=%s health=%s", legacy, allocation.ID, allocation.Generation, allocation.JobRevision, allocation.Phase, allocation.Health)
 		}
 	}
 }

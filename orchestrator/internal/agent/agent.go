@@ -46,15 +46,15 @@ type Agent struct {
 }
 
 type Allocation struct {
-	ID        string
-	AllocationID string
-	Generation uint64
-	JobRevision int
-	ExecutionHash string
-	Restart       *spec.RestartPolicySpec
+	ID              string
+	AllocationID    string
+	Generation      uint64
+	JobRevision     int
+	ExecutionHash   string
+	Restart         *spec.RestartPolicySpec
 	RestartAttempts int
-	RestartWindow time.Time
-	Namespace string
+	RestartWindow   time.Time
+	Namespace       string
 
 	JobName   string
 	GroupName string
@@ -486,13 +486,13 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		env[k] = v
 	}
 	labels := map[string]string{
-		"trellis.cluster": a.cluster,
-		"trellis.allocation-id": schedulerID,
+		"trellis.cluster":               a.cluster,
+		"trellis.allocation-id":         schedulerID,
 		"trellis.allocation-generation": strconv.FormatUint(generation, 10),
-		"trellis.namespace": namespace,
-		"trellis.job": jobName,
-		"trellis.task-group": groupName,
-		"trellis.task": taskName,
+		"trellis.namespace":             namespace,
+		"trellis.job":                   jobName,
+		"trellis.task-group":            groupName,
+		"trellis.task":                  taskName,
 	}
 	_, err = a.runtime.Create(ctx, runtime.CreateOptions{
 		ID:     containerID,
@@ -519,7 +519,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 			return ""
 		}(),
 		DNSServers: a.dnsServers,
-		Labels: labels,
+		Labels:     labels,
 	})
 	if err != nil {
 		observed, inspectErr := a.runtime.Inspect(context.WithoutCancel(ctx), containerID)
@@ -554,13 +554,13 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	tracked = true
 
 	ready := &Allocation{
-		ID:        allocID,
-		AllocationID: schedulerID,
-		Generation: generation,
-		JobRevision: jobRevision,
+		ID:            allocID,
+		AllocationID:  schedulerID,
+		Generation:    generation,
+		JobRevision:   jobRevision,
 		ExecutionHash: executionHash,
-		Restart: restartPolicy,
-		Namespace: namespace,
+		Restart:       restartPolicy,
+		Namespace:     namespace,
 
 		JobName:   jobName,
 		GroupName: groupName,

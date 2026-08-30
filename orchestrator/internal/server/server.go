@@ -41,21 +41,21 @@ type Server struct {
 	state   *StateController
 	client  *client.AgentClient
 
-	cluster       *Cluster
-	nodes         map[uuid.UUID]*Node
-	jobs          map[string]*Job
-	allocations   []*Allocation
-	networkPool   netip.Prefix
-	tokenManager  *auth.TokenManager
-	catalog       *catalog.ServiceCatalog
-	serverAddr    string
-	joiner        ClusterJoiner
-	mu            sync.RWMutex
-	reconcileMu   sync.Mutex
-	mutationMu    sync.Mutex
-	controlEpoch  uint64
-	leaderSince   time.Time
-	now           func() time.Time
+	cluster      *Cluster
+	nodes        map[uuid.UUID]*Node
+	jobs         map[string]*Job
+	allocations  []*Allocation
+	networkPool  netip.Prefix
+	tokenManager *auth.TokenManager
+	catalog      *catalog.ServiceCatalog
+	serverAddr   string
+	joiner       ClusterJoiner
+	mu           sync.RWMutex
+	reconcileMu  sync.Mutex
+	mutationMu   sync.Mutex
+	controlEpoch uint64
+	leaderSince  time.Time
+	now          func() time.Time
 }
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
@@ -153,21 +153,21 @@ type Allocation struct {
 	TaskGroupName string
 	// ID is the durable scheduler identity. Name is retained for decoding state
 	// written before allocation IDs were explicit.
-	ID            string `json:"allocation_id,omitempty"`
-	Name          string `json:"name,omitempty"`
-	Generation    uint64 `json:"generation"`
-	JobRevision   int    `json:"job_revision"`
-	Tasks         []spec.TaskSpec
+	ID          string `json:"allocation_id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Generation  uint64 `json:"generation"`
+	JobRevision int    `json:"job_revision"`
+	Tasks       []spec.TaskSpec
 	// Task is retained only to reload allocations written by older versions.
-	Task     *spec.TaskSpec `json:",omitempty"`
+	Task *spec.TaskSpec `json:",omitempty"`
 	// Status is a compatibility projection for old clients and old persisted
 	// records. New code makes decisions from Phase and Health.
-	Status   AllocationStatus `json:"status,omitempty"`
-	Phase    lifecycle.Phase  `json:"phase,omitempty"`
-	Health   lifecycle.Health `json:"health,omitempty"`
+	Status AllocationStatus `json:"status,omitempty"`
+	Phase  lifecycle.Phase  `json:"phase,omitempty"`
+	Health lifecycle.Health `json:"health,omitempty"`
 	lifecycle.Diagnostic
 	Node     *Node
-	Revision int `json:"revision,omitempty"`
+	Revision int               `json:"revision,omitempty"`
 	Ports    []api.PortMapping `json:"ports,omitempty"`
 }
 
@@ -238,7 +238,23 @@ func (a *Allocation) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
-	*a = Allocation(decoded)
+	// Assign fields individually to avoid copying the sync.Mutex.
+	a.Namespace = decoded.Namespace
+	a.JobName = decoded.JobName
+	a.TaskGroupName = decoded.TaskGroupName
+	a.ID = decoded.ID
+	a.Name = decoded.Name
+	a.Generation = decoded.Generation
+	a.JobRevision = decoded.JobRevision
+	a.Tasks = decoded.Tasks
+	a.Task = decoded.Task
+	a.Status = decoded.Status
+	a.Phase = decoded.Phase
+	a.Health = decoded.Health
+	a.Diagnostic = decoded.Diagnostic
+	a.Node = decoded.Node
+	a.Revision = decoded.Revision
+	a.Ports = decoded.Ports
 	a.normalize(time.Now().UTC())
 	return nil
 }
@@ -383,7 +399,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		ID:   nodeRegistration.ID,
 		Host: nodeRegistration.Host,
 		Port: nodeRegistration.Port,
-		CPU: nodeRegistration.CPU, Memory: nodeRegistration.Memory,
+		CPU:  nodeRegistration.CPU, Memory: nodeRegistration.Memory,
 		OS: nodeRegistration.OS, Arch: nodeRegistration.Arch, Status: status,
 		WireGuardPublicKey: nodeRegistration.WireGuardPublicKey, WireGuardEndpoint: nodeRegistration.WireGuardEndpoint,
 		LastHeartbeat: s.now().UTC(),
@@ -436,10 +452,10 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	}
 	type statusInfo struct {
 		Generation uint64
-		Phase lifecycle.Phase
-		Health lifecycle.Health
-		Ports  []api.PortMapping
-		Tasks int
+		Phase      lifecycle.Phase
+		Health     lifecycle.Health
+		Ports      []api.PortMapping
+		Tasks      int
 	}
 	statuses := make(map[string]statusInfo, len(actual))
 	for _, a := range actual {
@@ -468,22 +484,22 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	}
 	var changed []*Allocation
 	for _, a := range owned {
-			a.mu.Lock()
-			a.normalize(time.Now().UTC())
-			info, ok := statuses[a.AllocationID()]
-			if !ok || (info.Generation != 0 && info.Generation != a.Generation) {
-				a.mu.Unlock()
-				continue // absence is not proof of loss or failure
-			}
-			if info.Phase.Valid() && lifecycle.CanTransition(a.Phase, info.Phase) {
-				_ = a.Transition(info.Phase, time.Now().UTC(), "", "")
-			}
-			_ = a.SetHealth(info.Health)
-			if len(info.Ports) > 0 {
-				a.Ports = info.Ports
-			}
-			changed = append(changed, a)
+		a.mu.Lock()
+		a.normalize(time.Now().UTC())
+		info, ok := statuses[a.AllocationID()]
+		if !ok || (info.Generation != 0 && info.Generation != a.Generation) {
 			a.mu.Unlock()
+			continue // absence is not proof of loss or failure
+		}
+		if info.Phase.Valid() && lifecycle.CanTransition(a.Phase, info.Phase) {
+			_ = a.Transition(info.Phase, time.Now().UTC(), "", "")
+		}
+		_ = a.SetHealth(info.Health)
+		if len(info.Ports) > 0 {
+			a.Ports = info.Ports
+		}
+		changed = append(changed, a)
+		a.mu.Unlock()
 	}
 	for _, allocation := range changed {
 		allocation.mu.Lock()

@@ -41,11 +41,11 @@ const shutdownTime = 10 * time.Second
 
 type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
-	RaftListen, RaftAdvertise, Join                           string
-	DataDir, Cluster, ClusterToken, ContainerdSock            string
-	WireGuardPool, WireGuardEndpoint                          string
-	WireGuardPort                                             int
-	DNSListen                                                 string
+	RaftListen, RaftAdvertise, Join                            string
+	DataDir, Cluster, ClusterToken, ContainerdSock             string
+	WireGuardPool, WireGuardEndpoint                           string
+	WireGuardPort                                              int
+	DNSListen                                                  string
 }
 
 func main() {

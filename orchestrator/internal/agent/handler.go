@@ -131,5 +131,6 @@ func operationError(err error) error {
 	case errors.Is(err, ErrExecutionConflict), errors.Is(err, ErrAllocationExists):
 		status, code = http.StatusConflict, api.OperationConflict
 	}
-	return echo.NewHTTPError(status, api.OperationResponse{Code: code, Message: err.Error()})
+	raw, _ := json.Marshal(api.OperationResponse{Code: code, Message: err.Error()})
+	return echo.NewHTTPError(status, string(raw))
 }

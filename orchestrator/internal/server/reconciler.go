@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/client"
 	"github.com/clofour/trellis/internal/lifecycle"
 	"github.com/clofour/trellis/internal/network"
 	"github.com/clofour/trellis/internal/spec"
