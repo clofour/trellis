@@ -12,6 +12,7 @@ Runnable Trellis job manifests that demonstrate common patterns.
 | [`secrets`](./secrets/) | Store encrypted secrets and inject them as environment variables or files |
 | [`sidecar`](./sidecar/) | Colocate a helper container (log shipper, exporter) with the main application |
 | [`volumes`](./volumes/) | Attach persistent local storage to a single-instance stateful workload |
+| [`patroni`](./patroni/) | Three-replica PostgreSQL HA cluster with Patroni leader election and automatic failover |
 | [`wordpress`](./wordpress/) | Multi-job application with a separate database job |
 
 ## Prerequisites

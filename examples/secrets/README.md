@@ -26,12 +26,12 @@ secrets:
 
   - name: tls-cert
     target: file
-    path: /run/secrets/tls.crt
+    path: /run/trellis-secrets/tls.crt
     mode: 0400
 ```
 
 `db-password` is injected as `$DB_PASSWORD`. `tls-cert` is written to
-`/run/secrets/tls.crt` with mode `0400` (owner-read only).
+`/run/trellis-secrets/tls.crt` with mode `0400` (owner-read only).
 
 ## Secret reference fields
 

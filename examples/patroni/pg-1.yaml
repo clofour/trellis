@@ -1,0 +1,42 @@
+namespace: acme
+name: pg-1
+task_groups:
+  - name: postgres
+    count: 1
+    network_mode: host
+    constraints:
+      - attribute: pg-node
+        value: "1"
+    tasks:
+      - name: postgres
+        image: ghcr.io/zalando/spilo-16:3.2-p1
+        resources:
+          cpu: 2000
+          memory: 2147483648
+        health_check:
+          type: http
+          port: 8008
+          path: /health
+        env:
+          # Cluster identity — must be identical across all three pg-N jobs.
+          SCOPE: pg-cluster
+          PATRONI_NAME: pg-1
+
+          # Replace with the actual IP of the node labelled pg-node=1.
+          POD_IP: 10.0.1.10
+
+          # Etcd DCS endpoint.
+          ETCD_HOSTS: 10.0.1.10:2379
+
+          # Patroni REST API.
+          PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+        secrets:
+          - name: pg-superuser-password
+            target: env
+            env: PGPASSWORD_SUPERUSER
+          - name: pg-replication-password
+            target: env
+            env: PGPASSWORD_REPLICATION
+        volumes:
+          - name: pgdata
+            path: /home/postgres/pgdata
