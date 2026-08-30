@@ -11,12 +11,15 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -59,8 +62,8 @@ func main() {
 	f := root.Flags()
 	f.StringVar(&cfg.AgentListen, "agent-listen", ":8127", "Agent API listen address")
 	f.StringVar(&cfg.AgentAdvertise, "agent-advertise", "", "Agent address advertised to the cluster")
-	f.StringVar(&cfg.ServerListen, "server-listen", ":8128", "Leader API listen address")
-	f.StringVar(&cfg.ServerAdvertise, "server-advertise", "", "Leader API address advertised to the cluster")
+	f.StringVar(&cfg.ServerListen, "server-listen", ":8128", "Control-plane API listen address")
+	f.StringVar(&cfg.ServerAdvertise, "server-advertise", "", "Control-plane API address advertised to the cluster")
 	f.StringVar(&cfg.RaftListen, "raft-listen", ":8129", "Raft consensus transport listen address")
 	f.StringVar(&cfg.RaftAdvertise, "raft-advertise", "", "Raft consensus transport advertised address")
 	f.StringVar(&cfg.Join, "join", "", "Address of an existing cluster member to join (server API address)")
@@ -260,6 +263,17 @@ func run(parent context.Context, cfg *config) error {
 	}()
 
 	elector := election.NewRaftElector(raftStore.Raft(), election.Leader{NodeID: id, Address: cfg.ServerAdvertise})
+	leaderHTTP := echo.New()
+	leaderHTTP.Use(middleware.Recover(), leaderAuthMiddleware(cfg.ClusterToken, control.TokenManager()))
+	server.NewHandler(control).Register(leaderHTTP)
+	apiProxy := newControlPlaneProxy(elector, cfg.ServerAdvertise, leaderHTTP, newHTTPTransport(clientTLS), log)
+	go func() {
+		if err := (echo.StartConfig{Address: cfg.ServerListen, TLSConfig: leaderServerTLS, GracefulTimeout: shutdownTime}).Start(ctx, apiProxy); err != nil && ctx.Err() == nil {
+			log.Error("control-plane API stopped", "error", err)
+			stop()
+		}
+	}()
+
 	events := make(chan election.Event)
 	go func() {
 		if err := elector.Run(ctx, events); err != nil {
@@ -270,7 +284,6 @@ func run(parent context.Context, cfg *config) error {
 	go watchLeader(ctx, log, elector, leaderClient)
 
 	var leaderCancel context.CancelFunc
-	var leaderDone <-chan struct{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -297,30 +310,12 @@ func run(parent context.Context, cfg *config) error {
 				leaderCancel = cancel
 				log.Info("leadership acquired", "node_id", id, "address", cfg.ServerAdvertise)
 				control.Run(termCtx)
-				leaderHTTP := echo.New()
-				leaderHTTP.Use(middleware.Recover(), leaderAuthMiddleware(cfg.ClusterToken, control.TokenManager()))
-				server.NewHandler(control).Register(leaderHTTP)
-				done := make(chan struct{})
-				leaderDone = done
-				go func() {
-					defer close(done)
-					if err := (echo.StartConfig{Address: cfg.ServerListen, TLSConfig: leaderServerTLS, GracefulTimeout: shutdownTime}).Start(termCtx, leaderHTTP); err != nil && termCtx.Err() == nil {
-						log.Error("leader API stopped", "error", err)
-						cancel()
-					}
-				}()
+				apiProxy.SetLeaderActive(true)
 			} else if leaderCancel != nil {
 				log.Warn("leadership lost", "node_id", id)
+				apiProxy.SetLeaderActive(false)
 				leaderCancel()
-				if leaderDone != nil {
-					select {
-					case <-leaderDone:
-					case <-time.After(shutdownTime):
-						log.Error("leader API shutdown timed out")
-					}
-				}
 				leaderCancel = nil
-				leaderDone = nil
 			}
 		}
 	}
@@ -522,6 +517,75 @@ func watchLeader(ctx context.Context, log *slog.Logger, elector election.Elector
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+// controlPlaneProxy keeps the public API available on every node while ensuring
+// that only the current leader executes requests. Authentication remains an
+// end-to-end concern of the leader: the proxy neither interprets credentials nor
+// derives an identity from the request's network origin.
+type controlPlaneProxy struct {
+	elector    election.Elector
+	self       string
+	local      http.Handler
+	transport  http.RoundTripper
+	log        *slog.Logger
+	leaderLive atomic.Bool
+}
+
+func newControlPlaneProxy(elector election.Elector, self string, local http.Handler, transport http.RoundTripper, log *slog.Logger) *controlPlaneProxy {
+	return &controlPlaneProxy{elector: elector, self: normalizeAPIAddress(self), local: local, transport: transport, log: log}
+}
+
+func (p *controlPlaneProxy) SetLeaderActive(active bool) { p.leaderLive.Store(active) }
+
+func (p *controlPlaneProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	leader, err := p.elector.Current(r.Context())
+	if err != nil || leader == nil || leader.Address == "" {
+		http.Error(w, "control-plane leader unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	target := normalizeAPIAddress(leader.Address)
+	if target == p.self {
+		if !p.leaderLive.Load() {
+			http.Error(w, "control-plane leader is not ready", http.StatusServiceUnavailable)
+			return
+		}
+		p.local.ServeHTTP(w, r)
+		return
+	}
+
+	targetURL, err := url.Parse(target)
+	if err != nil {
+		http.Error(w, "invalid control-plane leader address", http.StatusServiceUnavailable)
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy.Transport = p.transport
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		p.log.Error("proxy request to leader failed", "leader", target, "error", err)
+		http.Error(w, "control-plane leader unavailable", http.StatusServiceUnavailable)
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+func normalizeAPIAddress(address string) string {
+	address = strings.TrimRight(address, "/")
+	if !strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://") {
+		address = "https://" + address
+	}
+	return address
+}
+
+func newHTTPTransport(tlsConfig *tls.Config) *http.Transport {
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          100,
+		TLSClientConfig:       tlsConfig,
 	}
 }
 
