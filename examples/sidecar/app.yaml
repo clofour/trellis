@@ -2,7 +2,11 @@ namespace: acme
 name: api
 task_groups:
   - name: server
-    count: 3
+    # This example uses a single replica because both tasks intentionally mount
+    # the same operator-provided host volume. For replicated workloads, give
+    # each replica an appropriate shared-storage design instead of sharing one
+    # host directory across every replica.
+    count: 1
     tasks:
       # Primary application container.
       - name: app
@@ -22,10 +26,10 @@ task_groups:
         volumes:
           - name: logs
             path: /var/log/api
+            host_volume: api-logs
 
-      # Log-shipping sidecar — runs alongside the app on the same host.
-      # Both tasks share the same allocation and can communicate over
-      # localhost or via shared volumes.
+      # Log-shipping sidecar — colocated with the app on the same node and
+      # reading the same explicitly configured host volume.
       - name: log-shipper
         image: fluent/fluent-bit:3
         resources:
@@ -36,4 +40,5 @@ task_groups:
         volumes:
           - name: logs
             path: /var/log/api
+            host_volume: api-logs
             read_only: true
