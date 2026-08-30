@@ -133,3 +133,8 @@ type RaftJoinRequest struct {
 	ID          string `json:"id"`
 	RaftAddress string `json:"raft_address"`
 }
+
+type RaftJoinResponse struct {
+	CACert string `json:"ca_cert"`
+	CAKey  string `json:"ca_key"`
+}
