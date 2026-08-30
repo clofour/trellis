@@ -215,6 +215,7 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 		OS:                 request.OS,
 		Arch:               request.Arch,
 		Labels:             request.Labels,
+		Volumes:            request.Volumes,
 		WireGuardPublicKey: request.WireGuardPublicKey,
 		WireGuardEndpoint:  request.WireGuardEndpoint,
 	})
@@ -238,7 +239,7 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	err = h.server.Heartbeat(ctx, uuid, request.Allocations)
+	err = h.server.Heartbeat(ctx, uuid, request.Allocations, request.Volumes)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to process heartbeat")
 	}
@@ -353,5 +354,6 @@ func (h *Handler) convertNode(node *Node) *api.NodeResponse {
 		CPU:           node.CPU,
 		Memory:        node.Memory,
 		Labels:        node.Labels,
+		Volumes:       node.Volumes,
 	}
 }

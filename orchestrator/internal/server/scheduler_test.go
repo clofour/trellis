@@ -25,6 +25,16 @@ func TestScheduleBalancesAndSkipsUnhealthyNodes(t *testing.T) {
 	}
 }
 
+func TestScheduleRequiresAdvertisedHostVolumes(t *testing.T) {
+	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"uploads"}}
+	b := &Node{ID: uuid.New(), Status: NodeStatusHealthy}
+	tasks := []spec.TaskSpec{{Name: "app", Volumes: []spec.VolumeSpec{{Name: "data", Path: "/data", HostVolume: "uploads"}}}}
+	placements := Schedule(&PlacementIntent{Count: 1, Nodes: []*Node{b, a}, Tasks: tasks})
+	if len(placements) != 1 || placements[0].NodeID != a.ID {
+		t.Fatalf("expected placement on volume-advertising node, got %#v", placements)
+	}
+}
+
 func TestScheduleRespectsResourcesAndDrainingNodes(t *testing.T) {
 	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, CPU: 1000, Memory: 1024}
 	b := &Node{ID: uuid.New(), Status: NodeStatusHealthy, CPU: 2000, Memory: 2048}

@@ -122,6 +122,8 @@ type HealthCheckSpec struct {
 }
 
 type VolumeSpec struct {
-	Name string `yaml:"name" json:"name"`
-	Path string `yaml:"path" json:"path"`
+	Name       string `yaml:"name" json:"name"`
+	Path       string `yaml:"path" json:"path"`
+	HostVolume string `yaml:"host_volume,omitempty" json:"host_volume,omitempty"`
+	ReadOnly   bool   `yaml:"read_only,omitempty" json:"read_only,omitempty"`
 }

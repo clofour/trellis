@@ -109,6 +109,7 @@ type NodeRegistration struct {
 	OS                 string
 	Arch               string
 	Labels             map[string]string
+	Volumes            []string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
 }
@@ -124,6 +125,7 @@ type Node struct {
 	OS                 string
 	Arch               string
 	Labels             map[string]string
+	Volumes            []string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
 }
@@ -145,6 +147,7 @@ type NodeSummary struct {
 	OS                 string
 	Arch               string
 	Labels             map[string]string
+	Volumes            []string
 	Status             NodeStatus
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
@@ -440,6 +443,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 		Port: nodeRegistration.Port,
 		CPU:  nodeRegistration.CPU, Memory: nodeRegistration.Memory,
 		OS: nodeRegistration.OS, Arch: nodeRegistration.Arch, Labels: nodeRegistration.Labels, Status: status,
+		Volumes:            nodeRegistration.Volumes,
 		WireGuardPublicKey: nodeRegistration.WireGuardPublicKey, WireGuardEndpoint: nodeRegistration.WireGuardEndpoint,
 		LastHeartbeat: s.now().UTC(),
 	})
@@ -462,12 +466,13 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 	node.CPU, node.Memory = nodeRegistration.CPU, nodeRegistration.Memory
 	node.OS, node.Arch = nodeRegistration.OS, nodeRegistration.Arch
 	node.Labels = nodeRegistration.Labels
+	node.Volumes = append([]string(nil), nodeRegistration.Volumes...)
 	node.WireGuardPublicKey, node.WireGuardEndpoint = nodeRegistration.WireGuardPublicKey, nodeRegistration.WireGuardEndpoint
 
 	return nil
 }
 
-func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus) error {
+func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus, volumes ...[]string) error {
 	s.mu.Lock()
 	node, ok := s.nodes[nodeID]
 	if !ok {
@@ -479,6 +484,9 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 		node.Status = NodeStatusHealthy
 	}
 	node.LastHeartbeat = time.Now()
+	if len(volumes) != 0 {
+		node.Volumes = append([]string(nil), volumes[0]...)
+	}
 	owned := make([]*Allocation, 0)
 	for _, allocation := range s.allocations {
 		if allocation.Node == node {

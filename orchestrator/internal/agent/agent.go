@@ -795,6 +795,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 	for {
 		if !registered {
 			if a.server.Ready() {
+				a.nodeInfo.Volumes = a.volumes.AvailableHostVolumes()
 				if _, err := a.server.RegisterNode(ctx, &a.nodeInfo); err != nil {
 					a.log.Error("register node failed", "error", err)
 				} else {
@@ -826,6 +827,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 				NodeID:      a.nodeID,
 				Timestamp:   time.Now(),
 				Allocations: actual,
+				Volumes:     a.volumes.AvailableHostVolumes(),
 			})
 			if err != nil {
 				a.log.Error("send heartbeat failed", "error", err)
