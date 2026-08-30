@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/catalog"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
@@ -178,7 +179,14 @@ func (h *Handler) handleListDiscovery(c *echo.Context) error {
 	if requestNamespace(c) != "" {
 		return echo.NewHTTPError(http.StatusForbidden, "internal discovery is cluster-scoped")
 	}
-	entries := h.server.ListServices("", nil)
+
+	var filter *catalog.ListFilter
+	job := c.QueryParam("job")
+	label := c.QueryParam("label")
+	if job != "" || label != "" {
+		filter = &catalog.ListFilter{Job: job, Label: label}
+	}
+	entries := h.server.ListServices("", filter)
 	if entries == nil {
 		entries = api.ServiceListResponse{}
 	}
