@@ -7,9 +7,10 @@ DATA_DIR="/var/lib/trellis/data"
 CONFIG_DIR="/etc/trellis"
 ENV_FILE="${CONFIG_DIR}/trellis.env"
 SERVICE_FILE="/etc/systemd/system/trellis-node.service"
-UI_DIR="/opt/trellis/ui"
+UI_ENV_FILE="${CONFIG_DIR}/trellis-ui.env"
 UI_SERVICE_FILE="/etc/systemd/system/trellis-ui.service"
-UI_USER="trellis-ui"
+UI_CONTAINER_NAMESPACE="trellis-ui"
+UI_CONTAINER_ID="trellis-ui"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
@@ -156,14 +157,6 @@ https://storage.googleapis.com/gvisor/releases release main" \
     runsc install
     systemctl restart containerd
     info "gVisor installed and containerd restarted."
-}
-
-install_nodejs() {
-    info "Installing Node.js 22 LTS from NodeSource..."
-    detect_distro
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
-    apt-get install -y -qq nodejs
-    info "Node.js $(node --version) installed."
 }
 
 # ── Preflight checks ────────────────────────────────────────────────
@@ -316,62 +309,37 @@ fi
 
 install_ui=false
 if confirm "Install the web dashboard?" "n"; then
-    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-        info "Node.js is required for the dashboard."
-        confirm "Install Node.js 22 LTS automatically?" "y" \
-            || error "Node.js is required for the dashboard. Install Node.js 20+ and re-run."
-        install_nodejs
-    fi
+    CTR_BIN="$(command -v ctr || true)"
+    [ -n "$CTR_BIN" ] || error "The dashboard requires the ctr client bundled with containerd."
 
-    node_major="$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')"
-    if [ "$node_major" -lt 20 ]; then
-        info "Node.js 20 or later is required (found v$(node --version)). Installing Node.js 22 LTS..."
-        install_nodejs
-    fi
-
-    ui_url="$(printf '%s' "$release_json" \
-        | grep -oP '"browser_download_url":\s*"\K[^"]*trellis_ui\.tar\.gz')" \
-        || error "Release is missing the trellis_ui.tar.gz asset."
-
-    info "Downloading dashboard source..."
-    curl -fSL -o "${tmp}/trellis_ui.tar.gz" "$ui_url"
-
-    info "Installing dashboard to ${UI_DIR}..."
-    install -d -m 0755 "$UI_DIR"
-    tar -xzf "${tmp}/trellis_ui.tar.gz" -C "$UI_DIR"
-
-    info "Installing npm dependencies and building..."
-    (cd "$UI_DIR" && npm ci --ignore-scripts --no-audit --no-fund && npm run build) \
-        || error "Dashboard build failed."
+    release_tag="$(printf '%s' "$release_json" \
+        | grep -oP '"tag_name":\s*"\K[^"]+')" \
+        || error "Latest release is missing a tag name."
+    ui_image="ghcr.io/clofour/trellis-ui:${release_tag}"
 
     prompt api_url "Trellis leader API URL" "http://${advertise_host}:8128"
 
     cluster_token="$(grep -oP '(?<=TRELLIS_TOKEN=).+' "$ENV_FILE")"
-    cat > "${UI_DIR}/.env.local" <<ENVEOF
+    cat > "$UI_ENV_FILE" <<ENVEOF
 TRELLIS_API_URL=${api_url}
 TRELLIS_API_TOKEN=${cluster_token}
 ENVEOF
+    chmod 600 "$UI_ENV_FILE"
 
-    if ! id "$UI_USER" >/dev/null 2>&1; then
-        useradd --system --no-create-home --shell /usr/sbin/nologin "$UI_USER"
-    fi
-    chown -R "${UI_USER}:${UI_USER}" "$UI_DIR"
-    chmod 600 "${UI_DIR}/.env.local"
+    info "Pulling dashboard image ${ui_image}..."
+    "$CTR_BIN" --namespace "$UI_CONTAINER_NAMESPACE" images pull "$ui_image" \
+        || error "Failed to pull dashboard image ${ui_image}."
 
     info "Writing systemd unit to ${UI_SERVICE_FILE}..."
     cat > "$UI_SERVICE_FILE" <<EOF
 [Unit]
 Description=Trellis dashboard
-After=network-online.target trellis-node.service
-Wants=network-online.target
+After=containerd.service network-online.target trellis-node.service
+Wants=containerd.service network-online.target
 
 [Service]
 Type=simple
-User=${UI_USER}
-Group=${UI_USER}
-WorkingDirectory=${UI_DIR}
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/npm run start
+ExecStart=${CTR_BIN} --namespace ${UI_CONTAINER_NAMESPACE} run --rm --net-host --env-file ${UI_ENV_FILE} ${ui_image} ${UI_CONTAINER_ID} env HOSTNAME=0.0.0.0 node server.js
 Restart=on-failure
 RestartSec=5s
 
@@ -382,10 +350,12 @@ EOF
     systemctl daemon-reload
 
     if confirm "Start the dashboard now?" "y"; then
-        systemctl enable --now trellis-ui
+        systemctl enable trellis-ui
+        systemctl restart trellis-ui
         info "Dashboard is running at http://localhost:3000"
     else
         systemctl enable trellis-ui
+        systemctl stop trellis-ui 2>/dev/null || true
         info "Dashboard is enabled but not started."
         info "Start it with: sudo systemctl start trellis-ui"
     fi
