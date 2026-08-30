@@ -19,6 +19,9 @@ task_groups:
   - name: web
     count: 2
     runtime: runsc
+    restart:
+      max_restarts: 5
+      window: 10m
     tasks:
       - name: server
         image: docker.io/library/nginx:alpine
@@ -37,6 +40,9 @@ task_groups:
           type: http
           port: 80
           path: /
+          interval: 10s
+          timeout: 5s
+          threshold: 3
 ```
 
 ## Top-level fields
@@ -63,6 +69,11 @@ include `_`, `.`, and `-`.
 | `labels` | No | Arbitrary key-value metadata attached to the task group. Allocation queries can filter by label key or key/value; labels do not create a separate service resource. |
 | `network_mode` | No | Set to `host` to give the group's containers direct access to the host's network namespace instead of an isolated one. |
 | `api_access` | No | When `true`, Trellis injects `TRELLIS_TOKEN` and `TRELLIS_ADDR` environment variables into the group's containers. The token is scoped to the job's namespace and can be used to call documented namespace-scoped control-plane APIs, including allocation queries. |
+| `restart` | No | Restart budget for stopped tasks. Defaults to 3 restarts in a 10-minute window. |
+
+When `restart` is present, `max_restarts` must be non-negative and `window`
+must be a positive duration. Setting `max_restarts: 0` disables automatic
+restarts. Durations use values such as `30s`, `5m`, or `1h`.
 
 Each replica is one scheduling and colocation unit. Resource requests for all
 tasks in a group are therefore multiplied by `count` across the job.
@@ -121,5 +132,11 @@ health_check:
 ```
 
 HTTP and TCP checks require a port from 1 through 65535. Script checks require
-a non-empty command.
+a non-empty command. All check types accept these optional timing fields:
+
+| Field | Default | Rules |
+| --- | --- | --- |
+| `interval` | `10s` | Time between checks; must be a positive duration when set. |
+| `timeout` | `5s` | Maximum time for one check; must be a positive duration when set. |
+| `threshold` | `3` | Consecutive passes or failures required to change health state; must be at least 1 when set. |
 

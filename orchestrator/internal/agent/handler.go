@@ -72,7 +72,7 @@ func (h *Handler) handleRun(c *echo.Context) error {
 	for i := range request.Tasks {
 		task := &request.Tasks[i]
 		id := request.Name + "-" + task.Name
-		err = h.agent.RunAllocation(ctx, id, request.Namespace, request.JobName, request.GroupName, task.Name, task, request.Runtime, request.WireGuard, request.NetworkPlan, request.NetworkMode, request.EnvOverrides)
+		err = h.agent.RunAllocation(ctx, id, request.Namespace, request.JobName, request.GroupName, task.Name, task, request.Runtime, request.WireGuard, request.NetworkPlan, request.NetworkMode, request.EnvOverrides, request.Restart)
 		if err != nil {
 			for _, startedID := range started {
 				_ = h.agent.StopAllocation(context.WithoutCancel(ctx), startedID)
