@@ -74,10 +74,10 @@ reports it to the leader, and participates in restart handling. Desired,
 running, and healthy counts are available through `jobs status` and the
 dashboard.
 
-## Service discovery
+## DNS discovery
 
-Every container receives automatic DNS-based service discovery. Each node runs
-a built-in DNS resolver that resolves names of the form
+Every container receives automatic DNS-based discovery. Each node runs a
+built-in DNS resolver that resolves names of the form
 `<job>.<namespace>.trellis` to the host addresses of healthy allocations for
 that job. Containers' `/etc/resolv.conf` is configured to use this resolver
 automatically.
@@ -86,26 +86,19 @@ For example, a backend container can reach a database job named `postgres` in
 namespace `acme` at `postgres.acme.trellis`. When the database has multiple
 healthy replicas, the DNS response includes all of their addresses.
 
-The resolver polls the leader's service catalog and caches results locally on
-each node, so DNS lookups are fast and do not depend on the leader being
-reachable for every query.
+The resolver polls an internal discovery endpoint on the leader and caches the
+result locally on each node, so DNS lookups are fast and do not depend on the
+leader being reachable for every query. The discovery records are synthesized
+from allocation health and placement; they are scheduler implementation data,
+not a user-facing `Service` resource.
 
 ### API access
 
 Task groups with `api_access: true` receive `TRELLIS_TOKEN` and `TRELLIS_ADDR`
 environment variables. The token is scoped to the job's namespace and allows
-the container to query the control-plane API directly.
-
-The `GET /v1/services` endpoint returns all healthy allocations in the
-namespace, including their labels, host addresses, and port mappings. It
-supports optional `?job=<name>` and `?label=<key>:<value>` query parameters
-for filtering. This enables richer service-discovery patterns beyond DNS, such
-as building dynamic reverse-proxy configurations.
-
-Labels on task groups are arbitrary key-value metadata carried through to the
-services API. They are the recommended mechanism for building conventions such
-as reverse-proxy routing rules. See the [reverse proxy example](../examples/reverse-proxy/)
-for a complete walkthrough.
+the container to call documented control-plane APIs directly. Internal
+scheduler endpoints, including the DNS discovery feed, are not part of that
+namespace-scoped API surface.
 
 ## Network model
 
