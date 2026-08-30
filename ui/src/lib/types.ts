@@ -8,6 +8,13 @@ export interface Node {
   last_heartbeat: string;
   cpu: number;
   memory: number;
+  labels?: Record<string, string>;
+  volumes?: string[];
+}
+
+export interface PortMapping {
+  host_port: number;
+  container_port: number;
 }
 
 export type AllocationStatus =
@@ -27,16 +34,33 @@ export type AllocationHealth = "unknown" | "healthy" | "unhealthy";
 
 export interface Allocation {
   id: string;
+  job?: string;
   group: string;
   task: string;
+  namespace?: string;
   node_id: string;
+  labels?: Record<string, string>;
+  address?: string;
+  ports?: PortMapping[];
   status: AllocationStatus;
   phase: AllocationPhase;
   health: AllocationHealth;
+  draining?: boolean;
   generation: number;
   job_revision: number;
+  created_at?: string;
+  last_transition_at?: string;
   reason?: string;
   message?: string;
+  attempt?: number;
+  next_retry_at?: string | null;
+}
+
+export interface AllocationEvent {
+  phase: AllocationPhase;
+  reason?: string;
+  message?: string;
+  at: string;
 }
 
 export interface Job {
@@ -49,19 +73,59 @@ export interface Job {
   spec?: JobSpec;
 }
 
-// Job spec types (mirrors the orchestrator spec package)
+export interface SecretMetadata {
+  namespace: string;
+  name: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  ciphertext_size: number;
+  key_id: string;
+}
+
+// Job spec types. Keep these aligned with orchestrator/internal/spec/types.go.
 
 export interface JobSpec {
   name: string;
-  namespace?: string;
+  namespace: string;
+  network?: NetworkSpec;
   task_groups: TaskGroupSpec[];
 }
+
+export interface NetworkSpec {
+  wireguard: boolean;
+}
+
+export type Runtime = "" | "runc" | "runsc";
+export type NetworkMode = "" | "host";
+export type UpdateStrategy = "" | "recreate" | "rolling";
 
 export interface TaskGroupSpec {
   name: string;
   count: number;
-  api_access?: boolean;
+  runtime?: Runtime;
   tasks: TaskSpec[];
+  labels?: Record<string, string>;
+  network_mode?: NetworkMode;
+  api_access?: boolean;
+  restart?: RestartPolicySpec;
+  constraints?: ConstraintSpec[];
+  update?: UpdateSpec;
+}
+
+export interface ConstraintSpec {
+  attribute: string;
+  value: string;
+}
+
+export interface RestartPolicySpec {
+  max_restarts: number;
+  window: string;
+}
+
+export interface UpdateSpec {
+  strategy: UpdateStrategy;
+  max_parallel?: number;
 }
 
 export interface TaskSpec {
@@ -69,13 +133,32 @@ export interface TaskSpec {
   image: string;
   env?: Record<string, string>;
   ports?: PortSpec[];
+  volumes?: VolumeSpec[];
   resources?: ResourcesSpec;
   health_check?: HealthCheckSpec;
+  secrets?: SecretRefSpec[];
 }
 
 export interface PortSpec {
   host_port: number;
   container_port: number;
+}
+
+export interface VolumeSpec {
+  name: string;
+  path: string;
+  host_volume?: string;
+  read_only?: boolean;
+}
+
+export type SecretTarget = "env" | "file";
+
+export interface SecretRefSpec {
+  name: string;
+  target: SecretTarget;
+  env?: string;
+  path?: string;
+  mode?: number;
 }
 
 export interface ResourcesSpec {
@@ -88,4 +171,7 @@ export interface HealthCheckSpec {
   port: number;
   path?: string;
   command?: string[];
+  interval?: string;
+  timeout?: string;
+  threshold?: number;
 }
