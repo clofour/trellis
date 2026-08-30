@@ -28,7 +28,11 @@ func NewJobsLogsCmd() *cobra.Command {
 	var follow bool
 	var tail int
 	cmd := &cobra.Command{Use: "logs ALLOCATION", Args: cobra.ExactArgs(1), Short: "Stream allocation logs", RunE: func(cmd *cobra.Command, args []string) error {
-		logs, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace).AllocationLogs(cmd.Context(), args[0], follow, tail)
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		logs, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).AllocationLogs(cmd.Context(), args[0], follow, tail)
 		if err != nil {
 			return err
 		}
@@ -43,7 +47,11 @@ func NewJobsLogsCmd() *cobra.Command {
 
 func NewJobsStatusCmd() *cobra.Command {
 	return &cobra.Command{Use: "status NAME", Args: cobra.ExactArgs(1), Short: "Show desired and actual job state", RunE: func(cmd *cobra.Command, args []string) error {
-		status, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace).GetJob(cmd.Context(), args[0])
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		status, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).GetJob(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -57,7 +65,11 @@ func NewJobsStatusCmd() *cobra.Command {
 
 func NewJobsDestroyCmd() *cobra.Command {
 	return &cobra.Command{Use: "destroy NAME", Args: cobra.ExactArgs(1), Short: "Destroy a job and its allocations", RunE: func(cmd *cobra.Command, args []string) error {
-		if err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace).DeleteJob(cmd.Context(), args[0]); err != nil {
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		if err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).DeleteJob(cmd.Context(), args[0]); err != nil {
 			return err
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Job destroyed successfully.")
@@ -87,7 +99,12 @@ func NewJobsApplyCmd() *cobra.Command {
 				return fmt.Errorf("validate: %w", err)
 			}
 
-			serverClient := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, job.Namespace)
+			tlsCfg, err := buildCLITLSConfig()
+			if err != nil {
+				return fmt.Errorf("build TLS config: %w", err)
+			}
+
+			serverClient := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, job.Namespace, tlsCfg)
 
 			err = serverClient.SubmitJob(cmd.Context(), job)
 			if err != nil {

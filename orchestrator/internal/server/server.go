@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -48,6 +49,7 @@ type Server struct {
 	catalog       *catalog.ServiceCatalog
 	serverAddr    string
 	joiner        ClusterJoiner
+	clientTLS     *tls.Config
 	mu            sync.RWMutex
 	reconcileMu   sync.Mutex
 	mutationMu    sync.Mutex
@@ -197,7 +199,7 @@ func (s *Server) InitWithToken(ctx context.Context, configuredToken string) (str
 		if token == "" || !validateToken(cluster, token) {
 			return "", fmt.Errorf("cluster token is missing or does not match cluster")
 		}
-		s.client = client.NewAgentClient(token)
+		s.client = client.NewAgentClient(token, s.clientTLS)
 		return "", nil
 	}
 
@@ -228,9 +230,23 @@ func (s *Server) InitWithToken(ctx context.Context, configuredToken string) (str
 	}
 
 	s.cluster = cluster
-	s.client = client.NewAgentClient(token)
+	s.client = client.NewAgentClient(token, s.clientTLS)
 
 	return token, nil
+}
+
+func (s *Server) SetClientTLS(cfg *tls.Config) {
+	s.clientTLS = cfg
+}
+
+func (s *Server) ClusterCA() (certPEM, keyPEM string, err error) {
+	if err := s.storage.Get("tls/ca-cert", &certPEM); err != nil {
+		return "", "", fmt.Errorf("load CA cert: %w", err)
+	}
+	if err := s.storage.Get("tls/ca-key", &keyPEM); err != nil {
+		return "", "", fmt.Errorf("load CA key: %w", err)
+	}
+	return certPEM, keyPEM, nil
 }
 
 func validateToken(cluster *Cluster, token string) bool {

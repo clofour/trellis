@@ -28,7 +28,11 @@ func NewNodesDrainCmd() *cobra.Command {
 		if err != nil {
 			return fmt.Errorf("invalid node ID: %w", err)
 		}
-		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr).DrainNode(cmd.Context(), id); err != nil {
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).DrainNode(cmd.Context(), id); err != nil {
 			return err
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Node drain started.")
@@ -41,7 +45,11 @@ func NewNodesListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List nodes in a cluster",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr)
+			tlsCfg, err := buildCLITLSConfig()
+			if err != nil {
+				return err
+			}
+			serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg)
 
 			nodes, err := serverClient.ListNodes(cmd.Context())
 			if err != nil {
