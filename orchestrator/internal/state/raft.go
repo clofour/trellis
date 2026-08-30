@@ -155,9 +155,9 @@ func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 	}, nil
 }
 
-func (r *RaftStore) Raft() *raft.Raft        { return r.raft }
-func (r *RaftStore) LocalAddr() string        { return string(r.transport.LocalAddr()) }
-func (r *RaftStore) HadExistingState() bool   { return r.hadExistingState }
+func (r *RaftStore) Raft() *raft.Raft       { return r.raft }
+func (r *RaftStore) LocalAddr() string      { return string(r.transport.LocalAddr()) }
+func (r *RaftStore) HadExistingState() bool { return r.hadExistingState }
 
 func (r *RaftStore) Get(ctx context.Context, key string) ([]byte, error) {
 	return r.fsm.store.Get(ctx, key)

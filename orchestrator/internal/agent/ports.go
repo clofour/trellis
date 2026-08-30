@@ -127,10 +127,24 @@ func (p *PortManager) Release(port *runtime.Port) error {
 
 	_, ok := p.claims[hostPort]
 	if !ok {
-		return fmt.Errorf("unclaimed port %d", hostPort)
+		return nil
 	}
 
 	delete(p.claims, hostPort)
 
+	return nil
+}
+
+func (p *PortManager) Adopt(port *runtime.Port) error {
+	if port == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if existing := p.claims[port.HostPort]; existing != nil && existing.ContainerPort != port.ContainerPort {
+		return fmt.Errorf("port %d already belongs to another allocation", port.HostPort)
+	}
+	copy := *port
+	p.claims[port.HostPort] = &copy
 	return nil
 }

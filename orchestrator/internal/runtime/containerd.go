@@ -105,6 +105,9 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 		containerd.WithNewSnapshot(options.ID, image),
 		containerd.WithNewSpec(ociSpecOpts...),
 	}
+	if len(options.Labels) > 0 {
+		containerOpts = append(containerOpts, containerd.WithContainerLabels(options.Labels))
+	}
 	if options.Runtime != "" {
 		if options.Runtime != "runsc" {
 			return "", fmt.Errorf("unsupported runtime %q", options.Runtime)
@@ -303,6 +306,7 @@ func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*C
 	result := &ContainerInfo{
 		ID:     info.ID,
 		Status: StatusUnknown,
+		Labels: info.Labels,
 	}
 
 	task, err := container.Task(ctx, nil)
@@ -331,6 +335,31 @@ func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*C
 		result.Status = StatusUnknown
 	}
 
+	return result, nil
+}
+
+func (c *ContainerdRuntime) ListManaged(ctx context.Context, cluster string) ([]ContainerInfo, error) {
+	ctx = c.withNamespace(ctx)
+	containers, err := c.client.Containers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	result := make([]ContainerInfo, 0, len(containers))
+	for _, container := range containers {
+		info, err := container.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("inspect container %s: %w", container.ID(), err)
+		}
+		if info.Labels["trellis.cluster"] != cluster {
+			continue
+		}
+		observed, err := c.Inspect(ctx, container.ID())
+		if err != nil {
+			return nil, err
+		}
+		observed.Labels = info.Labels
+		result = append(result, *observed)
+	}
 	return result, nil
 }
 

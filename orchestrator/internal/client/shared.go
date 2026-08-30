@@ -18,7 +18,7 @@ func newHTTPClient(tlsConfig *tls.Config) *http.Client {
 	return &http.Client{Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout:  10 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          100,
@@ -30,6 +30,15 @@ type client struct {
 	token     string
 	namespace string
 	client    *http.Client
+}
+
+type HTTPError struct {
+	Status int
+	Body   []byte
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("status %d: %s", e.Status, bytes.TrimSpace(e.Body))
 }
 
 func (c *client) request(ctx context.Context, method string, url string, requestData any, responseData any) error {
@@ -69,11 +78,7 @@ func (c *client) request(ctx context.Context, method string, url string, request
 	}
 
 	if checkStatusCode(response.StatusCode) {
-		message := string(bytes.TrimSpace(responseBody))
-		if message == "" {
-			return fmt.Errorf("status %d", response.StatusCode)
-		}
-		return fmt.Errorf("status %d: %s", response.StatusCode, message)
+		return &HTTPError{Status: response.StatusCode, Body: responseBody}
 	}
 
 	if responseData != nil {

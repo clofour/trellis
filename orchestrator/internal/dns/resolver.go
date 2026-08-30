@@ -224,8 +224,8 @@ func buildResponse(id uint16, name string, qtype, qclass uint16, ips []net.IP) [
 		// Name pointer to offset 12 (start of question name)
 		buf = append(buf, 0xC0, 0x0C)
 		ans := make([]byte, 10)
-		binary.BigEndian.PutUint16(ans[0:2], 1)         // TYPE A
-		binary.BigEndian.PutUint16(ans[2:4], 1)         // CLASS IN
+		binary.BigEndian.PutUint16(ans[0:2], 1)          // TYPE A
+		binary.BigEndian.PutUint16(ans[2:4], 1)          // CLASS IN
 		binary.BigEndian.PutUint32(ans[4:8], DefaultTTL) // TTL
 		binary.BigEndian.PutUint16(ans[8:10], 4)         // RDLENGTH
 		buf = append(buf, ans...)

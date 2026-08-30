@@ -50,6 +50,10 @@ func NewAllocationReconciler(runtime runtime.ContainerRuntime, subscriber Alloca
 }
 
 func (r *AllocationReconciler) Track(allocID string, healthManaged bool, policy *spec.RestartPolicySpec) {
+	r.TrackRecovered(allocID, healthManaged, policy, 0, time.Time{})
+}
+
+func (r *AllocationReconciler) TrackRecovered(allocID string, healthManaged bool, policy *spec.RestartPolicySpec, attempts int, window time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -59,9 +63,13 @@ func (r *AllocationReconciler) Track(allocID string, healthManaged bool, policy 
 		maxRestarts = policy.MaxRestarts
 		restartWindow = policy.Window
 	}
+	if window.IsZero() {
+		window = time.Now()
+	}
 	r.states[allocID] = &allocationReconcileState{
 		healthManaged: healthManaged,
-		window:        time.Now(),
+		attempts:      attempts,
+		window:        window,
 		maxRestarts:   maxRestarts,
 		restartWindow: restartWindow,
 	}
@@ -72,7 +80,7 @@ func (r *AllocationReconciler) Untrack(allocID string) error {
 	defer r.mu.Unlock()
 
 	if _, ok := r.states[allocID]; !ok {
-		return fmt.Errorf("alloc %s not tracked", allocID)
+		return nil
 	}
 	delete(r.states, allocID)
 	return nil
@@ -172,8 +180,12 @@ func (r *AllocationReconciler) restart(ctx context.Context, allocID string) erro
 		return nil
 	}
 	state.attempts++
+	attempts, window := state.attempts, state.window
 	healthManaged := state.healthManaged
 	r.mu.Unlock()
+	if subscriber, ok := r.Subscriber.(interface{ OnRestartState(string, int, time.Time) }); ok {
+		subscriber.OnRestartState(allocID, attempts, window)
+	}
 
 	if err := r.runtime.Restart(ctx, allocID); err != nil {
 		r.mu.Lock()

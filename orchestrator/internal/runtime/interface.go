@@ -24,11 +24,19 @@ type CreateOptions struct {
 	Runtime          string
 	NetworkNamespace string
 	DNSServers       []string
+	Labels           map[string]string
 }
 
 type ContainerInfo struct {
 	ID     string
 	Status ContainerStatus
+	Labels map[string]string
+}
+
+// ManagedRuntime is implemented by runtimes that can inventory Trellis-owned
+// containers for restart adoption and confirmed orphan collection.
+type ManagedRuntime interface {
+	ListManaged(ctx context.Context, cluster string) ([]ContainerInfo, error)
 }
 
 type ContainerRuntime interface {

@@ -3,6 +3,7 @@ package api
 import (
 	"time"
 
+	"github.com/clofour/trellis/internal/lifecycle"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
@@ -49,10 +50,25 @@ type HeartbeatRequest struct {
 	Allocations []AllocationStatus `json:"allocations,omitempty"`
 }
 
+type DesiredAllocation struct {
+	ID         string `json:"id"`
+	Generation uint64 `json:"generation"`
+}
+
+type HeartbeatResponse struct {
+	Epoch              uint64              `json:"epoch"`
+	Desired            []DesiredAllocation `json:"desired"`
+	OrphanConfirmation bool                `json:"orphan_confirmation"`
+}
+
 type AllocationStatus struct {
-	ID     string        `json:"id"`
-	Status string        `json:"status"`
-	Ports  []PortMapping `json:"ports,omitempty"`
+	ID         string           `json:"id"`
+	Generation uint64           `json:"generation,omitempty"`
+	Task       string           `json:"task,omitempty"`
+	Phase      lifecycle.Phase  `json:"phase,omitempty"`
+	Health     lifecycle.Health `json:"health,omitempty"`
+	Status     string           `json:"status"`
+	Ports      []PortMapping    `json:"ports,omitempty"`
 }
 
 type PortMapping struct {
@@ -74,16 +90,26 @@ type JobStatusResponse struct {
 }
 
 type AllocationResponse struct {
-	ID        string            `json:"id"`
-	Job       string            `json:"job,omitempty"`
-	Group     string            `json:"group"`
-	Task      string            `json:"task,omitempty"`
-	Namespace string            `json:"namespace,omitempty"`
-	NodeID    uuid.UUID         `json:"node_id"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	Address   string            `json:"address,omitempty"`
-	Ports     []PortMapping     `json:"ports,omitempty"`
-	Status    string            `json:"status"`
+	ID               string            `json:"id"`
+	Job              string            `json:"job,omitempty"`
+	Group            string            `json:"group"`
+	Task             string            `json:"task,omitempty"`
+	Namespace        string            `json:"namespace,omitempty"`
+	NodeID           uuid.UUID         `json:"node_id"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	Address          string            `json:"address,omitempty"`
+	Ports            []PortMapping     `json:"ports,omitempty"`
+	Status           string            `json:"status"`
+	Phase            lifecycle.Phase   `json:"phase"`
+	Health           lifecycle.Health  `json:"health"`
+	Generation       uint64            `json:"generation"`
+	JobRevision      int               `json:"job_revision"`
+	CreatedAt        time.Time         `json:"created_at"`
+	LastTransitionAt time.Time         `json:"last_transition_at"`
+	Reason           string            `json:"reason,omitempty"`
+	Message          string            `json:"message,omitempty"`
+	Attempt          int               `json:"attempt"`
+	NextRetryAt      *time.Time        `json:"next_retry_at,omitempty"`
 }
 
 type AllocationListResponse = []AllocationResponse
