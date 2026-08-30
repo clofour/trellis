@@ -55,6 +55,30 @@ func agentOperationCode(err error) api.OperationCode {
 	return ""
 }
 
+func updateStrategy(job *Job, groupName string) spec.UpdateStrategy {
+	for i := range job.Spec.TaskGroups {
+		if job.Spec.TaskGroups[i].Name == groupName {
+			if job.Spec.TaskGroups[i].Update != nil && job.Spec.TaskGroups[i].Update.Strategy != "" {
+				return job.Spec.TaskGroups[i].Update.Strategy
+			}
+			return spec.UpdateRecreate
+		}
+	}
+	return spec.UpdateRecreate
+}
+
+func maxParallel(job *Job, groupName string) int {
+	for i := range job.Spec.TaskGroups {
+		if job.Spec.TaskGroups[i].Name == groupName {
+			if job.Spec.TaskGroups[i].Update != nil && job.Spec.TaskGroups[i].Update.MaxParallel > 0 {
+				return job.Spec.TaskGroups[i].Update.MaxParallel
+			}
+			return 1
+		}
+	}
+	return 1
+}
+
 // Reconcile converges the in-memory allocation set on the latest job specs.
 func (s *Server) Reconcile(ctx context.Context) {
 	start := time.Now()
@@ -87,10 +111,35 @@ func (s *Server) Reconcile(ctx context.Context) {
 			allocation.mu.Unlock()
 			continue
 		}
-		if job == nil || allocation.JobRevision < job.Revision {
+		if job == nil {
 			actions = append(actions, Action{Type: ActionStop, Allocation: allocation})
 			allocation.mu.Unlock()
 			continue
+		}
+		if allocation.JobRevision < job.Revision {
+			strategy := updateStrategy(job, allocation.TaskGroupName)
+			switch strategy {
+			case spec.UpdateRolling:
+				if !allocation.Draining {
+					allocation.Draining = true
+					_ = s.state.PutAllocation(context.WithoutCancel(ctx), allocation)
+				}
+				if allocation.Node == nil || allocation.Node.Status != NodeStatusHealthy {
+					if now.Sub(s.leaderSince) >= leaderRecoveryGrace && allocation.Node != nil && !allocation.Node.LastHeartbeat.IsZero() && now.Sub(allocation.Node.LastHeartbeat) >= allocationLossTimeout {
+						_ = allocation.Transition(lifecycle.PhaseLost, now, "node_unavailable", "node did not re-register before the allocation loss timeout")
+						_ = s.state.PutAllocation(context.WithoutCancel(ctx), allocation)
+					}
+					allocation.mu.Unlock()
+					continue
+				}
+				valid = append(valid, allocation)
+				allocation.mu.Unlock()
+				continue
+			default:
+				actions = append(actions, Action{Type: ActionStop, Allocation: allocation})
+				allocation.mu.Unlock()
+				continue
+			}
 		}
 		if allocation.Node == nil || allocation.Node.Status != NodeStatusHealthy {
 			if now.Sub(s.leaderSince) >= leaderRecoveryGrace && allocation.Node != nil && !allocation.Node.LastHeartbeat.IsZero() && now.Sub(allocation.Node.LastHeartbeat) >= allocationLossTimeout {
@@ -116,16 +165,59 @@ func (s *Server) Reconcile(ctx context.Context) {
 		namespace := job.Spec.Namespace
 		for _, group := range job.Spec.TaskGroups {
 			var current []*Allocation
+			var draining []*Allocation
 			for _, alloc := range valid {
 				if alloc.Namespace == namespace && alloc.JobName == jobName && alloc.TaskGroupName == group.Name {
-					current = append(current, alloc)
+					if alloc.Draining {
+						draining = append(draining, alloc)
+					} else {
+						current = append(current, alloc)
+					}
 				}
 			}
+
+			// Scale down non-draining allocations if over count.
 			for len(current) > group.Count {
 				actions = append(actions, Action{Type: ActionStop, Allocation: current[len(current)-1]})
 				current = current[:len(current)-1]
 			}
-			placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: group.Count - len(current), Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints})
+
+			// For rolling updates, stop draining allocations as new ones become healthy.
+			if len(draining) > 0 {
+				healthyNew := 0
+				for _, alloc := range current {
+					if alloc.Phase == lifecycle.PhaseRunning && alloc.Health == lifecycle.HealthHealthy {
+						healthyNew++
+					}
+				}
+				drainsToStop := min(healthyNew, len(draining))
+				for i := 0; i < drainsToStop; i++ {
+					actions = append(actions, Action{Type: ActionStop, Allocation: draining[i]})
+				}
+			}
+
+			// Place new allocations up to the desired count.
+			deficit := group.Count - len(current)
+			if deficit > 0 {
+				strategy := updateStrategy(job, group.Name)
+				if strategy == spec.UpdateRolling && len(draining) > 0 {
+					parallel := maxParallel(job, group.Name)
+					inFlight := 0
+					for _, alloc := range current {
+						if alloc.Phase != lifecycle.PhaseRunning || alloc.Health != lifecycle.HealthHealthy {
+							inFlight++
+						}
+					}
+					allowed := parallel - inFlight
+					if allowed < deficit {
+						deficit = allowed
+					}
+					if deficit < 0 {
+						deficit = 0
+					}
+				}
+			}
+			placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: deficit, Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints})
 			for _, placement := range placements {
 				node := s.nodes[placement.NodeID]
 				name := fmt.Sprintf("%s-%s-%s-%s", namespace, jobName, group.Name, uuid.NewString()[:8])

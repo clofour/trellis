@@ -46,6 +46,7 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 			Status:           string(allocation.Status),
 			Phase:            allocation.Phase,
 			Health:           allocation.Health,
+			Draining:         allocation.Draining,
 			Generation:       allocation.Generation,
 			JobRevision:      allocation.JobRevision,
 			CreatedAt:        allocation.CreatedAt,

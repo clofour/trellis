@@ -354,16 +354,24 @@ func (a *Agent) reconcileDesired(ctx context.Context, response *api.HeartbeatRes
 	if err := a.AcceptEpoch(response.Epoch); err != nil {
 		return
 	}
-	desired := make(map[string]bool, len(response.Desired))
+	type desiredState struct {
+		wanted   bool
+		draining bool
+	}
+	desired := make(map[string]desiredState, len(response.Desired))
 	for _, allocation := range response.Desired {
-		desired[fmt.Sprintf("%s/%d", allocation.ID, allocation.Generation)] = true
+		desired[fmt.Sprintf("%s/%d", allocation.ID, allocation.Generation)] = desiredState{wanted: true, draining: allocation.Draining}
 	}
 	a.mu.Lock()
 	var collect []string
 	for id, allocation := range a.allocations {
 		key := fmt.Sprintf("%s/%d", allocation.AllocationID, allocation.Generation)
-		if desired[key] {
+		state := desired[key]
+		if state.wanted {
 			delete(a.orphans, key)
+			if state.draining {
+				_ = a.reconciler.Untrack(allocation.ID)
+			}
 			continue
 		}
 		a.orphans[key]++
