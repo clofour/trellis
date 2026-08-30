@@ -80,7 +80,7 @@ function JobFormPanel({ initialSpec, onClose, onSuccess }: Omit<JobFormProps, "o
       <div className="relative ml-auto flex h-full w-full max-w-2xl flex-col bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
-            <h2 className="text-base font-semibold text-foreground">{isEditing ? `Edit — ${initialSpec.name}` : "New Job"}</h2>
+            <h2 className="text-base font-semibold text-foreground">{isEditing ? `Edit — ${initialSpec!.name}` : "New Job"}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {isEditing ? "Update the job configuration. Changes take effect on the next reconcile." : "Define a new job to schedule on the cluster."}
             </p>
