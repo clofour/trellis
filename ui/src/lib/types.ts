@@ -84,6 +84,10 @@ export interface SecretMetadata {
 }
 
 // Job spec types. Keep these aligned with orchestrator/internal/spec/types.go.
+// time.Duration is encoded as nanoseconds by Go's JSON encoder; the dashboard
+// editor also accepts manifest-style strings such as "10s" and normalizes them
+// before submission.
+export type DurationValue = number | string;
 
 export interface JobSpec {
   name: string;
@@ -120,7 +124,7 @@ export interface ConstraintSpec {
 
 export interface RestartPolicySpec {
   max_restarts: number;
-  window: string;
+  window: DurationValue;
 }
 
 export interface UpdateSpec {
@@ -171,7 +175,7 @@ export interface HealthCheckSpec {
   port: number;
   path?: string;
   command?: string[];
-  interval?: string;
-  timeout?: string;
+  interval?: DurationValue;
+  timeout?: DurationValue;
   threshold?: number;
 }
