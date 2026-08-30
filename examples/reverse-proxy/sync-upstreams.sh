@@ -19,8 +19,15 @@ mkdir -p "$CONF_DIR"
 
 prev_hash=""
 
+restore_previous() {
+    if [ "${had_previous:-false}" = true ]; then
+        mv "$BACKUP_FILE" "$CONF_FILE"
+    else
+        rm -f "$CONF_FILE" "$BACKUP_FILE"
+    fi
+}
+
 while true; do
-    # Fetch allocations whose task group opted in to proxy exposure.
     response=$(curl -sf \
         -H "Authorization: Bearer $TRELLIS_TOKEN" \
         "$TRELLIS_ADDR/v1/allocations?label=trellis.expose:true" 2>/dev/null) || {
@@ -29,112 +36,80 @@ while true; do
         continue
     }
 
-    # Build the Nginx config from the allocation response.
-    # Each allocation entry has: job, group, labels, address, ports[], status.
-    #
-    # We group by (domain, path-prefix) to form upstreams, then emit a
-    # server block per domain and a location block per path-prefix.
-    config=$(echo "$response" | awk '
-    BEGIN {
-        RS = "[{},]"
-        FS = ":"
-        domain = ""
-        prefix = ""
-        expose = ""
-        address = ""
-        host_port = ""
-        status = ""
-        weight = ""
+    # Parse allocations structurally. Label values are restricted before they
+    # are embedded into Nginx directives so arbitrary metadata cannot inject
+    # configuration syntax.
+    config=$(printf '%s' "$response" | jq -r '
+        def safe_name:
+            gsub("[^A-Za-z0-9]"; "_");
+        def upstream_name:
+            "trellis_" + (.domain | safe_name) +
+            (if .path == "/" then "" else (.path | safe_name) end);
+        def endpoint:
+            if (.address | contains(":"))
+            then "[\(.address)]:\(.port)"
+            else "\(.address):\(.port)"
+            end;
+
+        [
+            .[]
+            | select(.status == "healthy")
+            | select(.labels["trellis.expose"] == "true")
+            | (.labels["trellis/domain"] // "") as $domain
+            | (.labels["trellis/path-prefix"] // "/") as $path
+            | select($domain | test("^[A-Za-z0-9.-]+$"))
+            | select($path | test("^/[A-Za-z0-9._/-]*$"))
+            | select((.address // "") != "")
+            | (.ports[0].host_port // 0) as $port
+            | select($port > 0)
+            | {
+                domain: $domain,
+                path: $path,
+                address: .address,
+                port: $port,
+                weight: ((.labels["trellis/weight"] // "1") | tonumber? // 1)
+              }
+            | .weight = (if .weight > 0 then .weight else 1 end)
+        ] as $routes
+
+        | (
+            $routes
+            | group_by([.domain, .path])[] as $group
+            | $group[0] as $route
+            | "upstream \($route | upstream_name) {",
+              ($group[] | "    server \(endpoint) weight=\(.weight);"),
+              "}",
+              ""
+          ),
+          (
+            $routes
+            | group_by(.domain)[] as $domain_routes
+            | "server {",
+              "    listen 80;",
+              "    server_name \($domain_routes[0].domain);",
+              "",
+              (
+                $domain_routes
+                | group_by(.path)[] as $path_routes
+                | $path_routes[0] as $route
+                | "    location \($route.path) {",
+                  "        proxy_pass http://\($route | upstream_name);",
+                  "        proxy_set_header Host $host;",
+                  "        proxy_set_header X-Real-IP $remote_addr;",
+                  "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+                  "        proxy_set_header X-Forwarded-Proto $scheme;",
+                  "    }",
+                  ""
+              ),
+              "}",
+              ""
+          )
+    ') || {
+        echo "warn: invalid allocations response, retrying in ${INTERVAL}s"
+        sleep "$INTERVAL"
+        continue
     }
-    /"trellis.expose"/ { gsub(/[ "\t]/, "", $2); expose = $2 }
-    /"trellis\/domain"/ { gsub(/[ "\t]/, "", $2); domain = $2 }
-    /"trellis\/path-prefix"/ { gsub(/[ "\t]/, "", $2); prefix = $2 }
-    /"trellis\/weight"/ { gsub(/[ "\t]/, "", $2); weight = $2 }
-    /"address"/ { gsub(/[ "\t]/, "", $2); address = $2 }
-    /"host_port"/ { gsub(/[ "\t]/, "", $2); host_port = $2 }
-    /"status"/ {
-        gsub(/[ "\t]/, "", $2)
-        status = $2
-        if (status == "healthy" && expose == "true" && domain != "" && address != "" && host_port != "" && host_port != "0") {
-            key = domain ":" (prefix != "" ? prefix : "/")
-            if (!(key in upstreams)) {
-                upstream_order[++n] = key
-                domains[key] = domain
-                prefixes[key] = (prefix != "" ? prefix : "/")
-            }
-            weight_arg = (weight ~ /^[1-9][0-9]*$/ ? " weight=" weight : "")
-            upstreams[key] = upstreams[key] "    server " address ":" host_port weight_arg ";\n"
-        }
-        domain = ""; prefix = ""; expose = ""; address = ""; host_port = ""; status = ""; weight = ""
-    }
-    END {
-        for (i = 1; i <= n; i++) {
-            key = upstream_order[i]
-            name = domains[key]
-            gsub(/[^a-zA-Z0-9]/, "_", name)
-            p = prefixes[key]
-            if (p != "/") {
-                pname = p
-                gsub(/[^a-zA-Z0-9]/, "_", pname)
-                name = name pname
-            }
-            print "upstream " name " {"
-            printf "%s", upstreams[key]
-            print "}"
-            print ""
-        }
 
-        # Group by domain for server blocks.
-        for (i = 1; i <= n; i++) {
-            key = upstream_order[i]
-            d = domains[key]
-            if (!(d in seen_domain)) {
-                seen_domain[d] = 1
-                domain_order[++dn] = d
-            }
-            p = prefixes[key]
-            domain_locations[d] = domain_locations[d] key "|" p "\n"
-        }
-
-        for (di = 1; di <= dn; di++) {
-            d = domain_order[di]
-            print "server {"
-            print "    listen 80;"
-            print "    server_name " d ";"
-            print ""
-
-            split(domain_locations[d], locs, "\n")
-            for (li in locs) {
-                if (locs[li] == "") continue
-                split(locs[li], parts, "|")
-                key = parts[1]
-                p = parts[2]
-
-                uname = domains[key]
-                gsub(/[^a-zA-Z0-9]/, "_", uname)
-                if (p != "/") {
-                    pname = p
-                    gsub(/[^a-zA-Z0-9]/, "_", pname)
-                    uname = uname pname
-                }
-
-                print "    location " p " {"
-                print "        proxy_pass http://" uname ";"
-                print "        proxy_set_header Host $host;"
-                print "        proxy_set_header X-Real-IP $remote_addr;"
-                print "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;"
-                print "        proxy_set_header X-Forwarded-Proto $scheme;"
-                print "    }"
-                print ""
-            }
-            print "}"
-            print ""
-        }
-    }
-    ')
-
-    # Only reload Nginx if the config actually changed. Preserve the last
-    # validated file so a bad generated config cannot replace it permanently.
     new_hash=$(printf %s "$config" | sha256sum | cut -d' ' -f1)
     if [ "$new_hash" != "$prev_hash" ]; then
         had_previous=false
@@ -144,18 +119,30 @@ while true; do
         fi
 
         printf '%s\n' "$config" > "$CONF_FILE"
-        if nginx -t 2>/dev/null && nginx -s reload 2>/dev/null; then
-            echo "nginx: config reloaded with new upstreams"
-            prev_hash="$new_hash"
-            rm -f "$BACKUP_FILE"
-        else
-            echo "warn: nginx config validation or reload failed; restoring previous config"
-            if [ "$had_previous" = true ]; then
-                mv "$BACKUP_FILE" "$CONF_FILE"
-            else
-                rm -f "$CONF_FILE" "$BACKUP_FILE"
-            fi
+        if ! nginx -t 2>/dev/null; then
+            echo "warn: generated Nginx config is invalid; restoring previous config"
+            restore_previous
+            sleep "$INTERVAL"
+            continue
         fi
+
+        # On container startup the sync process can run before the foreground
+        # Nginx master exists. In that case keep the validated file so the
+        # initial Nginx start loads it; later changes use a normal reload.
+        if [ -s /run/nginx.pid ] && kill -0 "$(cat /run/nginx.pid)" 2>/dev/null; then
+            if ! nginx -s reload 2>/dev/null; then
+                echo "warn: Nginx reload failed; restoring previous config"
+                restore_previous
+                sleep "$INTERVAL"
+                continue
+            fi
+            echo "nginx: config reloaded with new upstreams"
+        else
+            echo "nginx: initial upstream config prepared"
+        fi
+
+        prev_hash="$new_hash"
+        rm -f "$BACKUP_FILE"
     fi
 
     sleep "$INTERVAL"
