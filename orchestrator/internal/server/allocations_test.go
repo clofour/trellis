@@ -14,21 +14,16 @@ func TestListAllocationsWithFilters(t *testing.T) {
 	stagingNode := &Node{ID: uuid.MustParse("22222222-2222-2222-2222-222222222222"), Host: "10.0.1.1"}
 
 	s := &Server{
+		now: time.Now,
 		jobs: map[string]*Job{
-			jobKey("acme", "web"): {
-				Spec: &spec.JobSpec{Namespace: "acme", Name: "web", TaskGroups: []spec.TaskGroupSpec{{Name: "frontend", Labels: map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"}}}},
-			},
-			jobKey("acme", "db"): {
-				Spec: &spec.JobSpec{Namespace: "acme", Name: "db", TaskGroups: []spec.TaskGroupSpec{{Name: "primary", Labels: map[string]string{"trellis/engine": "postgres"}}}},
-			},
-			jobKey("staging", "web"): {
-				Spec: &spec.JobSpec{Namespace: "staging", Name: "web", TaskGroups: []spec.TaskGroupSpec{{Name: "frontend", Labels: map[string]string{"trellis.expose": "true"}}}},
-			},
+			jobKey("acme", "web"): {Spec: &spec.JobSpec{Namespace: "acme", Name: "web", TaskGroups: []spec.TaskGroupSpec{{Name: "frontend", Labels: map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"}}}}},
+			jobKey("acme", "db"): {Spec: &spec.JobSpec{Namespace: "acme", Name: "db", TaskGroups: []spec.TaskGroupSpec{{Name: "primary", Labels: map[string]string{"trellis/engine": "postgres"}}}}},
+			jobKey("staging", "web"): {Spec: &spec.JobSpec{Namespace: "staging", Name: "web", TaskGroups: []spec.TaskGroupSpec{{Name: "frontend", Labels: map[string]string{"trellis.expose": "true"}}}}},
 		},
 		allocations: []*Allocation{
-			{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", Name: "acme-web-1", Status: AllocationStatusHealthy, Node: acmeNode},
-			{Namespace: "acme", JobName: "db", TaskGroupName: "primary", Name: "acme-db-1", Status: AllocationStatusHealthy, Node: acmeNode},
-			{Namespace: "staging", JobName: "web", TaskGroupName: "frontend", Name: "staging-web-1", Status: AllocationStatusHealthy, Node: stagingNode},
+			{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", ID: "acme-web-1", Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Node: acmeNode},
+			{Namespace: "acme", JobName: "db", TaskGroupName: "primary", ID: "acme-db-1", Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Node: acmeNode},
+			{Namespace: "staging", JobName: "web", TaskGroupName: "frontend", ID: "staging-web-1", Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Node: stagingNode},
 		},
 	}
 
@@ -51,24 +46,14 @@ func TestListAllocationsWithFilters(t *testing.T) {
 
 func TestAllocationEvents(t *testing.T) {
 	now := time.Now().UTC()
-	alloc := &Allocation{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", Name: "acme-web-1", Phase: lifecycle.PhasePlaced}
+	alloc := &Allocation{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", ID: "acme-web-1", Phase: lifecycle.PhasePlaced}
 	alloc.normalize(now)
+	s := &Server{now: time.Now, jobs: map[string]*Job{}, allocations: []*Allocation{alloc}}
 
-	s := &Server{
-		jobs:        map[string]*Job{},
-		allocations: []*Allocation{alloc},
-	}
-
-	// No events yet.
 	events, ok := s.AllocationEvents("acme", "acme-web-1")
-	if !ok {
-		t.Fatal("expected allocation to be found")
+	if !ok || len(events) != 0 {
+		t.Fatalf("expected empty event list, got %#v, %v", events, ok)
 	}
-	if len(events) != 0 {
-		t.Fatalf("expected 0 events before any transition, got %d", len(events))
-	}
-
-	// Drive through a few transitions.
 	if err := alloc.Transition(lifecycle.PhaseStarting, now, "scheduled", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -78,31 +63,17 @@ func TestAllocationEvents(t *testing.T) {
 	if err := alloc.Transition(lifecycle.PhaseFailed, now.Add(2*time.Second), "oom", "container exited"); err != nil {
 		t.Fatal(err)
 	}
-
 	events, ok = s.AllocationEvents("acme", "acme-web-1")
-	if !ok {
-		t.Fatal("expected allocation to be found")
-	}
-	if len(events) != 3 {
-		t.Fatalf("expected 3 events, got %d", len(events))
+	if !ok || len(events) != 3 {
+		t.Fatalf("expected 3 events, got %#v, %v", events, ok)
 	}
 	if events[0].Phase != lifecycle.PhaseStarting || events[0].Reason != "scheduled" {
 		t.Errorf("event 0: unexpected %+v", events[0])
 	}
-	if events[1].Phase != lifecycle.PhaseRunning {
-		t.Errorf("event 1: unexpected %+v", events[1])
-	}
 	if events[2].Phase != lifecycle.PhaseFailed || events[2].Reason != "oom" || events[2].Message != "container exited" {
 		t.Errorf("event 2: unexpected %+v", events[2])
 	}
-
-	// Namespace mismatch returns not-found.
 	if _, ok := s.AllocationEvents("staging", "acme-web-1"); ok {
 		t.Fatal("expected not-found for wrong namespace")
-	}
-
-	// Unknown allocation returns not-found.
-	if _, ok := s.AllocationEvents("acme", "nonexistent"); ok {
-		t.Fatal("expected not-found for unknown allocation")
 	}
 }

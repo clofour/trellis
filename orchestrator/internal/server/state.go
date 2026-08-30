@@ -5,28 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/clofour/trellis/internal/state"
 )
 
 type StateController struct {
-	store state.StateStore
-
+	store   state.StateStore
 	cluster string
 }
 
 const trellisNamespace = "trellis"
 
 func NewStateController(store state.StateStore, cluster string) *StateController {
-	return &StateController{
-		store:   store,
-		cluster: cluster,
-	}
+	return &StateController{store: store, cluster: cluster}
 }
 
 func (s *StateController) GetCluster(ctx context.Context) (*Cluster, error) {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
-
 	var cluster Cluster
 	found, err := s.get(ctx, key, &cluster)
 	if err != nil {
@@ -35,29 +31,22 @@ func (s *StateController) GetCluster(ctx context.Context) (*Cluster, error) {
 	if !found {
 		return nil, nil
 	}
-
 	return &cluster, nil
 }
 
 func (s *StateController) PutCluster(ctx context.Context, cluster *Cluster) error {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
-
-	err := s.put(ctx, key, cluster)
-	if err != nil {
+	if err := s.put(ctx, key, cluster); err != nil {
 		return fmt.Errorf("put cluster: %w", err)
 	}
-
 	return nil
 }
 
 func (s *StateController) PutNode(ctx context.Context, id string, node *NodeSummary) error {
 	key := fmt.Sprintf("%s/%s/nodes/%s", trellisNamespace, s.cluster, id)
-
-	err := s.put(ctx, key, node)
-	if err != nil {
+	if err := s.put(ctx, key, node); err != nil {
 		return fmt.Errorf("put node: %w", err)
 	}
-
 	return nil
 }
 
@@ -76,12 +65,9 @@ func (s *StateController) ListJobs(ctx context.Context) (map[string]*Job, error)
 
 func (s *StateController) PutJob(ctx context.Context, id string, job *Job) error {
 	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, url.QueryEscape(id))
-
-	err := s.put(ctx, key, job)
-	if err != nil {
+	if err := s.put(ctx, key, job); err != nil {
 		return fmt.Errorf("put job: %w", err)
 	}
-
 	return nil
 }
 
@@ -100,12 +86,31 @@ func (s *StateController) ListNodes(ctx context.Context) (map[string]*NodeSummar
 
 func (s *StateController) ListAllocations(ctx context.Context) (map[string]*Allocation, error) {
 	prefix := fmt.Sprintf("%s/%s/allocations/", trellisNamespace, s.cluster)
-	return listValues[Allocation](ctx, s.store, prefix)
+	raw, err := s.store.List(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("list prefix %s: %w", prefix, err)
+	}
+	result := make(map[string]*Allocation, len(raw))
+	for key, value := range raw {
+		allocation, err := decodeAllocationRecord(value, time.Now().UTC())
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal %s: %w", key, err)
+		}
+		result[key[len(prefix):]] = allocation
+	}
+	return result, nil
 }
 
 func (s *StateController) PutAllocation(ctx context.Context, allocation *Allocation) error {
-	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, allocation.Name)
-	return s.put(ctx, key, allocation)
+	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, allocation.ID)
+	raw, err := encodeAllocationRecord(allocation)
+	if err != nil {
+		return fmt.Errorf("marshal allocation: %w", err)
+	}
+	if err := s.store.Put(ctx, key, raw); err != nil {
+		return fmt.Errorf("put key %s: %w", key, err)
+	}
+	return nil
 }
 
 func (s *StateController) DeleteAllocation(ctx context.Context, id string) error {
@@ -137,12 +142,9 @@ func (s *StateController) get(ctx context.Context, key string, value any) (bool,
 	if raw == nil {
 		return false, nil
 	}
-
-	err = json.Unmarshal(raw, value)
-	if err != nil {
+	if err := json.Unmarshal(raw, value); err != nil {
 		return true, fmt.Errorf("unmarshal json: %w", err)
 	}
-
 	return true, nil
 }
 
@@ -151,11 +153,8 @@ func (s *StateController) put(ctx context.Context, key string, value any) error 
 	if err != nil {
 		return fmt.Errorf("marshal json: %w", err)
 	}
-
-	err = s.store.Put(ctx, key, raw)
-	if err != nil {
+	if err := s.store.Put(ctx, key, raw); err != nil {
 		return fmt.Errorf("put key %s: %w", key, err)
 	}
-
 	return nil
 }
