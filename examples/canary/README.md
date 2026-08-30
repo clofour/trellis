@@ -10,9 +10,10 @@ Two separate jobs — `api` (stable) and `api-canary` — both carry the
 reverse proxy sees allocations from both jobs as upstreams for the same domain
 and distributes requests across all of them.
 
-Traffic split is determined by the ratio of healthy allocations: 9 stable
-allocations and 1 canary allocation means roughly 10% of requests hit v2.
-Adjusting `count` on either job shifts the proportion.
+Without explicit weights, traffic share is approximately proportional to the
+number of healthy allocations: 9 stable allocations and 1 canary allocation
+means roughly 10% of requests hit v2. Adjusting `count` on either job shifts the
+proportion.
 
 ```
 stable (9 replicas × v1)  ]
@@ -50,17 +51,17 @@ trellis --namespace acme jobs status api-canary
 ```
 
 Once the canary allocation is healthy the proxy includes it in the upstream pool.
-About 10% of incoming requests will reach v2.
+About 10% of incoming requests will reach v2 when no explicit weights are set.
 
 ### Monitor
 
-Watch error rates, latency, and any application-level signals for the canary
-allocation. The `track: canary` label makes it easy to correlate logs or metrics
-with the canary job:
+Watch error rates, latency, and application-level signals for the canary. The
+`jobs status` output includes allocation IDs; pass one of those IDs to
+`jobs logs`:
 
 ```sh
 trellis --namespace acme jobs status api-canary
-trellis --namespace acme jobs logs  api-canary
+trellis --namespace acme jobs logs <allocation-id>
 ```
 
 ### Increase the canary share
@@ -75,38 +76,44 @@ Raise `count` in `canary.yaml` and reapply to shift more traffic:
 
 ### Promote to stable
 
-When the canary looks healthy, update `stable.yaml` to point at v2 and scale
-`canary.yaml` back down:
+When the canary looks healthy, update `stable.yaml` to point at v2 and apply it:
 
 ```sh
 # Update stable.yaml: image: your-registry/api:v2
 trellis --namespace acme jobs apply --file stable.yaml
-trellis --namespace acme jobs delete api-canary
 ```
 
-The stable fleet rolls over to v2 (using the `recreate` strategy by default, or
-`rolling` if set). Once all stable allocations are healthy on v2 the canary job
-is no longer needed.
+The stable fleet uses `recreate` unless you configure an `update` strategy. If
+you want promotion without intentionally taking the stable fleet down first,
+configure `strategy: rolling` and ensure the cluster has spare capacity for the
+replacement allocations.
+
+After the stable job is healthy on v2, remove the canary job:
+
+```sh
+trellis --namespace acme jobs destroy api-canary
+```
 
 ### Rollback
 
-If the canary shows problems, delete it. The stable fleet keeps serving v1
-without interruption:
+If the canary shows problems, destroy it. The stable fleet keeps serving v1:
 
 ```sh
-trellis --namespace acme jobs delete api-canary
+trellis --namespace acme jobs destroy api-canary
 ```
 
 ## Traffic weighting
 
-By default the split is proportional to replica count. For finer control you can
-add a `trellis/weight` label to each job's task group:
+For finer control, add a positive integer `trellis/weight` label to a task
+group:
 
 ```yaml
 labels:
+  trellis.expose: "true"
+  trellis/domain: app.example.com
   trellis/weight: "3"
 ```
 
-The `trellis-proxy-sync` binary reads this label and emits `weight=N` directives
-in the nginx upstream block, shifting the per-allocation weight independently of
-count. See `examples/reverse-proxy` for the proxy setup that supports this.
+The reverse-proxy sync script emits the value as Nginx's per-upstream
+`weight=N`. The compiled `trellis-proxy-sync` helper also reads the same label
+and exposes it to templates as `.Weight`.
