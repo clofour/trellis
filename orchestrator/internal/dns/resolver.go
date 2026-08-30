@@ -19,8 +19,8 @@ const (
 	maxUDPSize    = 512
 )
 
-type ServiceLookup interface {
-	ListServices(ctx context.Context) (*api.ServiceListResponse, error)
+type DiscoveryLookup interface {
+	ListDiscovery(ctx context.Context) (*api.ServiceListResponse, error)
 }
 
 type record struct {
@@ -30,13 +30,13 @@ type record struct {
 type Resolver struct {
 	log    *slog.Logger
 	domain string
-	lookup ServiceLookup
+	lookup DiscoveryLookup
 
 	mu    sync.RWMutex
 	cache map[string]*record // "job.namespace" -> record
 }
 
-func NewResolver(log *slog.Logger, lookup ServiceLookup, domain string) *Resolver {
+func NewResolver(log *slog.Logger, lookup DiscoveryLookup, domain string) *Resolver {
 	if domain == "" {
 		domain = DefaultDomain
 	}
@@ -104,7 +104,7 @@ func (r *Resolver) refreshLoop(ctx context.Context) {
 }
 
 func (r *Resolver) refresh(ctx context.Context) {
-	resp, err := r.lookup.ListServices(ctx)
+	resp, err := r.lookup.ListDiscovery(ctx)
 	if err != nil {
 		r.log.Error("dns refresh failed", "error", err)
 		return
@@ -204,7 +204,7 @@ func buildResponse(id uint16, name string, qtype, qclass uint16, ips []net.IP) [
 		flags |= 0x0003 // RCODE=NXDOMAIN
 	}
 	binary.BigEndian.PutUint16(header[2:4], flags)
-	binary.BigEndian.PutUint16(header[4:6], 1)            // QDCOUNT
+	binary.BigEndian.PutUint16(header[4:6], 1)                // QDCOUNT
 	binary.BigEndian.PutUint16(header[6:8], uint16(len(ips))) // ANCOUNT
 	buf = append(buf, header...)
 
@@ -224,10 +224,10 @@ func buildResponse(id uint16, name string, qtype, qclass uint16, ips []net.IP) [
 		// Name pointer to offset 12 (start of question name)
 		buf = append(buf, 0xC0, 0x0C)
 		ans := make([]byte, 10)
-		binary.BigEndian.PutUint16(ans[0:2], 1)           // TYPE A
-		binary.BigEndian.PutUint16(ans[2:4], 1)           // CLASS IN
-		binary.BigEndian.PutUint32(ans[4:8], DefaultTTL)   // TTL
-		binary.BigEndian.PutUint16(ans[8:10], 4)           // RDLENGTH
+		binary.BigEndian.PutUint16(ans[0:2], 1)         // TYPE A
+		binary.BigEndian.PutUint16(ans[2:4], 1)         // CLASS IN
+		binary.BigEndian.PutUint32(ans[4:8], DefaultTTL) // TTL
+		binary.BigEndian.PutUint16(ans[8:10], 4)         // RDLENGTH
 		buf = append(buf, ans...)
 		buf = append(buf, ipv4...)
 	}
