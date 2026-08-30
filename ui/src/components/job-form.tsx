@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { JobSpec } from "@/lib/types";
+import type { DurationValue, JobSpec } from "@/lib/types";
 import { submitJob } from "@/lib/api";
 import { useConfig } from "./config-provider";
 
@@ -36,6 +36,66 @@ function pretty(spec: JobSpec): string {
   return JSON.stringify(spec, null, 2);
 }
 
+function durationNanoseconds(value: DurationValue, field: string): number {
+  if (typeof value === "number") return value;
+  if (value === "0" || value === "") return 0;
+
+  const units: Record<string, number> = {
+    ns: 1,
+    us: 1_000,
+    "µs": 1_000,
+    "μs": 1_000,
+    ms: 1_000_000,
+    s: 1_000_000_000,
+    m: 60_000_000_000,
+    h: 3_600_000_000_000,
+  };
+  const pattern = /(\d+(?:\.\d+)?)(ns|us|µs|μs|ms|s|m|h)/g;
+  let total = 0;
+  let consumed = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    if (match.index !== consumed) {
+      throw new Error(`${field} has an invalid duration: ${value}`);
+    }
+    total += Number(match[1]) * units[match[2]];
+    consumed = pattern.lastIndex;
+  }
+  if (consumed !== value.length || consumed === 0) {
+    throw new Error(`${field} has an invalid duration: ${value}`);
+  }
+  return Math.round(total);
+}
+
+function normalizeDurations(spec: JobSpec): JobSpec {
+  const normalized = JSON.parse(JSON.stringify(spec)) as JobSpec;
+  for (const group of normalized.task_groups) {
+    if (group.restart) {
+      group.restart.window = durationNanoseconds(
+        group.restart.window,
+        `${group.name}.restart.window`,
+      );
+    }
+    for (const task of group.tasks) {
+      const check = task.health_check;
+      if (!check) continue;
+      if (check.interval !== undefined) {
+        check.interval = durationNanoseconds(
+          check.interval,
+          `${group.name}.${task.name}.health_check.interval`,
+        );
+      }
+      if (check.timeout !== undefined) {
+        check.timeout = durationNanoseconds(
+          check.timeout,
+          `${group.name}.${task.name}.health_check.timeout`,
+        );
+      }
+    }
+  }
+  return normalized;
+}
+
 export function JobForm({
   open,
   initialSpec,
@@ -64,7 +124,7 @@ function JobFormPanel({
   const { namespace } = useConfig();
   const initial = useMemo(() => {
     const spec = initialSpec
-      ? JSON.parse(JSON.stringify(initialSpec)) as JobSpec
+      ? (JSON.parse(JSON.stringify(initialSpec)) as JobSpec)
       : defaultSpec(namespace);
     spec.namespace = namespace;
     return spec;
@@ -113,8 +173,6 @@ function JobFormPanel({
     if (isEditing && spec.name !== initialSpec!.name) {
       throw new Error("Job name cannot be changed after creation.");
     }
-    // The dashboard is scoped to one namespace. The server proxy enforces this
-    // again so a modified browser request cannot escape the configured scope.
     spec.namespace = namespace;
     return spec;
   };
@@ -134,7 +192,7 @@ function JobFormPanel({
     setSubmitting(true);
     setError(null);
     try {
-      const spec = parse();
+      const spec = normalizeDurations(parse());
       await submitJob(spec);
       onSuccess();
       onClose();
@@ -183,7 +241,7 @@ function JobFormPanel({
                 Namespace is fixed to <span className="font-mono text-foreground">{namespace || "(unscoped)"}</span> by the dashboard.
               </p>
               <p className="mt-2">
-                Supported fields include WireGuard networking, task-group runtime and host networking, labels, restart policy, placement constraints, rolling/recreate updates, resources, ports, volumes, secrets, API access, and configurable health checks.
+                Supported fields include WireGuard networking, task-group runtime and host networking, labels, restart policy, placement constraints, rolling/recreate updates, resources, ports, volumes, secrets, API access, and configurable health checks. Duration fields accept API nanoseconds or strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>.
               </p>
             </div>
 
