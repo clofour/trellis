@@ -167,14 +167,19 @@ func TestReconcileRollingStopsDrainingAsNewBecomeHealthy(t *testing.T) {
 	s.jobs[jobKey("default", "web")] = &Job{Spec: newSpec, Revision: 2, ContentHashes: newHashes}
 
 	now := s.now()
-	draining := &Allocation{
-		ID: "alloc-old", Name: "alloc-old",
-		Namespace: "default", JobName: "web", TaskGroupName: "api",
-		Tasks: []spec.TaskSpec{{Name: "server", Image: "app:v1"}}, Node: node, Generation: 1,
-		JobRevision: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Draining: true,
-		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
+	makeDraining := func(id string) *Allocation {
+		a := &Allocation{
+			ID: id, Name: id,
+			Namespace: "default", JobName: "web", TaskGroupName: "api",
+			Tasks: []spec.TaskSpec{{Name: "server", Image: "app:v1"}}, Node: node, Generation: 1,
+			JobRevision: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Draining: true,
+			Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
+		}
+		a.normalize(now)
+		return a
 	}
-	draining.normalize(now)
+	drainingA := makeDraining("alloc-old-a")
+	drainingB := makeDraining("alloc-old-b")
 	healthy := &Allocation{
 		ID: "alloc-new", Name: "alloc-new",
 		Namespace: "default", JobName: "web", TaskGroupName: "api",
@@ -183,15 +188,21 @@ func TestReconcileRollingStopsDrainingAsNewBecomeHealthy(t *testing.T) {
 		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
 	}
 	healthy.normalize(now)
-	s.allocations = []*Allocation{draining, healthy}
+	s.allocations = []*Allocation{drainingA, drainingB, healthy}
 
 	s.Reconcile(context.Background())
 
-	draining.mu.Lock()
-	phase := draining.Phase
-	draining.mu.Unlock()
-	if phase != lifecycle.PhaseStopped {
-		t.Errorf("expected draining allocation to be stopped, got phase %s", phase)
+	stopped := 0
+	for _, draining := range []*Allocation{drainingA, drainingB} {
+		draining.mu.Lock()
+		phase := draining.Phase
+		draining.mu.Unlock()
+		if phase == lifecycle.PhaseStopped {
+			stopped++
+		}
+	}
+	if stopped != 1 {
+		t.Errorf("expected exactly one draining allocation to stop for one unconsumed healthy replacement, got %d", stopped)
 	}
 }
 
