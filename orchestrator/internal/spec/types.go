@@ -2,6 +2,41 @@ package spec
 
 import "time"
 
+type Runtime string
+
+const (
+	RuntimeDefault Runtime = ""
+	RuntimeRunc    Runtime = "runc"
+	RuntimeRunsc   Runtime = "runsc"
+)
+
+func (r Runtime) Valid() bool {
+	return r == RuntimeDefault || r == RuntimeRunc || r == RuntimeRunsc
+}
+
+type NetworkMode string
+
+const (
+	NetworkModeDefault NetworkMode = ""
+	NetworkModeHost    NetworkMode = "host"
+)
+
+func (m NetworkMode) Valid() bool {
+	return m == NetworkModeDefault || m == NetworkModeHost
+}
+
+type HealthCheckType string
+
+const (
+	HealthCheckHTTP   HealthCheckType = "http"
+	HealthCheckTCP    HealthCheckType = "tcp"
+	HealthCheckScript HealthCheckType = "script"
+)
+
+func (t HealthCheckType) Valid() bool {
+	return t == HealthCheckHTTP || t == HealthCheckTCP || t == HealthCheckScript
+}
+
 type JobSpec struct {
 	Name       string          `yaml:"name" json:"name"`
 	Namespace  string          `yaml:"namespace" json:"namespace"`
@@ -18,10 +53,10 @@ type NetworkSpec struct {
 type TaskGroupSpec struct {
 	Name        string             `yaml:"name" json:"name"`
 	Count       int                `yaml:"count" json:"count"`
-	Runtime     string             `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Runtime     Runtime            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Tasks       []TaskSpec         `yaml:"tasks" json:"tasks"`
 	Labels      map[string]string  `yaml:"labels,omitempty" json:"labels,omitempty"`
-	NetworkMode string             `yaml:"network_mode,omitempty" json:"network_mode,omitempty"`
+	NetworkMode NetworkMode        `yaml:"network_mode,omitempty" json:"network_mode,omitempty"`
 	APIAccess   bool               `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
 	Constraints []ConstraintSpec   `yaml:"constraints,omitempty" json:"constraints,omitempty"`
@@ -58,13 +93,13 @@ type ResourcesSpec struct {
 }
 
 type HealthCheckSpec struct {
-	Type      string        `yaml:"type" json:"type"`
-	Port      int           `yaml:"port" json:"port"`
-	Path      string        `yaml:"path" json:"path,omitempty"`
-	Command   []string      `yaml:"command" json:"command,omitempty"`
-	Interval  time.Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
-	Timeout   time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	Threshold int           `yaml:"threshold,omitempty" json:"threshold,omitempty"`
+	Type      HealthCheckType `yaml:"type" json:"type"`
+	Port      int             `yaml:"port" json:"port"`
+	Path      string          `yaml:"path" json:"path,omitempty"`
+	Command   []string        `yaml:"command" json:"command,omitempty"`
+	Interval  time.Duration   `yaml:"interval,omitempty" json:"interval,omitempty"`
+	Timeout   time.Duration   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	Threshold int             `yaml:"threshold,omitempty" json:"threshold,omitempty"`
 }
 
 type VolumeSpec struct {

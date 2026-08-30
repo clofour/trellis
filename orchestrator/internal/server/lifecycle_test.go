@@ -1,8 +1,8 @@
 package server
 
 import (
-	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/clofour/trellis/internal/lifecycle"
 )
@@ -16,8 +16,8 @@ func TestLegacyAllocationStatusLoadsSafely(t *testing.T) {
 		"healthy":   {lifecycle.PhaseRunning, lifecycle.HealthHealthy},
 		"unhealthy": {lifecycle.PhaseRunning, lifecycle.HealthUnhealthy},
 	} {
-		var allocation Allocation
-		if err := json.Unmarshal([]byte(`{"name":"legacy","revision":2,"status":"`+legacy+`"}`), &allocation); err != nil {
+		allocation, err := decodeAllocationRecord([]byte(`{"name":"legacy","revision":2,"status":"`+legacy+`"}`), time.Now().UTC())
+		if err != nil {
 			t.Fatal(err)
 		}
 		if allocation.ID != "legacy" || allocation.Generation != 1 || allocation.JobRevision != 2 || allocation.Phase != expected.phase || allocation.Health != expected.health {
@@ -31,7 +31,7 @@ func TestRetryDelayIsDeterministicAndBounded(t *testing.T) {
 	if first != retryDelay("allocation", 4) {
 		t.Fatal("retry jitter is not deterministic")
 	}
-	if first < 8_000_000_000 || first >= 8_500_000_000 {
+	if first < 8*time.Second || first >= 8500*time.Millisecond {
 		t.Fatalf("unexpected retry delay %s", first)
 	}
 }

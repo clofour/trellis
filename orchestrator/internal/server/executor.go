@@ -58,8 +58,8 @@ func (s *Server) executeStart(ctx context.Context, alloc *Allocation) error {
 		return fmt.Errorf("job %s was deleted before allocation start", alloc.JobName)
 	}
 
-	var groupRuntime string
-	var groupNetworkMode string
+	var groupRuntime spec.Runtime
+	var groupNetworkMode spec.NetworkMode
 	var groupAPIAccess bool
 	var groupRestart *spec.RestartPolicySpec
 	for _, group := range job.Spec.TaskGroups {
@@ -71,9 +71,23 @@ func (s *Server) executeStart(ctx context.Context, alloc *Allocation) error {
 			break
 		}
 	}
-	hostMode := groupNetworkMode == "host"
+	hostMode := groupNetworkMode == spec.NetworkModeHost
 	wireGuard := job.Spec.Network != nil && job.Spec.Network.WireGuard && !hostMode
-	request := &api.AllocationRequest{AllocationID: alloc.ID, Generation: alloc.Generation, JobRevision: alloc.JobRevision, Epoch: s.controlEpoch, Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.ID, Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard, NetworkMode: groupNetworkMode, Restart: groupRestart}
+	request := &api.AllocationRequest{
+		AllocationID: alloc.ID,
+		Generation:   alloc.Generation,
+		JobRevision:  alloc.JobRevision,
+		Epoch:        s.controlEpoch,
+		Namespace:    alloc.Namespace,
+		JobName:      alloc.JobName,
+		GroupName:    alloc.TaskGroupName,
+		Name:         alloc.ID,
+		Tasks:        alloc.Tasks,
+		Runtime:      string(groupRuntime),
+		WireGuard:    wireGuard,
+		NetworkMode:  string(groupNetworkMode),
+		Restart:      groupRestart,
+	}
 	if wireGuard {
 		plan, err := s.networkPlanLocked(alloc.Namespace, alloc.Node)
 		if err != nil {
@@ -184,6 +198,12 @@ func (s *Server) executeStop(ctx context.Context, alloc *Allocation) error {
 		return fmt.Errorf("persist stopped allocation: %w", err)
 	}
 	return nil
+}
+
+func (s *Server) networkPlan(namespace string, target *Node) (*network.Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.networkPlanLocked(namespace, target)
 }
 
 // networkPlanLocked requires s.mu to be held for reading.
