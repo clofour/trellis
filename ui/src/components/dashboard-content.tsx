@@ -4,7 +4,7 @@ import { useNodes, useJobs } from "@/hooks/use-api";
 import { StatCard } from "./stat-card";
 import { ResourceBar } from "./resource-bar";
 import { Skeleton } from "./skeleton";
-import type { Node } from "@/lib/types";
+import type { Job, Node } from "@/lib/types";
 
 export function DashboardContent() {
   const { data: nodes, isLoading: nodesLoading } = useNodes();
@@ -20,6 +20,7 @@ export function DashboardContent() {
   const totalDesired = jobs?.reduce((sum, j) => sum + j.desired, 0) ?? 0;
 
   const { totalCPU, totalMemory } = aggregateResources(nodes ?? []);
+  const { requestedCPU, requestedMemory } = requestedResources(jobs ?? []);
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -58,21 +59,21 @@ export function DashboardContent() {
         </h3>
         <div className="mt-4 space-y-4">
           <ResourceBar
-            label="CPU"
-            used={0}
+            label="CPU requested"
+            used={requestedCPU}
             total={totalCPU}
             format="cpu"
           />
           <ResourceBar
-            label="Memory"
-            used={0}
+            label="Memory requested"
+            used={requestedMemory}
             total={totalMemory}
             format="memory"
           />
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Total cluster capacity across all registered nodes. Per-allocation
-          usage requires metrics integration.
+          Requested resources from desired job specs versus schedulable cluster
+          capacity. This is reservation pressure, not live container utilization.
         </p>
       </div>
 
@@ -130,6 +131,21 @@ function aggregateResources(nodes: Node[]) {
     }
   }
   return { totalCPU, totalMemory };
+}
+
+function requestedResources(jobs: Job[]) {
+  let requestedCPU = 0;
+  let requestedMemory = 0;
+  for (const job of jobs) {
+    for (const group of job.spec?.task_groups ?? []) {
+      for (const task of group.tasks) {
+        if (!task.resources) continue;
+        requestedCPU += task.resources.cpu * group.count;
+        requestedMemory += task.resources.memory * group.count;
+      }
+    }
+  }
+  return { requestedCPU, requestedMemory };
 }
 
 function DashboardSkeleton() {
