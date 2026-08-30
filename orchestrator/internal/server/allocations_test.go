@@ -2,7 +2,9 @@ package server
 
 import (
 	"testing"
+	"time"
 
+	"github.com/clofour/trellis/internal/lifecycle"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
@@ -44,5 +46,63 @@ func TestListAllocationsWithFilters(t *testing.T) {
 	}
 	if got := s.ListAllocations("", &AllocationListFilter{Job: "web", Label: "trellis.expose:true"}); len(got) != 2 {
 		t.Fatalf("expected two exposed web allocations across namespaces, got %d", len(got))
+	}
+}
+
+func TestAllocationEvents(t *testing.T) {
+	now := time.Now().UTC()
+	alloc := &Allocation{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", Name: "acme-web-1", Phase: lifecycle.PhasePlaced}
+	alloc.normalize(now)
+
+	s := &Server{
+		jobs:        map[string]*Job{},
+		allocations: []*Allocation{alloc},
+	}
+
+	// No events yet.
+	events, ok := s.AllocationEvents("acme", "acme-web-1")
+	if !ok {
+		t.Fatal("expected allocation to be found")
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events before any transition, got %d", len(events))
+	}
+
+	// Drive through a few transitions.
+	if err := alloc.Transition(lifecycle.PhaseStarting, now, "scheduled", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := alloc.Transition(lifecycle.PhaseRunning, now.Add(time.Second), "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := alloc.Transition(lifecycle.PhaseFailed, now.Add(2*time.Second), "oom", "container exited"); err != nil {
+		t.Fatal(err)
+	}
+
+	events, ok = s.AllocationEvents("acme", "acme-web-1")
+	if !ok {
+		t.Fatal("expected allocation to be found")
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+	if events[0].Phase != lifecycle.PhaseStarting || events[0].Reason != "scheduled" {
+		t.Errorf("event 0: unexpected %+v", events[0])
+	}
+	if events[1].Phase != lifecycle.PhaseRunning {
+		t.Errorf("event 1: unexpected %+v", events[1])
+	}
+	if events[2].Phase != lifecycle.PhaseFailed || events[2].Reason != "oom" || events[2].Message != "container exited" {
+		t.Errorf("event 2: unexpected %+v", events[2])
+	}
+
+	// Namespace mismatch returns not-found.
+	if _, ok := s.AllocationEvents("staging", "acme-web-1"); ok {
+		t.Fatal("expected not-found for wrong namespace")
+	}
+
+	// Unknown allocation returns not-found.
+	if _, ok := s.AllocationEvents("acme", "nonexistent"); ok {
+		t.Fatal("expected not-found for unknown allocation")
 	}
 }

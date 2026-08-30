@@ -174,6 +174,9 @@ type Allocation struct {
 	Node     *Node
 	Revision int               `json:"revision,omitempty"`
 	Ports    []api.PortMapping `json:"ports,omitempty"`
+	// Events is an in-memory ring buffer of recent phase transitions.
+	// It is not persisted and resets on leader failover.
+	Events *lifecycle.RingBuffer `json:"-"`
 }
 
 func (a *Allocation) AllocationID() string {
@@ -220,6 +223,10 @@ func (a *Allocation) Transition(to lifecycle.Phase, now time.Time, reason, messa
 		return err
 	}
 	if a.Phase != to {
+		if a.Events == nil {
+			a.Events = &lifecycle.RingBuffer{}
+		}
+		a.Events.Append(lifecycle.Event{Phase: to, Reason: reason, Message: message, At: now})
 		a.Phase = to
 		a.TransitionedAt = now
 	}

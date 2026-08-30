@@ -116,6 +116,15 @@ type AllocationResponse struct {
 
 type AllocationListResponse = []AllocationResponse
 
+type AllocationEventResponse struct {
+	Phase   lifecycle.Phase `json:"phase"`
+	Reason  string          `json:"reason,omitempty"`
+	Message string          `json:"message,omitempty"`
+	At      time.Time       `json:"at"`
+}
+
+type AllocationEventListResponse = []AllocationEventResponse
+
 type JobListResponse = []JobStatusResponse
 
 type ServiceEntry struct {

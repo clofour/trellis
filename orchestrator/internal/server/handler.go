@@ -43,9 +43,21 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
 	v1.GET("/allocations", h.handleListAllocations)
+	v1.GET("/allocations/:id/events", h.handleAllocationEvents)
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
 	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
+}
+
+func (h *Handler) handleAllocationEvents(c *echo.Context) error {
+	events, ok := h.server.AllocationEvents(requestNamespace(c), c.Param("id"))
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotFound, "allocation not found")
+	}
+	if events == nil {
+		events = api.AllocationEventListResponse{}
+	}
+	return c.JSON(http.StatusOK, events)
 }
 
 func (h *Handler) handleAllocationLogs(c *echo.Context) error {
