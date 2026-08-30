@@ -10,9 +10,8 @@ A job manifest references secrets by name; the scheduler decrypts them at
 allocation time and injects them into the container either as environment
 variables or as files mounted inside the container.
 
-Secrets are write-only through the API — you cannot read a stored secret value
-back out, only update or delete it. This limits blast radius if the control
-plane is compromised.
+Secret-management API responses expose metadata, not the stored secret value.
+Values are delivered only to tasks that explicitly reference the secret.
 
 ## Manifests
 
@@ -40,23 +39,23 @@ secrets:
 | `name` | yes | Name of the secret in the namespace |
 | `target` | yes | `env` or `file` |
 | `env` | if target=env | Environment variable name |
-| `path` | if target=file | Absolute path inside the container |
-| `mode` | no | File permission bits (default `0400`) |
+| `path` | if target=file | Absolute path inside the container, below `/run/trellis-secrets/` |
+| `mode` | no | `0400` or `0600` (default `0400`) |
 
 ## Deploying
 
 ### Store the secrets
 
-Write each secret before applying the job. The CLI reads the value from stdin:
+Write each secret before applying the job. Use `--stdin` when piping the value:
 
 ```sh
-echo -n "s3cr3t-p4ssw0rd" | trellis --namespace acme secrets set db-password
+printf %s "s3cr3t-p4ssw0rd" | trellis --namespace acme secrets set db-password --stdin
 ```
 
 To write from a file:
 
 ```sh
-trellis --namespace acme secrets set tls-cert < ./tls.crt
+trellis --namespace acme secrets set tls-cert --file ./tls.crt
 ```
 
 ### Apply the job
@@ -65,7 +64,7 @@ trellis --namespace acme secrets set tls-cert < ./tls.crt
 trellis --namespace acme jobs apply --file app.yaml
 ```
 
-The scheduler resolves the secret references when placing allocations. If a
+The scheduler resolves the secret references when an allocation starts. If a
 referenced secret does not exist, the allocation fails to start.
 
 ### Rotate a secret
@@ -73,29 +72,37 @@ referenced secret does not exist, the allocation fails to start.
 Write a new value to the same secret name:
 
 ```sh
-echo -n "n3w-p4ssw0rd" | trellis --namespace acme secrets set db-password
+printf %s "n3w-p4ssw0rd" | trellis --namespace acme secrets set db-password --stdin
 ```
 
-The scheduler does not automatically restart running allocations on a secret
-rotation. To pick up the new value, redeploy the job:
+Updating the stored value does **not** modify or restart allocations that are
+already running. Re-applying an otherwise unchanged manifest also does not
+create a new execution revision, so it is not sufficient by itself to deliver
+the new value.
 
-```sh
-trellis --namespace acme jobs apply --file app.yaml
-```
+To roll the new secret into the workload, make an execution-affecting manifest
+change (for example, increment a benign environment value such as
+`SECRET_REVISION`) and apply the manifest. New allocations resolve the current
+secret value when they start. If an outage is acceptable, destroying and
+re-applying the job also starts fresh allocations.
 
 ### Optimistic concurrency
 
 To prevent lost updates when multiple operators rotate the same secret
-concurrently, pass `--version` with the current version number. The write is
-rejected if the stored version has changed since you last read it:
+concurrently, pass `--expected-version` with the current version number. The
+write is rejected if the stored version changed since you last read the
+metadata:
 
 ```sh
 # Read the current version first.
 trellis --namespace acme secrets describe db-password
-# => version: 4
+# => Version: 4
 
-echo -n "n3w-p4ssw0rd" | trellis --namespace acme secrets set --version 4 db-password
+printf %s "n3w-p4ssw0rd" | \
+  trellis --namespace acme secrets set db-password --stdin --expected-version 4
 ```
+
+Passing `--expected-version 0` performs a create-only write.
 
 ### List and delete secrets
 
@@ -106,9 +113,11 @@ trellis --namespace acme secrets delete db-password
 
 ## Security notes
 
-- Secrets are namespace-scoped — a job in `acme` cannot access secrets from
-  `other-namespace`.
-- Tasks without a `secrets:` reference never receive the values.
-- File-target secrets are written to the container's private filesystem; they
-  are not visible to other tasks in the task group.
-- Trellis does not log secret values.
+- Secret management requires the cluster-authorized CLI credential; the
+  namespace token injected by `api_access: true` is not a secret-management
+  credential.
+- Tasks without a `secrets:` reference never receive the value.
+- File-target secrets are materialized in a memory-backed host directory and
+  bind-mounted read-only into the target task.
+- Trellis does not intentionally include secret values in its API responses or
+  log messages.
