@@ -7,8 +7,6 @@ Linux host with root access.
 ## Prerequisites
 
 - containerd, managed as a system service
-- Go 1.26.4 or later when building from source
-- Node.js 20 or later and npm for the optional dashboard
 - at least 2 CPU cores and 4 GB RAM for an evaluation deployment
 
 For installation details, follow the upstream containerd documentation for
@@ -18,7 +16,18 @@ your distribution. Verify the service before starting Trellis:
 sudo systemctl status containerd
 ```
 
-## Build and install
+## Install
+
+The setup script handles binary download, systemd unit creation, token
+generation, and optional dashboard installation in one step:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash
+```
+
+### Build and install from source
+
+Requires Go 1.26.4 or later:
 
 ```sh
 cd orchestrator

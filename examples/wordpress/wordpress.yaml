@@ -1,0 +1,26 @@
+namespace: blog
+name: wordpress
+task_groups:
+  - name: app
+    count: 1
+    labels:
+      trellis.expose: "true"
+      trellis/domain: localhost
+    tasks:
+      - name: wordpress
+        image: docker.io/library/wordpress:latest
+        env:
+          WORDPRESS_DB_HOST: mysql.blog.trellis
+          WORDPRESS_DB_NAME: wordpress
+          WORDPRESS_DB_USER: wordpress
+          WORDPRESS_DB_PASSWORD: wordpress
+        resources:
+          cpu: 500
+          memory: 536870912
+        ports:
+          - host_port: 0
+            container_port: 80
+        health_check:
+          type: http
+          port: 80
+          path: /wp-login.php
