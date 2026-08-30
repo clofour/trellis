@@ -55,3 +55,56 @@ func TestScheduleTreatsTaskGroupAsOneResourceUnit(t *testing.T) {
 		t.Fatalf("placed a group whose aggregate task resources exceed the node: %#v", placements)
 	}
 }
+
+func TestScheduleSpreadsTaskGroupReplicas(t *testing.T) {
+	a := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy}
+	b := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy}
+
+	placements := Schedule(&PlacementIntent{Namespace: "default", JobName: "web", TaskGroupName: "api", Count: 2, Nodes: []*Node{a, b}})
+	if len(placements) != 2 {
+		t.Fatalf("got %d placements, want 2", len(placements))
+	}
+	if placements[0].NodeID == placements[1].NodeID {
+		t.Fatalf("replicas were not spread: %#v", placements)
+	}
+}
+
+func TestScheduleStacksReplicasWhenOnlyOneNodeFits(t *testing.T) {
+	a := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy, CPU: 1000}
+	b := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy, CPU: 50}
+	tasks := []spec.TaskSpec{{Name: "server", Resources: &spec.ResourcesSpec{CPU: 100}}}
+
+	placements := Schedule(&PlacementIntent{Namespace: "default", JobName: "web", TaskGroupName: "api", Count: 2, Nodes: []*Node{a, b}, Tasks: tasks})
+	if len(placements) != 2 {
+		t.Fatalf("got %d placements, want 2", len(placements))
+	}
+	for _, placement := range placements {
+		if placement.NodeID != a.ID {
+			t.Fatalf("replica placed on node without capacity: %#v", placements)
+		}
+	}
+}
+
+func TestScheduleFiltersNodesByConstraints(t *testing.T) {
+	amd64 := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy, OS: "linux", Arch: "amd64"}
+	arm64 := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy, OS: "linux", Arch: "arm64"}
+
+	placements := Schedule(&PlacementIntent{
+		Count: 1, Nodes: []*Node{amd64, arm64},
+		Constraints: []spec.ConstraintSpec{{Attribute: "os", Value: "linux"}, {Attribute: "arch", Value: "arm64"}},
+	})
+	if len(placements) != 1 || placements[0].NodeID != arm64.ID {
+		t.Fatalf("unexpected placements: %#v", placements)
+	}
+}
+
+func TestScheduleProducesNoPlacementsWithoutConstraintMatch(t *testing.T) {
+	node := &Node{ID: uuid.New(), Status: NodeStatusHealthy, OS: "linux", Arch: "amd64"}
+	placements := Schedule(&PlacementIntent{
+		Count: 1, Nodes: []*Node{node},
+		Constraints: []spec.ConstraintSpec{{Attribute: "os", Value: "windows"}},
+	})
+	if len(placements) != 0 {
+		t.Fatalf("unexpected placements: %#v", placements)
+	}
+}

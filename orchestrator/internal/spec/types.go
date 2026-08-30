@@ -24,6 +24,12 @@ type TaskGroupSpec struct {
 	NetworkMode string             `yaml:"network_mode,omitempty" json:"network_mode,omitempty"`
 	APIAccess   bool               `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
+	Constraints []ConstraintSpec    `yaml:"constraints,omitempty" json:"constraints,omitempty"`
+}
+
+type ConstraintSpec struct {
+	Attribute string `yaml:"attribute" json:"attribute"`
+	Value     string `yaml:"value" json:"value"`
 }
 
 type RestartPolicySpec struct {

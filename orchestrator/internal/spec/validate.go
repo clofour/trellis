@@ -56,6 +56,19 @@ func Validate(spec *JobSpec) error {
 				return fmt.Errorf("task group %q: restart window must be positive", group.Name)
 			}
 		}
+		constraints := make(map[string]struct{}, len(group.Constraints))
+		for _, constraint := range group.Constraints {
+			if !labelKeyPattern.MatchString(constraint.Attribute) {
+				return fmt.Errorf("task group %q: invalid constraint attribute %q", group.Name, constraint.Attribute)
+			}
+			if strings.TrimSpace(constraint.Value) == "" {
+				return fmt.Errorf("task group %q: constraint %q requires a value", group.Name, constraint.Attribute)
+			}
+			if _, exists := constraints[constraint.Attribute]; exists {
+				return fmt.Errorf("task group %q: duplicate constraint attribute %q", group.Name, constraint.Attribute)
+			}
+			constraints[constraint.Attribute] = struct{}{}
+		}
 		for k, v := range group.Labels {
 			if !labelKeyPattern.MatchString(k) {
 				return fmt.Errorf("task group %q: invalid label key %q", group.Name, k)

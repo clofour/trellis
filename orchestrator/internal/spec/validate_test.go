@@ -109,3 +109,51 @@ func TestValidateHealthAndRestartPolicy(t *testing.T) {
 		t.Fatalf("zero-restart policy rejected: %v", err)
 	}
 }
+
+func TestParseConstraints(t *testing.T) {
+	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    constraints:\n      - attribute: os\n        value: linux\n      - attribute: arch\n        value: arm64\n    tasks:\n      - name: server\n        image: example/server:1\n")
+	job, err := ParseYAML(raw)
+	if err != nil {
+		t.Fatalf("parse manifest: %v", err)
+	}
+	if err := Validate(job); err != nil {
+		t.Fatalf("validate manifest: %v", err)
+	}
+	constraints := job.TaskGroups[0].Constraints
+	if len(constraints) != 2 || constraints[0].Attribute != "os" || constraints[0].Value != "linux" || constraints[1].Attribute != "arch" || constraints[1].Value != "arm64" {
+		t.Fatalf("unexpected constraints: %#v", constraints)
+	}
+}
+
+func TestValidateConstraints(t *testing.T) {
+	job := func(constraints ...ConstraintSpec) *JobSpec {
+		return &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{
+			Name: "api", Count: 1, Constraints: constraints, Tasks: []TaskSpec{{Name: "server", Image: "image"}},
+		}}}
+	}
+
+	valid := job(
+		ConstraintSpec{Attribute: "os", Value: "linux"},
+		ConstraintSpec{Attribute: "example.com/accelerator", Value: "gpu"},
+	)
+	if err := Validate(valid); err != nil {
+		t.Fatalf("valid constraints rejected: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		constraints []ConstraintSpec
+	}{
+		{"missing attribute", []ConstraintSpec{{Value: "linux"}}},
+		{"invalid attribute", []ConstraintSpec{{Attribute: "bad attribute", Value: "linux"}}},
+		{"missing value", []ConstraintSpec{{Attribute: "os"}}},
+		{"duplicate attribute", []ConstraintSpec{{Attribute: "arch", Value: "amd64"}, {Attribute: "arch", Value: "arm64"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := Validate(job(test.constraints...)); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
