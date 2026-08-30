@@ -1,18 +1,21 @@
 # Blue-green deployment
 
-This example shows how to deploy a new version of a service with zero downtime
-and an instant rollback path using a blue-green strategy.
+This example shows how to keep two independent releases running and switch
+proxy routing between them without replacing the active allocations during the
+cutover.
 
 ## How it works
 
 Two jobs — `api-blue` and `api-green` — run identical infrastructure but carry
 different image tags. Only the active slot exposes itself to the reverse proxy
 via the `trellis.expose: "true"` label. Traffic reaches only the active slot;
-the inactive slot runs (and stays warm) but receives no traffic.
+the inactive slot stays warm but is not selected by the proxy.
 
 To promote the green slot, remove `trellis.expose` from blue and add it to
-green. Because the green allocations are already running and healthy, promotion
-is instant. Rolling back is the same operation in reverse.
+green. Because the green allocations are already running and healthy, no
+application allocation has to be restarted for the cutover. The proxy observes
+the label changes on its next sync cycle. Rolling back is the same operation in
+reverse.
 
 ## Manifests
 
@@ -22,14 +25,14 @@ is instant. Rolling back is the same operation in reverse.
 | `app-green.yaml` | Staging slot — no `trellis.expose` label |
 
 The proxy reads the `trellis/domain` label and routes `app.example.com` to
-whichever allocations carry `trellis.expose: "true"`. See
+whichever healthy allocations carry `trellis.expose: "true"`. See
 `examples/reverse-proxy` for the proxy setup.
 
 ## Deploying
 
 ### Initial deploy
 
-Deploy the first version (blue) and the proxy:
+Deploy the first version (blue):
 
 ```sh
 trellis --namespace acme jobs apply --file app-blue.yaml
@@ -47,20 +50,15 @@ trellis --namespace acme jobs apply --file app-green.yaml
 trellis --namespace acme jobs status api-green
 ```
 
-Wait until all three green allocations are healthy. At this point v2 is running
-and accepting health checks, but no user traffic reaches it.
+Wait until all three green allocations are healthy. At this point v2 is
+running and being health-checked, but the proxy does not route user traffic to
+it.
 
 ### Validate
 
-Run smoke tests against the green slot directly. You can reach it by querying
-the allocations API for its host and port:
-
-```sh
-trellis --namespace acme jobs status api-green
-```
-
-Or from inside the cluster, the job is accessible at `api-green.acme.trellis`
-(Trellis DNS resolves to healthy allocations in the namespace).
+Inspect `jobs status api-green` to get the allocation addresses and port
+mappings exposed by the control plane, then run whatever smoke tests are
+appropriate for your environment.
 
 ### Cut over
 
@@ -73,13 +71,13 @@ trellis --namespace acme jobs apply --file app-green.yaml
 trellis --namespace acme jobs apply --file app-blue.yaml
 ```
 
-The proxy's sync loop (default 5-second interval) picks up the label change and
-reroutes traffic to the green allocations. The cutover is near-instant once the
-proxy reloads.
+Label-only changes do not create a new execution revision, so the existing
+allocations stay running. The proxy's sync loop (five seconds by default) picks
+up the change and reloads its routing configuration.
 
 ### Rollback
 
-If v2 is faulty, revert the labels — green back to no expose, blue back to
+If v2 is faulty, revert the labels — green back to unexposed, blue back to
 exposed — and apply again:
 
 ```sh
@@ -87,21 +85,21 @@ trellis --namespace acme jobs apply --file app-blue.yaml
 trellis --namespace acme jobs apply --file app-green.yaml
 ```
 
-Traffic returns to blue before any user notices. Then fix v2 and try again.
-
 ### Cleanup
 
-Once you are confident in v2, stop the blue slot:
+Once you are confident in v2, stop the old job:
 
 ```sh
-trellis --namespace acme jobs delete api-blue
+trellis --namespace acme jobs destroy api-blue
 ```
 
-On the next cycle, rename green to blue (the slot names are just labels) so
-the pattern stays consistent for the next deployment.
+`api-blue` and `api-green` are separate **job names**, not labels. For the next
+deployment you can either reuse the now-free blue job name for the next staged
+release or keep whatever naming convention is clearest to you; Trellis does
+not have a slot abstraction.
 
-## Slot naming
+## Slot labels
 
 The `slot: blue` / `slot: green` labels are for human bookkeeping only; Trellis
-does not interpret them. The routing-relevant label is `trellis.expose: "true"`.
-You can use any naming scheme — `active`/`canary`, `v1`/`v2`, etc.
+does not interpret them. The routing-relevant convention in this example is
+`trellis.expose: "true"`.
