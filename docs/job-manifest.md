@@ -4,6 +4,10 @@ Trellis job manifests are YAML documents. The CLI parses and validates a
 manifest before submitting it. Check field names carefully: compatibility
 parsing may ignore fields that are not part of the schema.
 
+See the [getting-started guide](getting-started.md) for a walkthrough of
+deploying manifests, and the [operations guide](operations.md) for
+day-to-day job management commands.
+
 ## Complete example
 
 ```yaml
@@ -119,12 +123,3 @@ health_check:
 HTTP and TCP checks require a port from 1 through 65535. Script checks require
 a non-empty command.
 
-## Applying a manifest
-
-```sh
-trellis --server-addr leader.example:8128 \
-  --cluster-token "$TRELLIS_TOKEN" jobs apply --file trellis.yaml
-```
-
-The namespace used by `jobs apply` always comes from the manifest. Use the
-global `--namespace` option with `jobs status`, `jobs logs`, and `jobs destroy`.
