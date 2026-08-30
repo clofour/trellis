@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -186,7 +185,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, namespace, jobName, 
 
 	var mounts []*runtime.Mount
 	for _, v := range spec.Volumes {
-		mount, err := a.volumes.Create(filepath.Join("namespaces", namespace, jobName), taskName, v)
+		mount, err := a.volumes.Create(namespace, jobName, taskName, v)
 		if err != nil {
 			return fmt.Errorf("create volume %s: %w", v.Name, err)
 		}
