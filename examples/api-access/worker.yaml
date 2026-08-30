@@ -1,0 +1,18 @@
+namespace: acme
+name: worker
+task_groups:
+  - name: processor
+    count: 3
+    labels:
+      component: worker
+      queue: default
+    tasks:
+      - name: processor
+        image: your-registry/worker:latest
+        resources:
+          cpu: 500
+          memory: 268435456
+        health_check:
+          type: http
+          port: 9090
+          path: /ready
