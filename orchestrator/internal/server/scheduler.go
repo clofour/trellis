@@ -111,7 +111,7 @@ func nodeMatchesConstraints(node *Node, constraints []spec.ConstraintSpec) bool 
 		case "arch":
 			value = node.Arch
 		default:
-			return false
+			value = node.Labels[constraint.Attribute]
 		}
 		if value != constraint.Value {
 			return false

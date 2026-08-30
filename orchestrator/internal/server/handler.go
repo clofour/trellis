@@ -106,6 +106,7 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 		Memory:             request.Memory,
 		OS:                 request.OS,
 		Arch:               request.Arch,
+		Labels:             request.Labels,
 		WireGuardPublicKey: request.WireGuardPublicKey,
 		WireGuardEndpoint:  request.WireGuardEndpoint,
 	})
@@ -236,6 +237,8 @@ func (h *Handler) convertNode(node *Node) *api.NodeResponse {
 		Port:          node.Port,
 		Status:        api.NodeStatusResponse(node.Status),
 		LastHeartbeat: node.LastHeartbeat,
-		CPU:           node.CPU, Memory: node.Memory,
+		CPU:           node.CPU,
+		Memory:        node.Memory,
+		Labels:        node.Labels,
 	}
 }

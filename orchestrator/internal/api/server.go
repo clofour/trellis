@@ -24,20 +24,22 @@ type NodeResponse struct {
 	LastHeartbeat time.Time          `json:"last_heartbeat"`
 	CPU           int                `json:"cpu"`
 	Memory        int64              `json:"memory"`
+	Labels        map[string]string  `json:"labels,omitempty"`
 }
 
 type NodeListResponse = []NodeResponse
 
 type NodeRegistrationRequest struct {
-	ID                 uuid.UUID `json:"id"`
-	Host               string    `json:"host"`
-	Port               int       `json:"port"`
-	CPU                int       `json:"cpu"`
-	Memory             int64     `json:"memory"`
-	OS                 string    `json:"os"`
-	Arch               string    `json:"arch"`
-	WireGuardPublicKey string    `json:"wireguard_public_key,omitempty"`
-	WireGuardEndpoint  string    `json:"wireguard_endpoint,omitempty"`
+	ID                 uuid.UUID         `json:"id"`
+	Host               string            `json:"host"`
+	Port               int               `json:"port"`
+	CPU                int               `json:"cpu"`
+	Memory             int64             `json:"memory"`
+	OS                 string            `json:"os"`
+	Arch               string            `json:"arch"`
+	Labels             map[string]string `json:"labels,omitempty"`
+	WireGuardPublicKey string            `json:"wireguard_public_key,omitempty"`
+	WireGuardEndpoint  string            `json:"wireguard_endpoint,omitempty"`
 }
 
 type NodeRegistrationResponse struct {
