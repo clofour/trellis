@@ -553,32 +553,47 @@ interface JobFormProps {
   onSuccess: () => void;
 }
 
+// Outer shell: only mounts the panel while open so inner state always
+// initialises fresh from props rather than needing a reset effect.
 export function JobForm({ open, initialSpec, onClose, onSuccess }: JobFormProps) {
-  const [form, setForm] = useState<FormState>(blankForm);
+  if (!open) return null;
+  return (
+    <JobFormPanel
+      initialSpec={initialSpec}
+      onClose={onClose}
+      onSuccess={onSuccess}
+    />
+  );
+}
+
+function JobFormPanel({
+  initialSpec,
+  onClose,
+  onSuccess,
+}: {
+  initialSpec?: JobSpec;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [form, setForm] = useState<FormState>(
+    () => initialSpec ? specToForm(initialSpec) : blankForm()
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isEditing = !!initialSpec;
-
-  useEffect(() => {
-    if (open) {
-      setForm(initialSpec ? specToForm(initialSpec) : blankForm());
-      setError(null);
-    }
-  }, [open, initialSpec]);
 
   const handleClose = useCallback(() => {
     if (!submitting) onClose();
   }, [submitting, onClose]);
 
   useEffect(() => {
-    if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") handleClose();
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [open, handleClose]);
+  }, [handleClose]);
 
   const addGroup = () =>
     setForm((f) => ({ ...f, groups: [...f.groups, blankGroup()] }));
@@ -606,8 +621,6 @@ export function JobForm({ open, initialSpec, onClose, onSuccess }: JobFormProps)
       setSubmitting(false);
     }
   };
-
-  if (!open) return null;
 
   return (
     <div
