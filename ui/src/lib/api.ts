@@ -100,10 +100,13 @@ export async function setSecret(
   value: string,
   expectedVersion?: number,
 ): Promise<SecretMetadata> {
-  const body: { value_base64: string; expected_version?: number } = {
+  const body = {
     value_base64: encodeUTF8Base64(value),
+    // New secrets are create-only; rotations require the version we displayed.
+    // This prevents the dashboard from silently overwriting a concurrently
+    // created or rotated value.
+    expected_version: expectedVersion ?? 0,
   };
-  if (expectedVersion !== undefined) body.expected_version = expectedVersion;
   const res = await apiMutation(`/api/v1/secrets/${encodeURIComponent(name)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
