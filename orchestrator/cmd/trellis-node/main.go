@@ -37,6 +37,7 @@ import (
 	containerruntime "github.com/clofour/trellis/internal/runtime"
 	secretstore "github.com/clofour/trellis/internal/secrets"
 	"github.com/clofour/trellis/internal/server"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
 	"github.com/clofour/trellis/internal/tlsutil"
