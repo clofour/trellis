@@ -9,6 +9,7 @@ import (
 	"github.com/clofour/trellis/internal/catalog"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Handler struct {
@@ -33,6 +34,7 @@ func NewHandler(server *Server) *Handler {
 }
 
 func (h *Handler) Register(e *echo.Echo) {
+	e.GET("/metrics", h.handleMetrics)
 	v1 := e.Group("/v1")
 	v1.GET("/nodes", h.handleListNodes)
 	v1.POST("/nodes", h.handleRegisterNode)
@@ -240,6 +242,11 @@ func (h *Handler) handleRaftJoin(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "cluster CA unavailable")
 	}
 	return c.JSON(http.StatusOK, api.RaftJoinResponse{CACert: caCert, CAKey: caKey})
+}
+
+func (h *Handler) handleMetrics(c *echo.Context) error {
+	promhttp.Handler().ServeHTTP(c.Response(), c.Request())
+	return nil
 }
 
 func (h *Handler) convertNode(node *Node) *api.NodeResponse {

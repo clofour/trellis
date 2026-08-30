@@ -36,6 +36,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 )
 
@@ -171,6 +172,8 @@ func run(parent context.Context, cfg *config) error {
 	if err := control.SetNetworkPool(cfg.WireGuardPool); err != nil {
 		return err
 	}
+
+	server.RegisterMetrics(control, prometheus.DefaultRegisterer)
 
 	for i := 0; ; i++ {
 		if _, err := control.InitWithToken(ctx, cfg.ClusterToken); err == nil {
@@ -529,21 +532,27 @@ func clusterAuthMiddleware(token string) echo.MiddlewareFunc {
 }
 
 func leaderAuthMiddleware(clusterToken string, tokenManager *auth.TokenManager) echo.MiddlewareFunc {
-	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{KeyLookup: "header:Authorization:Bearer ", Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
-		if subtle.ConstantTimeCompare([]byte(key), []byte(clusterToken)) == 1 {
-			return true, nil
-		}
-		scope, err := tokenManager.ValidateToken(c.Request().Context(), key)
-		if err != nil {
+	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
+		KeyLookup: "header:Authorization:Bearer ",
+		Skipper: func(c *echo.Context) bool {
+			return c.Request().URL.Path == "/metrics"
+		},
+		Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
+			if subtle.ConstantTimeCompare([]byte(key), []byte(clusterToken)) == 1 {
+				return true, nil
+			}
+			scope, err := tokenManager.ValidateToken(c.Request().Context(), key)
+			if err != nil {
+				return false, nil
+			}
+			if scope != nil {
+				ctx := context.WithValue(c.Request().Context(), server.NamespaceContextKey, scope.Namespace)
+				c.SetRequest(c.Request().WithContext(ctx))
+				return true, nil
+			}
 			return false, nil
-		}
-		if scope != nil {
-			ctx := context.WithValue(c.Request().Context(), server.NamespaceContextKey, scope.Namespace)
-			c.SetRequest(c.Request().WithContext(ctx))
-			return true, nil
-		}
-		return false, nil
-	}})
+		},
+	})
 }
 
 func splitAddress(address string) (string, int, error) {
