@@ -1,66 +1,68 @@
 # Reverse proxy with Nginx
 
-This example deploys Nginx as a Trellis-managed reverse proxy that
-automatically discovers backend allocations using the Trellis API.
+This example deploys Nginx as a Trellis-managed reverse proxy that discovers
+backend allocations through the Trellis allocations API.
 
 ## How it works
 
-Trellis provides three building blocks that make this possible without making
-"services" a public resource:
+Trellis provides three building blocks that make this possible without adding a
+public service resource:
 
-1. **`api_access: true`** — When set on a task group, Trellis injects
-   `TRELLIS_TOKEN` and `TRELLIS_ADDR` into the container. These credentials are
-   scoped to the job's namespace and allow the container to call the Trellis
-   control-plane API.
+1. **`api_access: true`** — Trellis injects `TRELLIS_TOKEN` and `TRELLIS_ADDR`
+   into the task-group containers. The token carries the job namespace scope and
+   is intended for namespace-scoped workload APIs such as allocation queries.
 
 2. **`GET /v1/allocations`** — Returns allocation runtime information including
-   task-group labels, node addresses, port mappings, and health status. The
+   task-group labels, node addresses, port mappings, lifecycle, and health. The
    endpoint supports `job` and `label` filters.
 
-3. **Labels** — Task groups carry arbitrary key-value labels. The proxy uses
-   labels to decide which allocations to expose and how to route to them.
+3. **Labels** — Task groups carry arbitrary metadata. The proxy uses a small set
+   of label conventions to choose routes.
 
-The proxy job runs with `network_mode: host` so it can bind ports 80 and 443
-directly. A sync process polls:
+The proxy job requests `network_mode: host` so it can expose the node's port 80.
+A sync process polls:
 
 ```text
 GET /v1/allocations?label=trellis.expose:true
 ```
 
-It keeps only healthy allocations, reads their `trellis/domain` and
-`trellis/path-prefix` labels, and regenerates the Nginx upstream configuration.
-Nginx is reloaded only when the config actually changes.
+It keeps healthy allocations with usable host ports, validates the routing label
+syntax, groups them by domain/path, and regenerates the Nginx upstream
+configuration. Generated configuration is checked with `nginx -t`; if validation
+or a live reload fails, the previous configuration is restored and the same
+change is retried on the next poll.
 
 The internal service-discovery catalog remains an implementation detail used by
-Trellis DNS. This example depends only on allocations and task-group metadata,
-which are public scheduler concepts.
+Trellis DNS. This example depends only on allocations and task-group metadata.
 
 ## Label conventions
 
-These labels are conventions used by this example — Trellis itself is not
-opinionated about them.
+These labels are conventions used by this example; Trellis itself does not
+interpret them.
 
 | Label | Purpose | Example |
 | --- | --- | --- |
 | `trellis.expose` | Mark a group for proxy discovery | `"true"` |
 | `trellis/domain` | Virtual-host domain name | `app.example.com` |
-| `trellis/path-prefix` | Path-prefix routing (optional) | `/api` |
+| `trellis/path-prefix` | Path-prefix routing (optional; defaults to `/`) | `/api` |
+| `trellis/weight` | Positive per-allocation Nginx weight (optional; defaults to `1`) | `"3"` |
+
+For safety, the reference script accepts simple DNS-style domains and path
+prefixes made from letters, digits, `.`, `_`, `/`, and `-`. Extend the
+validation deliberately if your routing scheme needs additional syntax.
 
 ## Files
 
 | File | Description |
 | --- | --- |
-| `Dockerfile` | Builds the proxy image bundling Nginx, the sync script, and entrypoint |
-| `entrypoint.sh` | Container startup: installs Nginx config, starts sync daemon, runs Nginx |
-| `nginx.conf.template` | Base Nginx configuration with a `/health` endpoint and a conf.d include |
-| `sync-upstreams.sh` | Shell script that polls the allocations API and regenerates Nginx config |
+| `Dockerfile` | Builds the proxy image with Nginx, curl, jq, the sync script, and entrypoint |
+| `entrypoint.sh` | Installs the base config, starts the sync daemon, and runs Nginx in the foreground |
+| `nginx.conf.template` | Base Nginx configuration with a `/health` endpoint and a `conf.d` include |
+| `sync-upstreams.sh` | Polls the allocations API, renders routes, validates them, and reloads Nginx |
 | `proxy.yaml` | Trellis job manifest for the reverse proxy |
-| `app.yaml` | Example backend job with the appropriate labels set |
+| `app.yaml` | Example backend job with proxy-discovery labels |
 
 ## Building the proxy image
-
-The proxy container runs both Nginx and the sync script. Build the image from
-this directory:
 
 ```sh
 docker build -t your-registry/trellis-proxy:latest examples/reverse-proxy/
@@ -72,33 +74,47 @@ Update the `image` field in `proxy.yaml` to match your registry and tag.
 ## Deploying
 
 ```sh
-# Deploy the backend application
-trellis jobs apply --file examples/reverse-proxy/app.yaml
-
-# Deploy the reverse proxy
-trellis jobs apply --file examples/reverse-proxy/proxy.yaml
+trellis --namespace acme jobs apply --file examples/reverse-proxy/app.yaml
+trellis --namespace acme jobs apply --file examples/reverse-proxy/proxy.yaml
 ```
 
-The proxy will start discovering the backend allocations within the first poll
-cycle (five seconds by default). You can watch the Nginx config update by
-streaming the proxy container's logs.
+The sync process polls every five seconds by default. Use the proxy allocation
+ID from `jobs status reverse-proxy` if you want to stream its logs:
 
-The `app.yaml` backend uses [traefik/whoami](https://github.com/traefik/whoami)
-for the frontend — a lightweight container that returns request details, making
-it easy to verify that the proxy is correctly routing to the right upstream.
+```sh
+trellis --namespace acme jobs status reverse-proxy
+trellis --namespace acme jobs logs <allocation-id> --follow
+```
 
-## Customization
+The backend example uses
+[traefik/whoami](https://github.com/traefik/whoami), a small HTTP container that
+returns request details.
 
-The `sync-upstreams.sh` script is a complete reference implementation. For
-production use you might extend it or replace it with a purpose-built process
-that:
+## Operational notes
 
-- Watches allocation changes via long-polling instead of fixed-interval polling
-- Manages TLS certificates (e.g., via Let's Encrypt)
-- Supports weighted routing, header-based routing, or circuit breaking
-- Validates the generated config before reloading Nginx
+- The shell implementation polls rather than watching an event stream.
+- Removing the last healthy route for a domain removes its generated server
+  block; Nginx's default server then returns 404.
+- The sync script is intentionally small. Certificate management, request-rate
+  limiting, authentication, richer path matching, and other edge-proxy policy
+  remain operator concerns.
+- The namespace API token is a credential. Do not log or expose it from the
+  proxy container.
 
-Alternatively, `trellis-proxy-sync` (in `orchestrator/cmd/trellis-proxy-sync/`)
-is a compiled Go implementation with a template-driven approach and a configurable
-label selector. Build it with `go build ./cmd/trellis-proxy-sync` and see its
-`--help` for usage.
+## Compiled sync helper
+
+`orchestrator/cmd/trellis-proxy-sync/` contains a generic Go helper that uses the
+same allocation API but renders a caller-provided template. It also reads the
+`trellis/weight` label and exposes it as `.Weight` for each upstream.
+
+Build it from the Go module directory:
+
+```sh
+cd orchestrator
+go build ./cmd/trellis-proxy-sync
+```
+
+Run `./trellis-proxy-sync --help` for its flags. Unlike the bundled shell
+reference, the generic helper does not know how to validate a particular proxy
+configuration; supply an appropriate `-reload-cmd` and template for the proxy
+you integrate it with.
