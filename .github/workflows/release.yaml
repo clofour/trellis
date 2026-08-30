@@ -5,6 +5,7 @@ on:
       - "v*"
 permissions:
   contents: write
+  packages: write
 jobs:
   release:
     name: release
@@ -31,6 +32,24 @@ jobs:
 
       - name: Package UI source
         run: tar -czf trellis_ui.tar.gz -C ui --exclude node_modules --exclude .next .
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and publish UI container image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/trellis-ui
+          VERSION: ${{ github.ref_name }}
+        run: |
+          docker build \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --tag "${IMAGE}:${VERSION}" \
+            --tag "${IMAGE}:latest" \
+            ui
+          docker push "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:latest"
 
       - name: Create release
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631
