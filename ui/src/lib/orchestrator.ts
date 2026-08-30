@@ -19,3 +19,7 @@ export function orchestratorHeaders(): HeadersInit {
   }
   return headers;
 }
+
+export function getAllowWrites(): boolean {
+  return process.env.TRELLIS_ALLOW_WRITES === "true";
+}

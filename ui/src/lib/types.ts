@@ -42,4 +42,46 @@ export interface Job {
   running: number;
   healthy: number;
   allocations: Allocation[] | null;
+  spec?: JobSpec;
+}
+
+// Job spec types (mirrors the orchestrator spec package)
+
+export interface JobSpec {
+  name: string;
+  namespace?: string;
+  task_groups: TaskGroupSpec[];
+}
+
+export interface TaskGroupSpec {
+  name: string;
+  count: number;
+  api_access?: boolean;
+  tasks: TaskSpec[];
+}
+
+export interface TaskSpec {
+  name: string;
+  image: string;
+  env?: Record<string, string>;
+  ports?: PortSpec[];
+  resources?: ResourcesSpec;
+  health_check?: HealthCheckSpec;
+}
+
+export interface PortSpec {
+  host_port: number;
+  container_port: number;
+}
+
+export interface ResourcesSpec {
+  cpu: number;
+  memory: number;
+}
+
+export interface HealthCheckSpec {
+  type: "http" | "tcp" | "exec";
+  port: number;
+  path?: string;
+  command?: string[];
 }

@@ -319,8 +319,28 @@ if confirm "Install the web dashboard?" "n"; then
     dashboard_server_addr="${join_addr:-${advertise_host}:8128}"
     prompt dashboard_server_addr "Trellis leader API address (host:port)" "$dashboard_server_addr"
 
+    dashboard_mode="r"
+    echo
+    echo "  Dashboard access mode:"
+    echo "    r  — read-only  (view jobs, nodes, allocations; no changes)"
+    echo "    rw — read-write (also create, edit, and stop jobs via the UI)"
+    echo
+    printf 'Dashboard mode [r/rw] (default: r): '
+    read -r _mode_input </dev/tty
+    _mode_input="${_mode_input:-r}"
+    case "$_mode_input" in
+        rw|RW|r/w|R/W) dashboard_mode="rw" ;;
+        r|R)            dashboard_mode="r" ;;
+        *) warn "Unrecognised value '${_mode_input}'; defaulting to read-only." ; dashboard_mode="r" ;;
+    esac
+
     if ! systemctl is-active --quiet trellis-node 2>/dev/null && [ -z "$join_addr" ]; then
         error "Cannot deploy the dashboard before trellis-node is running. Start trellis-node and re-run setup."
+    fi
+
+    allow_writes_env=""
+    if [ "$dashboard_mode" = "rw" ]; then
+        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\""
     fi
 
     dashboard_manifest="${tmp}/trellis-dashboard.yaml"
@@ -336,7 +356,7 @@ task_groups:
         image: ${ui_image}
         env:
           TRELLIS_NAMESPACE: ${ui_namespace}
-        resources:
+$([ -n "$allow_writes_env" ] && printf '%s\n' "$allow_writes_env")        resources:
           cpu: 250
           memory: 536870912
         ports:
@@ -364,6 +384,9 @@ EOF
     [ "$dashboard_applied" = true ] \
         || error "Failed to deploy the dashboard through Trellis at ${dashboard_server_addr}."
 
+    if [ "$dashboard_mode" = "rw" ]; then
+        warn "Dashboard is configured in read-write mode. Anyone who can reach port 3000 can modify jobs."
+    fi
     info "Dashboard job submitted. Trellis will pull ${ui_image} and keep it running."
     install_ui=true
 fi
