@@ -53,8 +53,9 @@ type ListFilter struct {
 	Label string // "key:value" format
 }
 
-// List returns service entries. If namespace is empty, entries from all
-// namespaces are returned (requires cluster-level authorization).
+// List returns internal discovery records. Filtering is intentionally kept
+// independent of any public "service" resource so it can be reused by DNS and
+// other discovery implementations.
 func (c *ServiceCatalog) List(namespace string, filter *ListFilter) []api.ServiceEntry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
