@@ -58,6 +58,7 @@ type Server struct {
 	controlEpoch uint64
 	leaderSince  time.Time
 	now          func() time.Time
+	metrics      *Metrics
 }
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {

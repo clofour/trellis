@@ -57,8 +57,14 @@ func agentOperationCode(err error) api.OperationCode {
 
 // Reconcile converges the in-memory allocation set on the latest job specs.
 func (s *Server) Reconcile(ctx context.Context) {
+	start := time.Now()
 	s.reconcileMu.Lock()
-	defer s.reconcileMu.Unlock()
+	defer func() {
+		s.reconcileMu.Unlock()
+		if s.metrics != nil {
+			s.metrics.ReconcileDuration.Observe(time.Since(start).Seconds())
+		}
+	}()
 	now := s.now().UTC()
 	s.mu.Lock()
 	for _, node := range s.nodes {
