@@ -21,16 +21,20 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 
 	result := make(api.AllocationListResponse, 0, len(s.allocations))
 	for _, allocation := range s.allocations {
+		allocation.mu.Lock()
 		allocation.normalize(time.Now().UTC())
 		if namespace != "" && allocation.Namespace != namespace {
+			allocation.mu.Unlock()
 			continue
 		}
 		if filter != nil && filter.Job != "" && allocation.JobName != filter.Job {
+			allocation.mu.Unlock()
 			continue
 		}
 
 		labels := s.allocationLabelsLocked(allocation)
 		if filter != nil && filter.Label != "" && !matchAllocationLabel(labels, filter.Label) {
+			allocation.mu.Unlock()
 			continue
 		}
 
@@ -58,6 +62,7 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 			response.Address = allocation.Node.Host
 		}
 		result = append(result, response)
+		allocation.mu.Unlock()
 	}
 	return result
 }
@@ -70,13 +75,17 @@ func (s *Server) AllocationEvents(namespace, id string) (api.AllocationEventList
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, a := range s.allocations {
+		a.mu.Lock()
 		if a.AllocationID() != id {
+			a.mu.Unlock()
 			continue
 		}
 		if namespace != "" && a.Namespace != namespace {
+			a.mu.Unlock()
 			continue
 		}
 		if a.Events == nil {
+			a.mu.Unlock()
 			return api.AllocationEventListResponse{}, true
 		}
 		entries := a.Events.Entries()
@@ -84,6 +93,7 @@ func (s *Server) AllocationEvents(namespace, id string) (api.AllocationEventList
 		for i, e := range entries {
 			result[i] = api.AllocationEventResponse{Phase: e.Phase, Reason: e.Reason, Message: e.Message, At: e.At}
 		}
+		a.mu.Unlock()
 		return result, true
 	}
 	return nil, false

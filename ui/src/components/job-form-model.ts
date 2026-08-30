@@ -21,7 +21,7 @@ export interface TaskForm {
   memoryMB: string;
   ports: PortSpec[];
   healthEnabled: boolean;
-  healthType: "http" | "tcp" | "exec";
+  healthType: "http" | "tcp" | "script";
   healthPort: string;
   healthPath: string;
   healthCommand: string;
@@ -100,7 +100,7 @@ export function formToSpec(form: FormState): JobSpec {
               port: parseInt(t.healthPort, 10) || 0,
             };
             if (t.healthType === "http" && t.healthPath) hc.path = t.healthPath;
-            if (t.healthType === "exec" && t.healthCommand) {
+            if (t.healthType === "script" && t.healthCommand) {
               hc.command = t.healthCommand.split(/\s+/).filter(Boolean);
             }
             task.health_check = hc;

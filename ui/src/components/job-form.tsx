@@ -294,12 +294,15 @@ function TaskEditor({
                   className={inputClass()}
                   value={task.healthType}
                   onChange={(e) =>
-                    set("healthType", e.target.value as "http" | "tcp" | "exec")
+                    set(
+                      "healthType",
+                      e.target.value as "http" | "tcp" | "script",
+                    )
                   }
                 >
                   <option value="http">HTTP</option>
                   <option value="tcp">TCP</option>
-                  <option value="exec">Exec</option>
+                  <option value="script">Script</option>
                 </select>
               </div>
               <div className="col-span-2">
@@ -327,7 +330,7 @@ function TaskEditor({
                 />
               </div>
             )}
-            {task.healthType === "exec" && (
+            {task.healthType === "script" && (
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">
                   Command

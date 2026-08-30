@@ -10,7 +10,11 @@ export interface Node {
   memory: number;
 }
 
-export type AllocationStatus = AllocationPhase | "pending" | "healthy" | "unhealthy";
+export type AllocationStatus =
+  | AllocationPhase
+  | "pending"
+  | "healthy"
+  | "unhealthy";
 export type AllocationPhase =
   | "placed"
   | "starting"
@@ -80,7 +84,7 @@ export interface ResourcesSpec {
 }
 
 export interface HealthCheckSpec {
-  type: "http" | "tcp" | "exec";
+  type: "http" | "tcp" | "script";
   port: number;
   path?: string;
   command?: string[];
