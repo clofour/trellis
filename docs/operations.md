@@ -109,6 +109,7 @@ sudo journalctl -u trellis-node -f
 | `--secrets-key-id` | derived | Non-sensitive identifier recorded with encrypted secret metadata. |
 | `--containerd-sock` | `/run/containerd/containerd.sock` | containerd socket. |
 | `--dns-listen` | `:8053` | DNS resolver listen address for service discovery. |
+| `--host-volume` | none | Advertise a named host volume as `name=/path`. Repeatable; for example `--host-volume uploads=/srv/uploads`. |
 | `--wireguard-pool` | `10.64.0.0/10` | Cluster namespace address pool. |
 | `--wireguard-endpoint` | automatic | Reachable WireGuard host or host:port. |
 | `--wireguard-port` | `51820` | WireGuard UDP port. |

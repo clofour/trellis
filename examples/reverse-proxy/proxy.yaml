@@ -6,8 +6,10 @@ task_groups:
     network_mode: host
     api_access: true
     tasks:
-      - name: nginx
-        image: docker.io/library/nginx:alpine
+      - name: proxy
+        # Build this image from the Dockerfile in this directory.
+        # See the README for build instructions.
+        image: your-registry/trellis-proxy:latest
         resources:
           cpu: 250
           memory: 134217728

@@ -1,0 +1,21 @@
+namespace: acme
+name: api
+task_groups:
+  - name: server
+    count: 3
+    update:
+      strategy: rolling
+      max_parallel: 1
+    tasks:
+      - name: server
+        image: your-registry/api:v1
+        resources:
+          cpu: 250
+          memory: 134217728
+        ports:
+          - host_port: 0
+            container_port: 8080
+        health_check:
+          type: http
+          port: 8080
+          path: /health

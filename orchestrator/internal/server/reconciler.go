@@ -182,7 +182,8 @@ func (s *Server) Reconcile(ctx context.Context) {
 				current = current[:len(current)-1]
 			}
 
-			// For rolling updates, stop draining allocations as new ones become healthy.
+			// For rolling updates, stop only the draining allocations that have
+			// healthy replacements beyond the number still needed to reach count.
 			if len(draining) > 0 {
 				healthyNew := 0
 				for _, alloc := range current {
@@ -190,7 +191,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 						healthyNew++
 					}
 				}
-				drainsToStop := min(healthyNew, len(draining))
+				drainsToStop := min(max(healthyNew+len(draining)-group.Count, 0), len(draining))
 				for i := 0; i < drainsToStop; i++ {
 					actions = append(actions, Action{Type: ActionStop, Allocation: draining[i]})
 				}

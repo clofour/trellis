@@ -35,8 +35,10 @@ jobs and allocations appear as you work through this guide.
 
 ## Deploy a web server
 
-Save the following as `hello.yaml`. This deploys two nginx replicas with
-dynamically allocated host ports and an HTTP health check:
+Save the following as `hello.yaml`. This deploys two replicas of
+[traefik/whoami](https://github.com/traefik/whoami) — a lightweight server
+that responds with request details — with dynamically allocated host ports
+and an HTTP health check:
 
 ```yaml
 namespace: examples
@@ -46,17 +48,17 @@ task_groups:
     count: 2
     tasks:
       - name: server
-        image: docker.io/library/nginx:alpine
+        image: docker.io/traefik/whoami
         resources:
-          cpu: 250
-          memory: 134217728
+          cpu: 100
+          memory: 16777216
         ports:
           - host_port: 0
             container_port: 80
         health_check:
           type: http
           port: 80
-          path: /
+          path: /health
 ```
 
 `host_port: 0` tells Trellis to pick a free port on the host for each
@@ -79,7 +81,8 @@ Two allocations will appear and transition from `pending` → `running` →
 transition is visible in the dashboard under **Allocations**.
 
 The `jobs status` output includes the allocated host ports. Open
-`http://localhost:<port>` in a browser — you will see the nginx welcome page.
+`http://localhost:<port>` in a browser — you will see request headers,
+the server hostname, and other details from the whoami container.
 
 To stream logs from one of the allocations:
 
@@ -203,7 +206,9 @@ without any additional configuration.
 
 - **Scale and update**: edit `count` in a manifest and reapply. Trellis
   reconciles running allocations to match — new replicas are placed where
-  capacity is available and surplus replicas are stopped.
+  capacity is available and surplus replicas are stopped. Set an
+  `update.strategy: rolling` to replace replicas incrementally rather
+  than all at once.
 - **Allocation queries**: `GET /v1/allocations?label=trellis.expose:true`
   returns runtime info (node address, ports, health) for any labeled group.
   The reverse proxy example uses this to configure nginx dynamically.
@@ -211,7 +216,7 @@ without any additional configuration.
   join them to the first. Jobs spread across nodes; draining a node
   migrates its allocations.
 - **Vagrant demo**: try a pre-configured three-node cluster locally with
-  the [Vagrant demo](vagrant.md).
+  the [Vagrant demo](development/vagrant.md).
 
 ## Troubleshooting
 

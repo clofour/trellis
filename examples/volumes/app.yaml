@@ -1,0 +1,29 @@
+namespace: acme
+name: postgres
+task_groups:
+  - name: db
+    count: 1
+    tasks:
+      - name: postgres
+        image: docker.io/library/postgres:16-alpine
+        resources:
+          cpu: 500
+          memory: 536870912
+        ports:
+          - host_port: 5432
+            container_port: 5432
+        env:
+          POSTGRES_DB: myapp
+          POSTGRES_USER: myapp
+        secrets:
+          - name: postgres-password
+            target: env
+            env: POSTGRES_PASSWORD
+        volumes:
+          # Persistent data directory — survives container restarts and
+          # redeployments as long as the allocation lands on the same node.
+          - name: pgdata
+            path: /var/lib/postgresql/data
+        health_check:
+          type: tcp
+          port: 5432

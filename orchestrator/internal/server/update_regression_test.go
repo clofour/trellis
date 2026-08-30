@@ -1,0 +1,77 @@
+package server
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/clofour/trellis/internal/lifecycle"
+	"github.com/clofour/trellis/internal/spec"
+	"github.com/google/uuid"
+)
+
+func TestReconcileRollingDoesNotReuseHealthyReplacement(t *testing.T) {
+	s, agent := newTestServerWithAgent()
+	defer agent.server.Close()
+
+	node := &Node{ID: uuid.New(), Host: agent.host, Port: agent.port, Status: NodeStatusHealthy, LastHeartbeat: s.now()}
+	s.nodes[node.ID] = node
+	s.leaderSince = s.now().Add(-time.Minute)
+
+	newSpec := &spec.JobSpec{
+		Namespace: "default",
+		Name:      "web",
+		TaskGroups: []spec.TaskGroupSpec{{
+			Name:   "api",
+			Count:  3,
+			Update: &spec.UpdateSpec{Strategy: spec.UpdateRolling, MaxParallel: 1},
+			Tasks:  []spec.TaskSpec{{Name: "server", Image: "app:v2"}},
+		}},
+	}
+	s.jobs[jobKey("default", "web")] = &Job{
+		Spec:          newSpec,
+		Revision:      2,
+		ContentHashes: map[string]string{"api": spec.TaskGroupContentHash(&newSpec.TaskGroups[0])},
+	}
+
+	now := s.now()
+	makeAllocation := func(id string, revision int, image string, health lifecycle.Health, draining bool) *Allocation {
+		a := &Allocation{
+			ID:            id,
+			Name:          id,
+			Namespace:     "default",
+			JobName:       "web",
+			TaskGroupName: "api",
+			Tasks:         []spec.TaskSpec{{Name: "server", Image: image}},
+			Node:          node,
+			Generation:    1,
+			JobRevision:   revision,
+			Phase:         lifecycle.PhaseRunning,
+			Health:        health,
+			Draining:      draining,
+			Diagnostic: lifecycle.Diagnostic{
+				CreatedAt:      now,
+				TransitionedAt: now,
+			},
+		}
+		a.normalize(now)
+		return a
+	}
+
+	oldA := makeAllocation("old-a", 1, "app:v1", lifecycle.HealthHealthy, true)
+	oldB := makeAllocation("old-b", 1, "app:v1", lifecycle.HealthHealthy, true)
+	newHealthy := makeAllocation("new-healthy", 2, "app:v2", lifecycle.HealthHealthy, false)
+	newStarting := makeAllocation("new-starting", 2, "app:v2", lifecycle.HealthUnknown, false)
+	s.allocations = []*Allocation{oldA, oldB, newHealthy, newStarting}
+
+	s.Reconcile(context.Background())
+
+	for _, old := range []*Allocation{oldA, oldB} {
+		old.mu.Lock()
+		phase := old.Phase
+		old.mu.Unlock()
+		if phase == lifecycle.PhaseStopping || phase == lifecycle.PhaseStopped {
+			t.Fatalf("draining allocation %s stopped before the in-flight replacement became healthy", old.Name)
+		}
+	}
+}

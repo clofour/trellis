@@ -204,6 +204,22 @@ func (s *ServerClient) ListDiscovery(ctx context.Context) (*api.ServiceListRespo
 	return &responseData, nil
 }
 
+// ListAllocations fetches allocations from the public allocations API.
+// label filters to allocations whose task group carries the given label key
+// or key:value pair (e.g. "trellis.expose" or "trellis.expose:true").
+// An empty label string returns all allocations visible to the caller.
+func (s *ServerClient) ListAllocations(ctx context.Context, label string) (*api.AllocationListResponse, error) {
+	u := s.address() + "/v1/allocations"
+	if label != "" {
+		u += "?label=" + url.QueryEscape(label)
+	}
+	var responseData api.AllocationListResponse
+	if err := s.client.request(ctx, http.MethodGet, u, nil, &responseData); err != nil {
+		return nil, fmt.Errorf("list allocations: %w", err)
+	}
+	return &responseData, nil
+}
+
 func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbeat *Heartbeat) (*api.HeartbeatResponse, error) {
 	requestData := &api.HeartbeatRequest{
 		NodeID:      heartbeat.NodeID,
