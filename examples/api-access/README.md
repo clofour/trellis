@@ -1,7 +1,7 @@
 # API access
 
-This example shows how a job can query the Trellis control-plane API at runtime
-to discover other allocations in the same namespace.
+This example shows how a job can query namespace-scoped Trellis control-plane
+state at runtime.
 
 ## How it works
 
@@ -11,11 +11,16 @@ into every container in that group:
 | Variable | Value |
 | --- | --- |
 | `TRELLIS_TOKEN` | Namespace-scoped bearer token |
-| `TRELLIS_ADDR` | Base URL of the Trellis API (e.g. `https://trellis.internal`) |
+| `TRELLIS_ADDR` | Address of the Trellis control-plane API |
 
-The token is scoped to the namespace — it can read allocations, jobs, and
-secrets within the namespace but cannot see other namespaces or internal cluster
-resources. This makes it safe to inject into application containers.
+The injected token carries the task's namespace scope. It is intended for
+namespace-scoped workload APIs such as job and allocation queries. It is **not**
+a secret-management credential: the secret-management endpoints require the
+cluster-authorized credential.
+
+Treat `TRELLIS_TOKEN` as a credential and only enable `api_access` for trusted
+containers that actually need control-plane access. Do not expose the token in
+logs, application responses, or child processes unnecessarily.
 
 ## Manifests
 
@@ -36,23 +41,27 @@ curl -H "Authorization: Bearer $TRELLIS_TOKEN" \
 ### Filter by label
 
 ```sh
-# All healthy workers
 curl -H "Authorization: Bearer $TRELLIS_TOKEN" \
      "$TRELLIS_ADDR/v1/allocations?label=component:worker"
 ```
 
 The `label` query parameter accepts `key` (any value) or `key:value` (exact
-match). Only one filter can be applied per request.
+match). One label filter can be supplied per request.
 
 ### Response shape
+
+The response contains allocation identity, lifecycle/health state, task-group
+labels, node address, and allocated ports. For example:
 
 ```json
 [
   {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "id": "acme-worker-processor-ab12cd34",
     "job": "worker",
     "group": "processor",
     "status": "healthy",
+    "phase": "running",
+    "health": "healthy",
     "address": "10.0.1.5",
     "ports": [
       { "host_port": 32451, "container_port": 9090 }
@@ -67,39 +76,33 @@ match). Only one filter can be applied per request.
 
 ## Using it from application code
 
-An application container reads `TRELLIS_TOKEN` and `TRELLIS_ADDR` from the
-environment to build a list of peer addresses at startup or on demand:
+An application container can read `TRELLIS_TOKEN` and `TRELLIS_ADDR` from the
+environment and query the allocation list on demand:
 
 ```go
 token := os.Getenv("TRELLIS_TOKEN")
-addr  := os.Getenv("TRELLIS_ADDR")
+addr := os.Getenv("TRELLIS_ADDR")
 
-resp, _ := http.NewRequest("GET", addr+"/v1/allocations?label=component:worker", nil)
-resp.Header.Set("Authorization", "Bearer "+token)
+req, _ := http.NewRequest("GET", addr+"/v1/allocations?label=component:worker", nil)
+req.Header.Set("Authorization", "Bearer "+token)
 
-// Parse the response and connect to each allocation's address:port.
+// Execute the request, parse the response, and use the returned address/ports.
 ```
 
 This is useful for:
 
-- **Dashboard / control planes** that display the live state of other services.
-- **Load balancers or sidecars** that need an up-to-date list of backend
-  addresses (see `examples/reverse-proxy` for a complete example).
-- **Job coordinators** that assign work to specific worker allocations.
-- **Configuration tools** that push settings to every instance of a service.
+- dashboards that display live namespace state;
+- load balancers that need backend allocation addresses;
+- job coordinators that need to enumerate workers; and
+- trusted automation that reacts to allocation metadata.
+
+See `examples/reverse-proxy` for a complete allocation-discovery example.
 
 ## DNS alternative
 
-For straightforward service-to-service calls you often do not need the API at
-all. Trellis registers a DNS name for every job:
-
-```
-<job>.<namespace>.trellis
-```
-
-`worker.acme.trellis` resolves to the address of a healthy worker allocation
-(round-robin across all healthy allocations). Use this when you need a single
-endpoint rather than the full list.
+For straightforward service-to-service calls you often do not need API access.
+Trellis DNS provides job-level discovery inside the namespace; use it when you
+need a routable job name rather than allocation metadata.
 
 ## Deploying
 
@@ -109,4 +112,4 @@ trellis --namespace acme jobs apply --file app.yaml
 ```
 
 The dashboard containers start with `TRELLIS_TOKEN` and `TRELLIS_ADDR` set and
-can immediately query the worker fleet.
+can query allocation state for their namespace.
