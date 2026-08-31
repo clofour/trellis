@@ -1,3 +1,4 @@
+// Package network manages isolated allocation networking.
 package network
 
 import "context"

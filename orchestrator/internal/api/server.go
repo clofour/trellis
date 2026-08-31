@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// BackupFormatVersion is the current desired-state backup format.
 const BackupFormatVersion = 1
 
 // BackupSnapshot contains desired state only. Secret values remain encrypted
@@ -20,14 +21,17 @@ type BackupSnapshot struct {
 	Secrets       map[string]json.RawMessage `json:"secrets"`
 }
 
+// NodeStatusResponse describes the scheduling status of a node.
 type NodeStatusResponse string
 
 const (
+	// StatusHealthy and the following values describe node states.
 	StatusHealthy   NodeStatusResponse = "healthy"
 	StatusUnhealthy NodeStatusResponse = "unhealthy"
 	StatusDraining  NodeStatusResponse = "draining"
 )
 
+// NodeResponse contains the reported state and capacity of a node.
 type NodeResponse struct {
 	ID            uuid.UUID          `json:"id"`
 	Host          string             `json:"host"`
@@ -41,8 +45,10 @@ type NodeResponse struct {
 	Version       string             `json:"version,omitempty"`
 }
 
+// NodeListResponse is the response returned when listing nodes.
 type NodeListResponse = []NodeResponse
 
+// NodeRegistrationRequest contains the identity and capacity of a joining node.
 type NodeRegistrationRequest struct {
 	ID                 uuid.UUID         `json:"id"`
 	Host               string            `json:"host"`
@@ -57,10 +63,12 @@ type NodeRegistrationRequest struct {
 	WireGuardEndpoint  string            `json:"wireguard_endpoint,omitempty"`
 }
 
+// NodeRegistrationResponse confirms the registered node identity.
 type NodeRegistrationResponse struct {
 	ID uuid.UUID `json:"id"`
 }
 
+// HeartbeatRequest reports a node and its current allocations.
 type HeartbeatRequest struct {
 	NodeID      uuid.UUID          `json:"id"`
 	Timestamp   time.Time          `json:"timestamp"`
@@ -69,6 +77,7 @@ type HeartbeatRequest struct {
 	Version     string             `json:"version,omitempty"`
 }
 
+// DesiredAllocation describes the generation an agent should run.
 type DesiredAllocation struct {
 	ID         string `json:"id"`
 	Generation uint64 `json:"generation"`

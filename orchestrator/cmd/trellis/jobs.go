@@ -112,8 +112,8 @@ func NewJobsDestroyCmd() *cobra.Command {
 		if err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).DeleteJob(cmd.Context(), args[0]); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Job destroyed successfully.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Job destroyed successfully.")
+		return err
 	}}
 }
 
@@ -151,9 +151,8 @@ func NewJobsApplyCmd() *cobra.Command {
 				return fmt.Errorf("submit job: %w", err)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Job submitted successfully.")
-
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Job submitted successfully.")
+			return err
 		},
 	}
 

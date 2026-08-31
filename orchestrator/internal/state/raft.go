@@ -90,15 +90,15 @@ func (t *tlsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration)
 	}
 	tlsConn := tls.Client(conn, t.tlsCfg)
 	if err := tlsConn.SetDeadline(time.Now().Add(timeout)); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	if err := tlsConn.Handshake(); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	if err := tlsConn.SetDeadline(time.Time{}); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return tlsConn, nil

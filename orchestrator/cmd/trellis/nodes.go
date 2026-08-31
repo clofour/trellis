@@ -34,8 +34,8 @@ func NewNodesLeadershipTransferCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).TransferLeadership(cmd.Context()); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Raft leadership transfer started.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Raft leadership transfer started.")
+		return err
 	}}
 }
 
@@ -125,7 +125,9 @@ func NewNodesListCmd() *cobra.Command {
 					version = "unknown"
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, version, node.CPU, node.Memory, heartbeat)
+				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, version, node.CPU, node.Memory, heartbeat); err != nil {
+					return err
+				}
 			}
 
 			return w.Flush()

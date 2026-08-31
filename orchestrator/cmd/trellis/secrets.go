@@ -64,8 +64,8 @@ func newSecretsSetCmd() *cobra.Command {
 		if config.Output == "json" {
 			return writeJSON(cmd.OutOrStdout(), meta)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Secret %s stored (version %d).\n", meta.Name, meta.Version)
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Secret %s stored (version %d).\n", meta.Name, meta.Version)
+		return err
 	}}
 	cmd.Flags().StringVar(&file, "file", "", "Read the secret value from a file")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "Read the secret value from standard input")
@@ -89,7 +89,9 @@ func newSecretsListCmd() *cobra.Command {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 		fmt.Fprintln(w, "Name\tVersion\tUpdated\tKey")
 		for _, item := range *items {
-			fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", item.Name, item.Version, item.UpdatedAt.Format("2006-01-02T15:04:05Z"), item.KeyID)
+			if _, err := fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", item.Name, item.Version, item.UpdatedAt.Format("2006-01-02T15:04:05Z"), item.KeyID); err != nil {
+				return err
+			}
 		}
 		return w.Flush()
 	}}

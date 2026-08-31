@@ -12,8 +12,10 @@ var identifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 var labelKeyPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._/-]{0,62}$`)
 var envPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// ValidIdentifier reports whether value is safe for use as an identifier.
 func ValidIdentifier(value string) bool { return identifierPattern.MatchString(value) }
 
+// Validate checks that a job specification is complete and internally consistent.
 func Validate(spec *JobSpec) error {
 	if spec == nil {
 		return errors.New("job is required")

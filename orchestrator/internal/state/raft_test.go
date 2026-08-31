@@ -65,7 +65,7 @@ func newTestRaftStore(t *testing.T) *RaftStore {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { _ = store.Close() })
 	return store
 }
 
@@ -114,7 +114,9 @@ func TestRaftStore_List(t *testing.T) {
 	waitLeader(t, store)
 	ctx := context.Background()
 
-	store.Put(ctx, "prefix/a", []byte("1"))
+	if err := store.Put(ctx, "prefix/a", []byte("1")); err != nil {
+		t.Fatal(err)
+	}
 	store.Put(ctx, "prefix/b", []byte("2"))
 	store.Put(ctx, "other/c", []byte("3"))
 

@@ -270,7 +270,7 @@ func (c *ContainerdRuntime) Exec(ctx context.Context, containerID string, comman
 	if err != nil {
 		return 1, fmt.Errorf("constructing command %s: %w", command, err)
 	}
-	defer taskExec.Delete(ctx)
+	defer func() { _, _ = taskExec.Delete(ctx) }()
 
 	exitChannel, err := taskExec.Wait(ctx)
 	if err != nil {

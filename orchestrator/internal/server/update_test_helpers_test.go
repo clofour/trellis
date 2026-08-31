@@ -25,7 +25,7 @@ type testAgent struct {
 func newTestAgent() *testAgent {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(api.OperationResponse{Code: "ok"})
+		_ = json.NewEncoder(w).Encode(api.OperationResponse{Code: "ok"})
 	}))
 	host, portStr, _ := net.SplitHostPort(ts.Listener.Addr().String())
 	port, _ := strconv.Atoi(portStr)

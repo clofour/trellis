@@ -207,7 +207,7 @@ func (h *Handler) handleAllocationLogs(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "allocation not found")
 	}
-	defer logs.Close()
+	defer func() { _ = logs.Close() }()
 	c.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
 	c.Response().WriteHeader(http.StatusOK)
 	_, err = io.Copy(c.Response(), logs)

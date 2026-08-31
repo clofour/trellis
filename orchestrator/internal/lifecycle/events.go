@@ -1,3 +1,4 @@
+// Package lifecycle defines allocation execution and health states.
 package lifecycle
 
 import (

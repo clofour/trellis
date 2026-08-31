@@ -15,7 +15,7 @@ func TestStoreIsWriteOnlyAndEncryptedAtRest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer bolt.Close()
+	defer func() { _ = bolt.Close() }()
 	store, err := NewStore(bolt, "cluster", "key-1", bytes.Repeat([]byte{7}, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func TestStoreRejectsWrongKeyAndOversizedValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer bolt.Close()
+	defer func() { _ = bolt.Close() }()
 	ctx := context.Background()
 	store, _ := NewStore(bolt, "cluster", "key-1", bytes.Repeat([]byte{1}, 32))
 	if _, err := store.Set(ctx, "acme", "secret", make([]byte, MaxValueSize+1), nil); err == nil {

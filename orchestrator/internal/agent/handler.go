@@ -47,7 +47,7 @@ func (h *Handler) handleLogs(c *echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to read allocation logs")
 	}
-	defer logs.Close()
+	defer func() { _ = logs.Close() }()
 	c.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
 	c.Response().WriteHeader(http.StatusOK)
 	_, err = io.Copy(c.Response(), logs)

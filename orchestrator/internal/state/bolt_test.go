@@ -45,7 +45,9 @@ func TestBoltStoreListPrefix(t *testing.T) {
 	_ = store.Put(ctx, "trellis/default/jobs/web", []byte("web"))
 	_ = store.Put(ctx, "trellis/default/jobs/api", []byte("api"))
 	_ = store.Put(ctx, "trellis/default/nodes/n1", []byte("node1"))
-	store.Put(ctx, "trellis/other/jobs/x", []byte("x"))
+	if err := store.Put(ctx, "trellis/other/jobs/x", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := store.List(ctx, "trellis/default/jobs/")
 	if err != nil {
@@ -70,7 +72,9 @@ func TestBoltStoreDelete(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	ctx := context.Background()
 
-	store.Put(ctx, "key", []byte("value"))
+	if err := store.Put(ctx, "key", []byte("value")); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.Delete(ctx, "key"); err != nil {
 		t.Fatal(err)
 	}

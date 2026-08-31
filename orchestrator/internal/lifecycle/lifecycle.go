@@ -9,8 +9,9 @@ import (
 type Phase string
 
 const (
-	// PhasePlaced and the following values describe allocation execution states.
-	PhasePlaced   Phase = "placed"
+	// PhasePlaced describes an allocation accepted for placement.
+	PhasePlaced Phase = "placed"
+	// PhaseStarting and the following values describe subsequent execution states.
 	PhaseStarting Phase = "starting"
 	PhaseRunning  Phase = "running"
 	PhaseStopping Phase = "stopping"
@@ -23,8 +24,9 @@ const (
 type Health string
 
 const (
-	// HealthUnknown and the following values describe allocation health states.
-	HealthUnknown   Health = "unknown"
+	// HealthUnknown indicates that health is not yet known.
+	HealthUnknown Health = "unknown"
+	// HealthHealthy and HealthUnhealthy describe completed health checks.
 	HealthHealthy   Health = "healthy"
 	HealthUnhealthy Health = "unhealthy"
 )
@@ -45,14 +47,17 @@ func (p Phase) Valid() bool {
 	return ok
 }
 
+// Valid reports whether h is a recognized health state.
 func (h Health) Valid() bool {
 	return h == HealthUnknown || h == HealthHealthy || h == HealthUnhealthy
 }
 
+// CanTransition reports whether an allocation can move between two phases.
 func CanTransition(from, to Phase) bool {
 	return from == to || transitions[from][to]
 }
 
+// Transition validates an allocation phase change.
 func Transition(from, to Phase) error {
 	if !from.Valid() || !to.Valid() {
 		return fmt.Errorf("unknown allocation phase transition %q -> %q", from, to)
@@ -98,6 +103,7 @@ func CompatibilityStatus(phase Phase, health Health) string {
 	return string(phase)
 }
 
+// Diagnostic records details about the latest allocation transition.
 type Diagnostic struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	TransitionedAt time.Time  `json:"last_transition_at"`
