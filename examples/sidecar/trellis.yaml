@@ -1,0 +1,31 @@
+name: sidecar-demo
+namespace: default
+task_groups:
+  - name: web
+    count: 2
+    network_mode: host
+    labels:
+      route: sidecar-demo
+    update:
+      strategy: rolling
+      max_parallel: 1
+    tasks:
+      - name: app
+        image: docker.io/library/nginx:1.27-alpine
+        ports:
+          - host_port: 80
+            container_port: 80
+        health_check:
+          type: http
+          port: 80
+          path: /
+          interval: 10s
+          timeout: 2s
+          threshold: 3
+      - name: metrics-sidecar
+        image: docker.io/nginx/nginx-prometheus-exporter:1.4.2
+        env:
+          SCRAPE_URI: http://127.0.0.1:80/stub_status
+        resources:
+          cpu: 50
+          memory: 67108864

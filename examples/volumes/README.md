@@ -1,99 +1,42 @@
-# Volumes
+# Volume patterns
 
-This example shows how Trellis-managed node-local storage behaves and when to
-use an operator-provided host volume instead.
+This example contrasts Trellis-managed allocation storage with an operator-provisioned host volume. It is intended for operators deciding what should survive allocation replacement and where a stateful task may run.
 
-## Managed local volumes
+## Storage in the manifest
 
-A volume without `host_volume` is a directory managed by Trellis on the node
-where the task runs. Its backing path is scoped by namespace, job, task, and
-volume name, so the data survives container replacement and job revisions when
-the replacement lands on the same node with the same identity.
+| Volume | Kind | Lifecycle |
+|---|---|---|
+| `scratch` | Allocation-managed | Created below the node data directory and suitable for replaceable cache/work files. |
+| `database` | Named host volume `app-data` | Resolves to an absolute host path configured when `trellis-node` starts. Trellis mounts but does not create, replicate, snapshot, or back up that data. |
 
-Managed volumes are **node-local** and are not a scheduler-affinity mechanism.
-If the allocation is later placed on another node, Trellis creates or reuses the
-corresponding directory on that node; it does not copy the data from the old
-node. A replacement can therefore start with an empty data directory after a
-node failure or placement change.
+The group also requires node label `storage=fast`. Scheduling succeeds only on a healthy node that has both that exact label and an available `app-data` directory.
 
-Also note that the local path is not scoped by allocation ID. Multiple replicas
-of the same job/task that land on one node and declare the same managed volume
-name will mount the same directory on that node. Do not use this as an implicit
-replicated-database storage design.
+## Prepare a node
 
-## Manifest
-
-`app.yaml` runs a single PostgreSQL instance with a `pgdata` volume:
-
-```yaml
-volumes:
-  - name: pgdata
-    path: /var/lib/postgresql/data
-```
-
-Trellis creates the node-local directory at first use and mounts it at
-`/var/lib/postgresql/data`.
-
-## Volume fields
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `name` | yes | Volume name, unique within the task |
-| `path` | yes | Absolute mount path inside the container |
-| `host_volume` | no | Mount an operator-managed host-volume identity instead of a Trellis-managed local directory |
-| `read_only` | no | Mount the volume read-only (default false) |
-
-## Host volumes
-
-A host volume maps an operator-defined identity to a path on each node that
-advertises it. This is the mechanism to use when the backing storage is managed
-outside Trellis, including a network-backed mount:
-
-```yaml
-volumes:
-  - name: uploads
-    path: /data/uploads
-    host_volume: uploads
-```
-
-Register the identity when starting an eligible node:
+Create and secure the path before starting the node:
 
 ```sh
-trellis-node ... --host-volume uploads=/mnt/nfs/uploads
+sudo install -d -m 0750 /srv/trellis/app-data
+sudo trellis-node \
+  --cluster-token "$TRELLIS_TOKEN" \
+  --label storage=fast \
+  --host-volume app-data=/srv/trellis/app-data
 ```
 
-The scheduler only places a task that requires `host_volume: uploads` on nodes
-that currently advertise the `uploads` identity. Trellis does not mount NFS,
-attach cloud disks, replicate data, or coordinate writers itself; the operator
-is responsible for making the backing path safe and available on those nodes.
+Repeat `--label` and `--host-volume` for additional values. The name in `--host-volume` must match the manifest; the host path must be absolute and already exist. Ensure its ownership matches the UID/GID used by the container image.
 
-## Deploying
-
-First, create the password secret:
+## Deploy and verify placement
 
 ```sh
-printf %s "s3cr3t" | trellis --namespace acme secrets set postgres-password --stdin
+trellis jobs apply --file examples/volumes/trellis.yaml
+trellis --namespace default jobs status volumes-demo
+trellis nodes list --output json
 ```
 
-Then apply the job:
+The allocation should land on a node reporting `app-data`. If it remains unplaced, check node health, the `storage` label, directory existence, and free CPU/memory.
 
-```sh
-trellis --namespace acme jobs apply --file app.yaml
-```
+## Recovery and scaling
 
-The allocation starts, Trellis creates the local `pgdata` directory on its node,
-and Postgres initializes the cluster there.
+A host-volume name is a capability, not a globally shared volume. If two nodes advertise `app-data=/srv/trellis/app-data`, those directories may contain completely different bytes. Constrain a single-writer workload deliberately, or use application-level replication/shared storage. Back up `/srv/trellis/app-data` independently and test restoration before relying on it.
 
-## Caveats
-
-- `count: 1` does not pin the database to its current node. If that node is lost,
-  Trellis may place a replacement elsewhere, where the local `pgdata` path can
-  be empty. Use explicit node constraints, an operator-managed host volume, or a
-  database replication/failover design when placement changes must preserve
-  data access.
-- Do not raise `count` for a database just to obtain HA. Replicas can land on the
-  same node, where matching managed volume names share one directory, or on
-  different nodes, where they see different directories. Database replication
-  must be handled by the database system itself.
-- Trellis does not snapshot or back up volume contents. Back up the underlying
-  storage separately.
+Scaling this manifest above one replica is unsafe unless the application supports multiple writers and every eligible volume path has the required data semantics. Draining the only compatible node cannot make its local bytes appear elsewhere.

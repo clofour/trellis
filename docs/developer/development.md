@@ -1,0 +1,38 @@
+# Development and testing
+
+## Toolchains
+
+The orchestrator module targets Go 1.26.4. The dashboard uses Next.js 16, React 19, TypeScript, Tailwind CSS, ESLint, and npm's lockfile.
+
+```sh
+cd orchestrator
+go test ./...
+go vet ./...
+golangci-lint run
+
+go build ./cmd/trellis ./cmd/trellis-node ./cmd/trellis-proxy-sync
+
+cd ../ui
+npm ci
+npm run lint
+npm run build
+```
+
+Containerd end-to-end tests need a Linux host, containerd, permissions on its socket, and `CONTAINERD_ADDRESS`. Multi-node integration uses the test/injected runtime and is separated in CI. Tests beside each package document state-machine invariants, Raft persistence, scheduler behavior, network planning, durability, update regressions, and security validation.
+
+## Design rules
+
+- Put wire-compatible JSON structures in `internal/api`; keep job YAML/JSON schema in `internal/spec`.
+- Validate user-controlled identifiers, paths, ports, resources, and enum values before persistence.
+- Treat start/stop as retriable and idempotent; preserve epoch and generation checks.
+- Never log or return secret plaintext. Clear temporary byte slices where feasible.
+- Keep desired-state mutations Raft-backed and deterministic. Raft FSM application must not depend on wall-clock or unordered map traversal.
+- Do not make the scheduler mutate inputs; deterministic order makes failures reproducible.
+- Add a focused unit test and, for manifests, place examples under `examples/` so `TestExampleManifestsValidate` covers them.
+
+## Entry points
+
+- `cmd/trellis-node`: production node composition and flags.
+- `cmd/trellis`: CLI, precedence-aware config, TLS setup.
+- `cmd/trellis-proxy-sync`: polling service-catalog consumer for external proxies.
+- `ui/src/app/api`: dashboard's authenticated server-side forwarding layer.

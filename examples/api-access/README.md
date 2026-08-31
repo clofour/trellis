@@ -1,115 +1,42 @@
-# API access
+# Namespace-scoped API access
 
-This example shows how a job can query namespace-scoped Trellis control-plane
-state at runtime.
+This example shows how a trusted workload can discover and automate resources in its own namespace without embedding the cluster administrator token in an image.
 
-## How it works
+## What `api_access` does
 
-Setting `api_access: true` on a task group injects two environment variables
-into every container in that group:
+Setting `api_access: true` on a task group causes Trellis to obtain a persistent namespace token and add these variables to every task in the group:
 
-| Variable | Value |
-| --- | --- |
-| `TRELLIS_TOKEN` | Namespace-scoped bearer token |
-| `TRELLIS_ADDR` | Address of the Trellis control-plane API |
+| Variable | Meaning |
+|---|---|
+| `TRELLIS_ADDR` | Address of the Trellis control-plane API. |
+| `TRELLIS_TOKEN` | Bearer token scoped to the job namespace. |
+| `TRELLIS_NAMESPACE` | Namespace to send in scoped requests. |
 
-The injected token carries the task's namespace scope. It is intended for
-namespace-scoped workload APIs such as job and allocation queries. It is **not**
-a secret-management credential: the secret-management endpoints require the
-cluster-authorized credential.
+This is a group-level privilege boundary: every task in the group can read the injected environment and act with the token. Use a reviewed, pinned image and do not mix an untrusted sidecar into the group.
 
-Treat `TRELLIS_TOKEN` as a credential and only enable `api_access` for trusted
-containers that actually need control-plane access. Do not expose the token in
-logs, application responses, or child processes unnecessarily.
+## Build a useful client image
 
-## Manifests
+The stock nginx image in `trellis.yaml` only makes the privilege visible in the manifest; it does not contain `list-jobs.sh` or curl. For a real controller, copy the helper into an image:
 
-| File | Purpose |
-| --- | --- |
-| `app.yaml` | Dashboard service with `api_access: true` |
-| `worker.yaml` | Worker fleet with `component: worker` label |
+```dockerfile
+FROM curlimages/curl:8.12.1
+COPY --chmod=0755 list-jobs.sh /usr/local/bin/list-jobs
+ENTRYPOINT ["/usr/local/bin/list-jobs"]
+```
 
-## Allocations API
+Build/push that image and replace the manifest's image. The helper validates that all three variables exist, sends Bearer authentication and `X-Trellis-Namespace`, and fails on a non-success HTTP response.
 
-### List all allocations in the namespace
+## Deploy and verify
 
 ```sh
-curl -H "Authorization: Bearer $TRELLIS_TOKEN" \
-     "$TRELLIS_ADDR/v1/allocations"
+trellis jobs apply --file examples/api-access/trellis.yaml
+trellis --namespace default jobs status api-client
 ```
 
-### Filter by label
+Use allocation logs to inspect the controller's non-sensitive result. Never print the token, dump the complete environment, return it to browser JavaScript, or include it in metrics and traces.
 
-```sh
-curl -H "Authorization: Bearer $TRELLIS_TOKEN" \
-     "$TRELLIS_ADDR/v1/allocations?label=component:worker"
-```
+## Controller behavior
 
-The `label` query parameter accepts `key` (any value) or `key:value` (exact
-match). One label filter can be supplied per request.
+API clients should set request deadlines, retry transient transport/5xx failures with backoff, and tolerate resources changing between reads. Prefer read-only discovery loops unless mutation is essential. A namespace token must not be treated as a cluster-administration credential; secret management, backups, Raft membership, and other administrator operations require cluster authorization.
 
-### Response shape
-
-The response contains allocation identity, lifecycle/health state, task-group
-labels, node address, and allocated ports. For example:
-
-```json
-[
-  {
-    "id": "acme-worker-processor-ab12cd34",
-    "job": "worker",
-    "group": "processor",
-    "status": "healthy",
-    "phase": "running",
-    "health": "healthy",
-    "address": "10.0.1.5",
-    "ports": [
-      { "host_port": 32451, "container_port": 9090 }
-    ],
-    "labels": {
-      "component": "worker",
-      "queue": "default"
-    }
-  }
-]
-```
-
-## Using it from application code
-
-An application container can read `TRELLIS_TOKEN` and `TRELLIS_ADDR` from the
-environment and query the allocation list on demand:
-
-```go
-token := os.Getenv("TRELLIS_TOKEN")
-addr := os.Getenv("TRELLIS_ADDR")
-
-req, _ := http.NewRequest("GET", addr+"/v1/allocations?label=component:worker", nil)
-req.Header.Set("Authorization", "Bearer "+token)
-
-// Execute the request, parse the response, and use the returned address/ports.
-```
-
-This is useful for:
-
-- dashboards that display live namespace state;
-- load balancers that need backend allocation addresses;
-- job coordinators that need to enumerate workers; and
-- trusted automation that reacts to allocation metadata.
-
-See `examples/reverse-proxy` for a complete allocation-discovery example.
-
-## DNS alternative
-
-For straightforward service-to-service calls you often do not need API access.
-Trellis DNS provides job-level discovery inside the namespace; use it when you
-need a routable job name rather than allocation metadata.
-
-## Deploying
-
-```sh
-trellis --namespace acme jobs apply --file worker.yaml
-trellis --namespace acme jobs apply --file app.yaml
-```
-
-The dashboard containers start with `TRELLIS_TOKEN` and `TRELLIS_ADDR` set and
-can query allocation state for their namespace.
+For a long-running process, poll only as often as needed and preserve the last known-good generated configuration through temporary API outages. The reverse-proxy recipe in the public cookbook applies this exact controller pattern.

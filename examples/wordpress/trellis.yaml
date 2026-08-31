@@ -1,0 +1,61 @@
+name: wordpress
+namespace: default
+task_groups:
+  - name: stack
+    count: 1
+    network_mode: host
+    labels:
+      route: wordpress
+    restart:
+      max_restarts: 5
+      window: 10m
+    tasks:
+      - name: database
+        image: docker.io/library/mariadb:11.7
+        env:
+          MARIADB_DATABASE: wordpress
+          MARIADB_USER: wordpress
+        secrets:
+          - name: wordpress-db-password
+            target: env
+            env: MARIADB_PASSWORD
+          - name: mariadb-root-password
+            target: env
+            env: MARIADB_ROOT_PASSWORD
+        ports:
+          - host_port: 3306
+            container_port: 3306
+        volumes:
+          - name: db-data
+            path: /var/lib/mysql
+            host_volume: wordpress-db
+        health_check:
+          type: tcp
+          port: 3306
+          interval: 10s
+          timeout: 3s
+          threshold: 5
+      - name: web
+        image: docker.io/library/wordpress:6.8-apache
+        env:
+          WORDPRESS_DB_HOST: 127.0.0.1:3306
+          WORDPRESS_DB_USER: wordpress
+          WORDPRESS_DB_NAME: wordpress
+        secrets:
+          - name: wordpress-db-password
+            target: env
+            env: WORDPRESS_DB_PASSWORD
+        ports:
+          - host_port: 80
+            container_port: 80
+        volumes:
+          - name: wp-content
+            path: /var/www/html/wp-content
+            host_volume: wordpress-content
+        health_check:
+          type: http
+          port: 80
+          path: /
+          interval: 15s
+          timeout: 5s
+          threshold: 5

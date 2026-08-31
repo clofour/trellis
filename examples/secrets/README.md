@@ -1,123 +1,41 @@
-# Secrets
+# Secret delivery and rotation
 
-This example shows how to store secrets in Trellis and inject them into
-containers at runtime.
+This example injects one secret as an environment variable and one as a read-only file. It demonstrates delivery mechanics; it deliberately does not print either value.
 
-## How it works
+## Prerequisites
 
-Trellis stores secrets per namespace, encrypted at rest with AES-256-GCM.
-A job manifest references secrets by name; the scheduler decrypts them at
-allocation time and injects them into the container either as environment
-variables or as files mounted inside the container.
+Every server must use the same separately managed secrets encryption key and key ID. The key must be a root-readable 32-byte value (or its accepted base64 representation) supplied with `--secrets-key`. Losing it makes encrypted secret records—including records in a Trellis backup—unrecoverable.
 
-Secret-management API responses expose metadata, not the stored secret value.
-Values are delivered only to tasks that explicitly reference the secret.
-
-## Manifests
-
-`app.yaml` declares two secret references on the `server` task:
-
-```yaml
-secrets:
-  - name: db-password
-    target: env
-    env: DB_PASSWORD
-
-  - name: tls-cert
-    target: file
-    path: /run/trellis-secrets/tls.crt
-    mode: 0400
-```
-
-`db-password` is injected as `$DB_PASSWORD`. `tls-cert` is written to
-`/run/trellis-secrets/tls.crt` with mode `0400` (owner-read only).
-
-## Secret reference fields
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `name` | yes | Name of the secret in the namespace |
-| `target` | yes | `env` or `file` |
-| `env` | if target=env | Environment variable name |
-| `path` | if target=file | Absolute path inside the container, below `/run/trellis-secrets/` |
-| `mode` | no | `0400` or `0600` (default `0400`) |
-
-## Deploying
-
-### Store the secrets
-
-Write each secret before applying the job. Use `--stdin` when piping the value:
+Create the namespace-scoped values before applying the job:
 
 ```sh
-printf %s "s3cr3t-p4ssw0rd" | trellis --namespace acme secrets set db-password --stdin
+printf %s 'token-value' | \
+  trellis --namespace default secrets set api-token --stdin
+trellis --namespace default secrets set tls-key --file ./server.key
+trellis jobs apply --file examples/secrets/trellis.yaml
 ```
 
-To write from a file:
+`API_TOKEN` receives the first value. The second appears at `/run/trellis-secrets/tls.key`; decimal mode `256` is octal `0400`. File targets must use a clean path below `/run/trellis-secrets/` and may use mode `0400` or `0600`.
+
+## Inspect metadata, not plaintext
 
 ```sh
-trellis --namespace acme secrets set tls-cert --file ./tls.crt
+trellis --namespace default secrets list
+trellis --namespace default secrets describe api-token
+trellis --namespace default jobs status secrets-demo
 ```
 
-### Apply the job
+Secret APIs and the dashboard return name, version, update time, and key ID—not plaintext. Avoid `env`, diagnostic dumps, shell tracing, or application logging that could reveal an environment-delivered value. Prefer file delivery when the application supports it.
+
+## Rotate safely
+
+Use the current metadata version as a compare-and-swap guard:
 
 ```sh
-trellis --namespace acme jobs apply --file app.yaml
+printf %s 'replacement' | trellis --namespace default secrets set api-token \
+  --stdin --expected-version 1
 ```
 
-The scheduler resolves the secret references when an allocation starts. If a
-referenced secret does not exist, the allocation fails to start.
+A successful write increments the version. Running allocations retain bytes already delivered, so coordinate any upstream credential change and replace consumers by applying an execution-affecting job revision. During a compatibility window, applications may need to accept both old and new credentials. Deleting a secret prevents future delivery but does not erase it from already-running containers.
 
-### Rotate a secret
-
-Write a new value to the same secret name:
-
-```sh
-printf %s "n3w-p4ssw0rd" | trellis --namespace acme secrets set db-password --stdin
-```
-
-Updating the stored value does **not** modify or restart allocations that are
-already running. Re-applying an otherwise unchanged manifest also does not
-create a new execution revision, so it is not sufficient by itself to deliver
-the new value.
-
-To roll the new secret into the workload, make an execution-affecting manifest
-change (for example, increment a benign environment value such as
-`SECRET_REVISION`) and apply the manifest. New allocations resolve the current
-secret value when they start. If an outage is acceptable, destroying and
-re-applying the job also starts fresh allocations.
-
-### Optimistic concurrency
-
-To prevent lost updates when multiple operators rotate the same secret
-concurrently, pass `--expected-version` with the current version number. The
-write is rejected if the stored version changed since you last read the
-metadata:
-
-```sh
-# Read the current version first.
-trellis --namespace acme secrets describe db-password
-# => Version: 4
-
-printf %s "n3w-p4ssw0rd" | \
-  trellis --namespace acme secrets set db-password --stdin --expected-version 4
-```
-
-Passing `--expected-version 0` performs a create-only write.
-
-### List and delete secrets
-
-```sh
-trellis --namespace acme secrets list
-trellis --namespace acme secrets delete db-password
-```
-
-## Security notes
-
-- Secret management requires the cluster-authorized CLI credential; the
-  namespace token injected by `api_access: true` is not a secret-management
-  credential.
-- Tasks without a `secrets:` reference never receive the value.
-- File-target secrets are materialized in a memory-backed host directory and
-  bind-mounted read-only into the target task.
-- Trellis does not intentionally include secret values in its API responses or
-  log messages.
+Secret values are capped at 65,536 bytes. Use Trellis secrets for runtime credentials, not large configuration bundles or a general-purpose PKI lifecycle.
