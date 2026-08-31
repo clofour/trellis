@@ -21,10 +21,13 @@ jobs:
 
       - name: Build binaries
         working-directory: orchestrator
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p bin
-          go build -o bin/trellis-node ./cmd/trellis-node
-          go build -o bin/trellis ./cmd/trellis
+          LDFLAGS="-X github.com/clofour/trellis/internal/version.version=${VERSION}"
+          go build -ldflags "${LDFLAGS}" -o bin/trellis-node ./cmd/trellis-node
+          go build -ldflags "${LDFLAGS}" -o bin/trellis ./cmd/trellis
 
       - name: Package binaries
         working-directory: orchestrator

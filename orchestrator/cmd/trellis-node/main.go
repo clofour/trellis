@@ -68,7 +68,18 @@ type config struct {
 
 func main() {
 	cfg := &config{}
-	root := &cobra.Command{Use: "trellis-node", Short: "Trellis node", RunE: func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), cfg) }}
+	root := &cobra.Command{
+		Use:     "trellis-node",
+		Short:   "Trellis node",
+		Version: version.Current(),
+		RunE:    func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), cfg) },
+	}
+	root.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the trellis-node version",
+		Args:  cobra.NoArgs,
+		Run:   func(_ *cobra.Command, _ []string) { fmt.Println(version.Current()) },
+	})
 	f := root.Flags()
 	f.StringVar(&cfg.AgentListen, "agent-listen", ":8127", "Agent API listen address")
 	f.StringVar(&cfg.AgentAdvertise, "agent-advertise", "", "Agent address advertised to the cluster")
