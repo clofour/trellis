@@ -54,6 +54,7 @@ type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
 	RaftListen, RaftAdvertise, Join                            string
 	DataDir, Cluster, ClusterToken, ContainerdSock             string
+	Runtime, RuntimeFaults                                     string
 	WireGuardPool, WireGuardEndpoint                           string
 	WireGuardPort                                              int
 	DNSListen                                                  string
@@ -78,6 +79,8 @@ func main() {
 	f.StringVar(&cfg.Cluster, "cluster", "default", "Cluster name")
 	f.StringVar(&cfg.ClusterToken, "cluster-token", "", "Shared cluster token")
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
+	f.StringVar(&cfg.Runtime, "runtime", "containerd", "Workload runtime: containerd or injected (test only)")
+	f.StringVar(&cfg.RuntimeFaults, "runtime-faults", "", "Injected runtime fault-control file")
 	f.StringVar(&cfg.WireGuardPool, "wireguard-pool", "10.64.0.0/10", "Cluster address pool used for automatic namespace networking")
 	f.StringVar(&cfg.WireGuardEndpoint, "wireguard-endpoint", "", "Externally reachable WireGuard host or host:port")
 	f.IntVar(&cfg.WireGuardPort, "wireguard-port", 51820, "WireGuard UDP listen port")
@@ -214,12 +217,26 @@ func run(parent context.Context, cfg *config) error {
 		}
 	}
 
-	runtimeClient, err := containerruntime.NewContainerdRuntime(cfg.ContainerdSock)
-	if err != nil {
-		return fmt.Errorf("init runtime: %w", err)
+	var runtimeClient containerruntime.ContainerRuntime
+	var runtimeCloser io.Closer
+	switch cfg.Runtime {
+	case "containerd":
+		r, err := containerruntime.NewContainerdRuntime(cfg.ContainerdSock)
+		if err != nil {
+			return fmt.Errorf("init runtime: %w", err)
+		}
+		runtimeClient, runtimeCloser = r, r
+	case "injected":
+		r, err := containerruntime.NewInjectedRuntime(filepath.Join(cfg.DataDir, "injected-runtime.json"), cfg.RuntimeFaults)
+		if err != nil {
+			return fmt.Errorf("init injected runtime: %w", err)
+		}
+		runtimeClient, runtimeCloser = r, r
+	default:
+		return fmt.Errorf("unsupported runtime %q", cfg.Runtime)
 	}
 	defer func() {
-		if err := runtimeClient.Close(); err != nil {
+		if err := runtimeCloser.Close(); err != nil {
 			log.Error("close runtime", "error", err)
 		}
 	}()
