@@ -1,19 +1,79 @@
-# Patroni
+# Patroni architecture skeleton
 
-This is an architecture example, not a turnkey PostgreSQL cluster. It demonstrates three independently placed replicas, WireGuard networking, Trellis API discovery, node-local storage, secrets, rolling replacement, and Patroni REST health checks.
+This directory demonstrates how Trellis can place and monitor three Patroni/PostgreSQL containers. It is intentionally **not a turnkey HA database**. Trellis supplies container scheduling, health observations, namespace networking, secret delivery, and local-volume placement; Patroni and a supported distributed configuration store (DCS) must supply database membership, leader election, replication, and promotion safety.
 
-Before use:
+## What the manifest provides
 
-1. Provision at least three nodes labeled `database=true`, each advertising a separately backed-up `patroni-data` host volume.
-2. Create `postgres-password` and `replication-password` in namespace `database`.
-3. Build a pinned Patroni image/config that uses a supported distributed configuration store. Trellis discovery (`discover-members.sh`) can locate endpoints, but the Trellis catalog is **not** Patroni's consensus DCS.
-4. Give every member a unique Patroni name; the static environment value is only a placeholder that your entrypoint should derive from allocation identity.
-5. Test bootstrap, synchronous/asynchronous policy, leader loss, fencing, rewind, backups, point-in-time recovery, and upgrades before carrying data.
+- Three `postgres` group allocations with a normal scheduler preference to spread replicas.
+- A `database=true` node constraint and required `patroni-data` host volume.
+- Automatic namespace WireGuard networking.
+- PostgreSQL and Patroni REST ports plus an HTTP `/health` probe.
+- Namespace-scoped Trellis API access for optional endpoint discovery.
+- Environment-delivered superuser and replication credentials.
+- Rolling replacement with one in-flight replacement.
 
-Apply only after those changes:
+Normal replica spreading is a preference, not a hard topology constraint. Verify actual node placement and do not assume three allocations imply three independent failure domains.
+
+## Required work before applying
+
+### 1. Provision storage and nodes
+
+Prepare at least three nodes, ideally in separate failure domains:
 
 ```sh
-trellis --namespace database jobs apply --file examples/patroni/trellis.yaml
+sudo install -d -m 0700 /srv/trellis/patroni
+sudo trellis-node \
+  --cluster-token "$TRELLIS_TOKEN" \
+  --label database=true \
+  --host-volume patroni-data=/srv/trellis/patroni
 ```
 
-Trellis schedules and monitors containers; Patroni/PostgreSQL still own database replication and promotion correctness.
+Each path is node-local and contains a different PostgreSQL data directory. Back it up independently. A host-volume name does not replicate bytes between nodes.
+
+### 2. Supply a real DCS and Patroni configuration
+
+The manifest's static `PATRONI_NAME=trellis-member` is a placeholder and is invalid for a real cluster because every member needs a unique identity. Build an entrypoint that derives identity from stable allocation/node context or injects explicitly unique configuration. Configure Patroni for etcd, Consul, or another Patroni-supported DCS with quorum and TLS appropriate to your environment.
+
+`discover-members.sh` queries Trellis allocations labeled `service:patroni`; it can help a controller find endpoints, but the Trellis catalog is eventually reconciled service discovery—not Patroni's consensus DCS. Never use the catalog alone to decide which PostgreSQL member may accept writes.
+
+### 3. Create credentials
+
+```sh
+openssl rand -base64 32 | \
+  trellis --namespace database secrets set postgres-password --stdin
+openssl rand -base64 32 | \
+  trellis --namespace database secrets set replication-password --stdin
+```
+
+Confirm the selected Patroni image actually consumes `PGPASSWORD_SUPERUSER` and `PGPASSWORD_STANDBY`, or adapt the environment to that image's documented configuration contract. Pin the image by digest after qualification.
+
+### 4. Design networking and client routing
+
+Open the WireGuard UDP port between nodes and ensure advertised endpoints are routable. PostgreSQL clients should not pick an arbitrary catalog member for writes. Route through a Patroni-aware proxy or controller that checks the leader/read-only REST endpoints and distinguishes primary from replica traffic.
+
+## Apply and inspect
+
+Only after replacing the placeholders and configuring the DCS:
+
+```sh
+trellis jobs apply --file examples/patroni/trellis.yaml
+trellis --namespace database jobs status patroni
+trellis nodes list
+```
+
+Check that all three allocations are on intended nodes, Patroni reports one leader, replicas stream successfully, and write/read routing follows the desired roles. Inspect allocation events when a health check fails; Trellis health alone does not prove replication is current or promotion is safe.
+
+## Failure and upgrade tests
+
+Before storing production data, demonstrate all of the following in a disposable environment:
+
+1. loss and return of a replica;
+2. loss of the PostgreSQL leader and exactly-one safe promotion;
+3. loss of DCS quorum without split-brain writes;
+4. node drain and replacement without losing the only current copy;
+5. WAL archiving, base backup, point-in-time restore, and credential recovery;
+6. `pg_rewind` or reinitialization of the former primary;
+7. PostgreSQL/Patroni rolling upgrades with version-skew compatibility;
+8. restoration when Trellis desired state and database data are recovered separately.
+
+Trellis backups contain the job and encrypted secret records, not PostgreSQL data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities.

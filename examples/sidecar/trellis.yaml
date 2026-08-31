@@ -3,6 +3,7 @@ namespace: default
 task_groups:
   - name: web
     count: 2
+    network_mode: host
     labels:
       route: sidecar-demo
     update:
@@ -12,7 +13,7 @@ task_groups:
       - name: app
         image: docker.io/library/nginx:1.27-alpine
         ports:
-          - host_port: 0
+          - host_port: 80
             container_port: 80
         health_check:
           type: http
