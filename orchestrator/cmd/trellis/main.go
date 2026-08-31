@@ -4,11 +4,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/clofour/trellis/internal/localconfig"
 	"github.com/clofour/trellis/internal/version"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -18,7 +20,8 @@ type CLIConfig struct {
 	ServerAddr   string
 	ClusterToken string
 	Namespace    string
-	CACert       string
+	CACert       string // path (from --ca-cert flag or TRELLIS_CA_CERT)
+	CACertPEM    string // inline PEM (from run file or user config file)
 	Cert         string
 	Key          string
 	Output       string
@@ -30,6 +33,7 @@ type fileConfig struct {
 	ServerAddr   *string `yaml:"server_addr"`
 	ClusterToken *string `yaml:"cluster_token"`
 	Namespace    *string `yaml:"namespace"`
+	CACert       *string `yaml:"ca_cert"`
 }
 
 func main() {
@@ -64,12 +68,18 @@ func main() {
 }
 
 func buildCLITLSConfig() (*tls.Config, error) {
-	if config.CACert == "" {
+	var caPEM []byte
+	switch {
+	case config.CACert != "":
+		data, err := os.ReadFile(config.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("read CA cert: %w", err)
+		}
+		caPEM = data
+	case config.CACertPEM != "":
+		caPEM = []byte(config.CACertPEM)
+	default:
 		return nil, nil
-	}
-	caPEM, err := os.ReadFile(config.CACert)
-	if err != nil {
-		return nil, fmt.Errorf("read CA cert: %w", err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
@@ -99,20 +109,29 @@ func loadConfig(cmd *cobra.Command) error {
 		Output:     flagConfig.Output,
 	}
 
-	path := os.Getenv("TRELLIS_CONFIG")
-	if path == "" {
+	// 1. Run file — lowest priority; present only while a local node is running.
+	if lc, err := localconfig.Read(localconfig.DefaultPath); err == nil {
+		merged.ServerAddr = lc.ServerAddr
+		merged.ClusterToken = lc.ClusterToken
+		merged.CACertPEM = lc.CACert
+	} else if !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "warning: could not read %s: %v\n", localconfig.DefaultPath, err)
+	}
+
+	// 2. User config file.
+	cfgPath := os.Getenv("TRELLIS_CONFIG")
+	if cfgPath == "" {
 		configDir, err := os.UserConfigDir()
 		if err != nil {
 			return fmt.Errorf("determine config directory: %w", err)
 		}
-		path = filepath.Join(configDir, "trellis", "config.yaml")
+		cfgPath = filepath.Join(configDir, "trellis", "config.yaml")
 	}
-
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(cfgPath)
 	if err == nil {
 		var file fileConfig
 		if err := yaml.Unmarshal(content, &file); err != nil {
-			return fmt.Errorf("parse config file %s: %w", path, err)
+			return fmt.Errorf("parse config file %s: %w", cfgPath, err)
 		}
 		if file.ServerAddr != nil {
 			merged.ServerAddr = *file.ServerAddr
@@ -123,10 +142,14 @@ func loadConfig(cmd *cobra.Command) error {
 		if file.Namespace != nil {
 			merged.Namespace = *file.Namespace
 		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read config file %s: %w", path, err)
+		if file.CACert != nil {
+			merged.CACertPEM = *file.CACert
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read config file %s: %w", cfgPath, err)
 	}
 
+	// 3. Environment variables.
 	if value, ok := os.LookupEnv("TRELLIS_ADDR"); ok {
 		merged.ServerAddr = value
 	}
@@ -136,7 +159,17 @@ func loadConfig(cmd *cobra.Command) error {
 	if value, ok := os.LookupEnv("TRELLIS_NAMESPACE"); ok {
 		merged.Namespace = value
 	}
+	if value, ok := os.LookupEnv("TRELLIS_CA_CERT"); ok {
+		merged.CACert = value
+	}
+	if value, ok := os.LookupEnv("TRELLIS_CERT"); ok {
+		merged.Cert = value
+	}
+	if value, ok := os.LookupEnv("TRELLIS_KEY"); ok {
+		merged.Key = value
+	}
 
+	// 4. Explicit flags — highest priority.
 	flags := cmd.Root().PersistentFlags()
 	if flags.Changed("server-addr") {
 		merged.ServerAddr = flagConfig.ServerAddr
@@ -146,6 +179,15 @@ func loadConfig(cmd *cobra.Command) error {
 	}
 	if flags.Changed("namespace") {
 		merged.Namespace = flagConfig.Namespace
+	}
+	if flags.Changed("ca-cert") {
+		merged.CACert = flagConfig.CACert
+	}
+	if flags.Changed("cert") {
+		merged.Cert = flagConfig.Cert
+	}
+	if flags.Changed("key") {
+		merged.Key = flagConfig.Key
 	}
 
 	if merged.Output != "table" && merged.Output != "json" {
