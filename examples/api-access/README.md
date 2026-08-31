@@ -11,6 +11,7 @@ Setting `api_access: true` on a task group causes Trellis to obtain a persistent
 | `TRELLIS_ADDR` | Address of the Trellis control-plane API. |
 | `TRELLIS_TOKEN` | Bearer token scoped to the job namespace. |
 | `TRELLIS_NAMESPACE` | Namespace to send in scoped requests. |
+| `TRELLIS_CA_CERT` | Cluster CA certificate (inline PEM) for TLS verification. |
 
 This is a group-level privilege boundary: every task in the group can read the injected environment and act with the token. Use a reviewed, pinned image and do not mix an untrusted sidecar into the group.
 
