@@ -325,6 +325,9 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 				"TRELLIS_TOKEN": token,
 				"TRELLIS_ADDR":  s.serverAddr,
 			}
+			if caCert, _, caErr := s.ClusterCA(); caErr == nil && caCert != "" {
+				request.EnvOverrides["TRELLIS_CA_CERT"] = caCert
+			}
 		}
 		if alloc.Phase == lifecycle.PhasePlaced || alloc.Phase == lifecycle.PhaseStopped || alloc.Phase == lifecycle.PhaseFailed || alloc.Phase == lifecycle.PhaseLost {
 			if err := alloc.Transition(lifecycle.PhaseStarting, now, "", ""); err != nil {

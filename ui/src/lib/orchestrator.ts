@@ -1,11 +1,11 @@
 const rawTrellisURL =
   process.env.TRELLIS_API_URL ||
-  process.env.TRELLIS_ADDR ||
+  (process.env.TRELLIS_ADDR && `https://${process.env.TRELLIS_ADDR}`) ||
   "http://localhost:8128";
 
 export const TRELLIS_URL = /^https?:\/\//.test(rawTrellisURL)
   ? rawTrellisURL
-  : `http://${rawTrellisURL}`;
+  : `https://${rawTrellisURL}`;
 
 export function orchestratorHeaders(): HeadersInit {
   const token =
