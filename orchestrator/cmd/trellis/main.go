@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/clofour/trellis/internal/version"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -33,8 +34,9 @@ type fileConfig struct {
 
 func main() {
 	root := &cobra.Command{
-		Use:   "trellis",
-		Short: "Trellis CLI",
+		Use:     "trellis",
+		Short:   "Trellis CLI",
+		Version: version.Current(),
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return loadConfig(cmd)
 		},
@@ -53,6 +55,7 @@ func main() {
 	root.AddCommand(NewNodesCmd())
 	root.AddCommand(NewSecretsCmd())
 	root.AddCommand(NewBackupCmd())
+	root.AddCommand(NewVersionCmd())
 
 	err := root.Execute()
 	if err != nil {
