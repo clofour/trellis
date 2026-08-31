@@ -1,5 +1,6 @@
 name: orchestrator-lint
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -23,4 +24,3 @@ jobs:
         with:
           version: v2.12.2
           working-directory: orchestrator
-          
