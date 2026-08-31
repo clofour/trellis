@@ -1,0 +1,17 @@
+name: volumes-demo
+namespace: default
+task_groups:
+  - name: writer
+    count: 1
+    constraints:
+      - attribute: storage
+        value: fast
+    tasks:
+      - name: app
+        image: docker.io/library/alpine:3.21
+        volumes:
+          - name: scratch
+            path: /var/cache/app
+          - name: database
+            path: /var/lib/app
+            host_volume: app-data

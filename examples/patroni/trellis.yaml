@@ -1,0 +1,54 @@
+name: patroni
+namespace: database
+network:
+  wireguard: true
+task_groups:
+  - name: postgres
+    count: 3
+    api_access: true
+    labels:
+      service: patroni
+      role: database
+    constraints:
+      - attribute: database
+        value: "true"
+    restart:
+      max_restarts: 5
+      window: 10m
+    update:
+      strategy: rolling
+      max_parallel: 1
+    tasks:
+      - name: patroni
+        image: ghcr.io/zalando/spilo-17:4.0-p2
+        env:
+          PATRONI_SCOPE: trellis-patroni
+          PATRONI_NAME: trellis-member
+          PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+          PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+        secrets:
+          - name: postgres-password
+            target: env
+            env: PGPASSWORD_SUPERUSER
+          - name: replication-password
+            target: env
+            env: PGPASSWORD_STANDBY
+        ports:
+          - host_port: 0
+            container_port: 5432
+          - host_port: 0
+            container_port: 8008
+        volumes:
+          - name: postgres-data
+            path: /home/postgres/pgroot
+            host_volume: patroni-data
+        resources:
+          cpu: 1000
+          memory: 2147483648
+        health_check:
+          type: http
+          port: 8008
+          path: /health
+          interval: 10s
+          timeout: 3s
+          threshold: 3

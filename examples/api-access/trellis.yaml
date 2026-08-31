@@ -1,0 +1,15 @@
+name: api-client
+namespace: default
+task_groups:
+  - name: observer
+    count: 1
+    api_access: true
+    tasks:
+      - name: dashboard
+        image: docker.io/library/nginx:1.27-alpine
+        ports:
+          - host_port: 0
+            container_port: 80
+        resources:
+          cpu: 100
+          memory: 134217728
