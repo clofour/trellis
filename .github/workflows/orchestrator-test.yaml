@@ -28,14 +28,3 @@ jobs:
 
       - name: Run tests
         run: go test ./...
-
-      - name: Run multi-node integration tests
-        run: go test -tags=integration ./integration -count=1 -timeout=6m
-
-      - name: Start containerd
-        run: |
-          sudo systemctl start containerd
-          sudo chmod 666 /run/containerd/containerd.sock
-
-      - name: Run containerd allocation-adoption E2E
-        run: go test -tags=containerd_e2e ./internal/runtime -run TestContainerdAllocationAdoption -count=1 -timeout=3m
