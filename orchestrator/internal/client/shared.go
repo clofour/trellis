@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const maxResponseBody = 1 << 20
+const maxResponseBody = 64 << 20
 
 func newHTTPClient(tlsConfig *tls.Config) *http.Client {
 	return &http.Client{Transport: &http.Transport{

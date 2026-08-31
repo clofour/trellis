@@ -52,6 +52,7 @@ func main() {
 	root.AddCommand(NewJobsCmd())
 	root.AddCommand(NewNodesCmd())
 	root.AddCommand(NewSecretsCmd())
+	root.AddCommand(NewBackupCmd())
 
 	err := root.Execute()
 	if err != nil {
