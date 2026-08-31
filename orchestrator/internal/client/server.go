@@ -43,6 +43,21 @@ func (s *ServerClient) Ready() bool {
 	return s.address() != ""
 }
 
+func (s *ServerClient) CreateBackup(ctx context.Context) (*api.BackupSnapshot, error) {
+	var snapshot api.BackupSnapshot
+	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/backup", nil, &snapshot); err != nil {
+		return nil, fmt.Errorf("create backup: %w", err)
+	}
+	return &snapshot, nil
+}
+
+func (s *ServerClient) RestoreBackup(ctx context.Context, snapshot *api.BackupSnapshot) error {
+	if err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/backup/restore", snapshot, nil); err != nil {
+		return fmt.Errorf("restore backup: %w", err)
+	}
+	return nil
+}
+
 type NodeInfo struct {
 	ID                 uuid.UUID
 	Host               string

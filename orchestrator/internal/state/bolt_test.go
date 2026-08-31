@@ -87,4 +87,33 @@ func TestBoltStoreDelete(t *testing.T) {
 	}
 }
 
+func TestRestoreDesiredKeepsRuntimeStateAndRequiresFreshTarget(t *testing.T) {
+	store, err := NewBoltStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	if err := store.Put(ctx, "trellis/new/nodes/local", []byte(`{"id":"local"}`)); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &DesiredSnapshot{
+		Jobs:    map[string][]byte{"web": []byte(`{"revision":3}`)},
+		Secrets: map[string][]byte{"prod/token": []byte(`{"ciphertext":"encrypted"}`)},
+	}
+	if err := store.RestoreDesired("new", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	all, err := store.List(ctx, "trellis/new/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 || all["trellis/new/nodes/local"] == nil || all["trellis/new/jobs/web"] == nil || all["trellis/new/secrets/prod/token"] == nil {
+		t.Fatalf("unexpected restored state: %#v", all)
+	}
+	if err := store.RestoreDesired("new", snapshot); err == nil {
+		t.Fatal("expected restore into non-fresh desired state to fail")
+	}
+}
+
 var _ StateStore = (*BoltStore)(nil)

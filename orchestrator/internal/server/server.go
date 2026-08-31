@@ -38,6 +38,11 @@ type ClusterJoiner interface {
 	RemoveServer(id string) error
 }
 
+type desiredStateStore interface {
+	BackupDesired(cluster string) (*state.DesiredSnapshot, error)
+	RestoreDesired(cluster string, snapshot *state.DesiredSnapshot) error
+}
+
 type Server struct {
 	log     *slog.Logger
 	storage *storage.LocalStorage
@@ -52,7 +57,9 @@ type Server struct {
 	tokenManager *auth.TokenManager
 	catalog      *catalog.ServiceCatalog
 	serverAddr   string
+	clusterName  string
 	joiner       ClusterJoiner
+	backupStore  desiredStateStore
 	clientTLS    *tls.Config
 	// Locking contract:
 	//   - mu protects the in-memory cluster, node, job, allocation, epoch, and
@@ -73,6 +80,57 @@ type Server struct {
 }
 
 func (s *Server) SetSecretStore(store *secretstore.Store) { s.secrets = store }
+
+func (s *Server) Backup(ctx context.Context) (*api.BackupSnapshot, error) {
+	if s.backupStore == nil {
+		return nil, fmt.Errorf("backup is unavailable")
+	}
+	snapshot, err := s.backupStore.BackupDesired(s.clusterName)
+	if err != nil {
+		return nil, err
+	}
+	result := &api.BackupSnapshot{
+		FormatVersion: api.BackupFormatVersion,
+		CreatedAt:     s.now().UTC(),
+		Jobs:          make(map[string]json.RawMessage, len(snapshot.Jobs)),
+		Secrets:       make(map[string]json.RawMessage, len(snapshot.Secrets)),
+	}
+	for key, value := range snapshot.Jobs {
+		result.Jobs[key] = json.RawMessage(value)
+	}
+	for key, value := range snapshot.Secrets {
+		result.Secrets[key] = json.RawMessage(value)
+	}
+	return result, nil
+}
+
+func (s *Server) Restore(ctx context.Context, backup *api.BackupSnapshot) error {
+	if backup.FormatVersion != api.BackupFormatVersion {
+		return fmt.Errorf("unsupported backup format version %d", backup.FormatVersion)
+	}
+	if s.backupStore == nil {
+		return fmt.Errorf("restore is unavailable")
+	}
+	snapshot := &state.DesiredSnapshot{Jobs: make(map[string][]byte, len(backup.Jobs)), Secrets: make(map[string][]byte, len(backup.Secrets))}
+	for key, value := range backup.Jobs {
+		if !json.Valid(value) {
+			return fmt.Errorf("job %q contains invalid JSON", key)
+		}
+		snapshot.Jobs[key] = value
+	}
+	for key, value := range backup.Secrets {
+		if !json.Valid(value) {
+			return fmt.Errorf("secret %q contains invalid JSON", key)
+		}
+		snapshot.Secrets[key] = value
+	}
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+	if err := s.backupStore.RestoreDesired(s.clusterName, snapshot); err != nil {
+		return err
+	}
+	return s.Reload(ctx)
+}
 
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
 	return s.AllocationLogsForNamespace(ctx, "", id, follow, tail)
@@ -298,7 +356,7 @@ func (a *Allocation) UnmarshalJSON(data []byte) error {
 
 func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController, store state.StateStore, cluster, serverAddr string) *Server {
 	pool := netip.MustParsePrefix("10.64.0.0/10")
-	return &Server{
+	s := &Server{
 		log:          log.With("component", "server"),
 		storage:      storage,
 		state:        state,
@@ -309,8 +367,11 @@ func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateCont
 		tokenManager: auth.NewTokenManager(store, cluster),
 		catalog:      catalog.New(),
 		serverAddr:   serverAddr,
+		clusterName:  cluster,
 		now:          time.Now,
 	}
+	s.backupStore, _ = store.(desiredStateStore)
+	return s
 }
 
 // AcquireLeadership durably advances the fencing epoch. The Raft-backed write

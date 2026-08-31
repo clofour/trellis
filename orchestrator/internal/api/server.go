@@ -1,12 +1,24 @@
 package api
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/clofour/trellis/internal/lifecycle"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
 )
+
+const BackupFormatVersion = 1
+
+// BackupSnapshot contains desired state only. Secret values remain encrypted
+// exactly as stored in Raft and still require the separately managed KEK.
+type BackupSnapshot struct {
+	FormatVersion int                        `json:"format_version"`
+	CreatedAt     time.Time                  `json:"created_at"`
+	Jobs          map[string]json.RawMessage `json:"jobs"`
+	Secrets       map[string]json.RawMessage `json:"secrets"`
+}
 
 type NodeStatusResponse string
 

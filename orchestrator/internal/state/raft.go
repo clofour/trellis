@@ -26,6 +26,41 @@ type RaftStore struct {
 	hadExistingState bool
 }
 
+// DesiredSnapshot is the portable portion of control-plane state. Keys are
+// relative to either the jobs or secrets prefix so a backup can be restored
+// into a freshly bootstrapped cluster with a different name.
+type DesiredSnapshot struct {
+	Jobs    map[string][]byte `json:"jobs"`
+	Secrets map[string][]byte `json:"secrets"`
+}
+
+// BackupDesired takes a linearizable view of desired state. The barrier makes
+// sure the local FSM contains every write committed before the request.
+func (r *RaftStore) BackupDesired(cluster string) (*DesiredSnapshot, error) {
+	if err := r.raft.Barrier(10 * time.Second).Error(); err != nil {
+		return nil, fmt.Errorf("raft backup barrier: %w", err)
+	}
+	return r.fsm.desiredSnapshot(cluster)
+}
+
+// RestoreDesired installs a backup as one Raft log entry. The FSM rejects the
+// operation unless both desired-state prefixes are empty.
+func (r *RaftStore) RestoreDesired(cluster string, snapshot *DesiredSnapshot) error {
+	cmd := fsmCommand{Op: "restore_desired", Cluster: cluster, Snapshot: snapshot}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+	fut := r.raft.Apply(data, 10*time.Second)
+	if err := fut.Error(); err != nil {
+		return err
+	}
+	if resp, ok := fut.Response().(error); ok && resp != nil {
+		return resp
+	}
+	return nil
+}
+
 type RaftConfig struct {
 	DataDir   string
 	BindAddr  string
@@ -224,9 +259,11 @@ type fsm struct {
 }
 
 type fsmCommand struct {
-	Op    string `json:"op"`
-	Key   string `json:"key"`
-	Value []byte `json:"value,omitempty"`
+	Op       string           `json:"op"`
+	Key      string           `json:"key,omitempty"`
+	Value    []byte           `json:"value,omitempty"`
+	Cluster  string           `json:"cluster,omitempty"`
+	Snapshot *DesiredSnapshot `json:"snapshot,omitempty"`
 }
 
 func (f *fsm) Apply(log *raft.Log) interface{} {
@@ -240,9 +277,35 @@ func (f *fsm) Apply(log *raft.Log) interface{} {
 		return f.store.Put(ctx, cmd.Key, cmd.Value)
 	case "delete":
 		return f.store.Delete(ctx, cmd.Key)
+	case "restore_desired":
+		if cmd.Snapshot == nil {
+			return fmt.Errorf("restore snapshot is missing")
+		}
+		return f.store.RestoreDesired(cmd.Cluster, cmd.Snapshot)
 	default:
 		return fmt.Errorf("unknown FSM command: %s", cmd.Op)
 	}
+}
+
+func (f *fsm) desiredSnapshot(cluster string) (*DesiredSnapshot, error) {
+	jobsPrefix := fmt.Sprintf("trellis/%s/jobs/", cluster)
+	secretsPrefix := fmt.Sprintf("trellis/%s/secrets/", cluster)
+	jobs, err := f.store.List(context.Background(), jobsPrefix)
+	if err != nil {
+		return nil, err
+	}
+	secrets, err := f.store.List(context.Background(), secretsPrefix)
+	if err != nil {
+		return nil, err
+	}
+	result := &DesiredSnapshot{Jobs: make(map[string][]byte, len(jobs)), Secrets: make(map[string][]byte, len(secrets))}
+	for key, value := range jobs {
+		result.Jobs[key[len(jobsPrefix):]] = value
+	}
+	for key, value := range secrets {
+		result.Secrets[key[len(secretsPrefix):]] = value
+	}
+	return result, nil
 }
 
 func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {

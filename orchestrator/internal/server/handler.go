@@ -55,10 +55,46 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
 	v1.DELETE("/raft/members/:id", h.handleRaftMemberRemove)
+	v1.GET("/backup", h.handleBackupCreate)
+	v1.POST("/backup/restore", h.handleBackupRestore)
 	v1.PUT("/namespaces/:namespace/secrets/:name", h.handleSetSecret)
 	v1.GET("/namespaces/:namespace/secrets", h.handleListSecrets)
 	v1.GET("/namespaces/:namespace/secrets/:name", h.handleGetSecret)
 	v1.DELETE("/namespaces/:namespace/secrets/:name", h.handleDeleteSecret)
+}
+
+func requireAdmin(c *echo.Context) error {
+	if admin, _ := c.Request().Context().Value(AdminContextKey).(bool); !admin {
+		return echo.NewHTTPError(http.StatusForbidden, "backup operations require cluster authorization")
+	}
+	return nil
+}
+
+func (h *Handler) handleBackupCreate(c *echo.Context) error {
+	if err := requireAdmin(c); err != nil {
+		return err
+	}
+	backup, err := h.server.Backup(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+	}
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.JSON(http.StatusOK, backup)
+}
+
+func (h *Handler) handleBackupRestore(c *echo.Context) error {
+	if err := requireAdmin(c); err != nil {
+		return err
+	}
+	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 64<<20)
+	var backup api.BackupSnapshot
+	if err := c.Bind(&backup); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid backup snapshot")
+	}
+	if err := h.server.Restore(c.Request().Context(), &backup); err != nil {
+		return echo.NewHTTPError(http.StatusConflict, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func secretNamespace(c *echo.Context) (string, error) {

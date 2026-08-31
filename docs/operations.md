@@ -136,6 +136,35 @@ new or restarted allocations only.
 
 ## Routine operations
 
+### Back up and restore desired state
+
+Create an on-demand, live backup through the leader API:
+
+```sh
+trellis backup create /secure/backups/trellis-$(date +%F).json
+```
+
+The snapshot contains every persisted job definition and encrypted secret
+record. It deliberately excludes allocations, node registrations, leadership
+epochs, tokens, and all other runtime state. Trellis does not schedule backups,
+rotate them, or select a storage destination; use the command from your normal
+backup workflow. Pass `-` instead of a file to read or write standard input.
+
+Restore the snapshot after bootstrapping a fresh cluster:
+
+```sh
+trellis backup restore /secure/backups/trellis-2026-08-31.json
+```
+
+Restore is rejected when the target already has jobs or secrets. The
+reconciler creates new allocations from the restored definitions; allocation
+and node identities from the old cluster are never reused. Secret records stay
+encrypted in the backup and can only be decrypted when the restored nodes are
+configured with the original `--secrets-key` KEK file. Back up that file
+separately, with access controls appropriate for encryption key material.
+
+### Nodes
+
 List node health and advertised capacity:
 
 ```sh
