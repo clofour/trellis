@@ -346,7 +346,8 @@ if confirm "Install the web dashboard?" "n"; then
 
     allow_writes_env=""
     if [ "$dashboard_mode" = "rw" ]; then
-        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\""
+        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\"
+"
     fi
 
     dashboard_manifest="${tmp}/trellis-dashboard.yaml"
@@ -362,7 +363,7 @@ task_groups:
         image: ${ui_image}
         env:
           TRELLIS_NAMESPACE: ${ui_namespace}
-$([ -n "$allow_writes_env" ] && printf '%s\n' "$allow_writes_env")        resources:
+${allow_writes_env}        resources:
           cpu: 250
           memory: 536870912
         ports:
