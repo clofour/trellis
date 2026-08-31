@@ -1,0 +1,55 @@
+name: orchestrator-integration
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  multi-node:
+    name: multi-node
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orchestrator
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: orchestrator/go.mod
+          cache-dependency-path: orchestrator/go.sum
+
+      - name: Run multi-node integration tests
+        run: go test -tags=integration ./integration -count=1 -timeout=6m
+
+  containerd:
+    name: containerd
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orchestrator
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: orchestrator/go.mod
+          cache-dependency-path: orchestrator/go.sum
+
+      - name: Start containerd
+        run: sudo systemctl start containerd
+
+      - name: Run containerd allocation-adoption E2E
+        # Pulling and unpacking an image with containerd's overlayfs snapshotter
+        # mounts snapshot filesystems in the calling process. Socket access by
+        # itself is therefore insufficient; this boundary test must run as root.
+        run: sudo "$(command -v go)" test -tags=containerd_e2e ./internal/runtime -run TestContainerdAllocationAdoption -count=1 -timeout=3m

@@ -54,6 +54,7 @@ type config struct {
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
 	RaftListen, RaftAdvertise, Join                            string
 	DataDir, Cluster, ClusterToken, ContainerdSock             string
+	Runtime, RuntimeFaults                                     string
 	WireGuardPool, WireGuardEndpoint                           string
 	WireGuardPort                                              int
 	DNSListen                                                  string
@@ -78,6 +79,8 @@ func main() {
 	f.StringVar(&cfg.Cluster, "cluster", "default", "Cluster name")
 	f.StringVar(&cfg.ClusterToken, "cluster-token", "", "Shared cluster token")
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
+	f.StringVar(&cfg.Runtime, "runtime", "containerd", "Workload runtime: containerd or injected (test only)")
+	f.StringVar(&cfg.RuntimeFaults, "runtime-faults", "", "Injected runtime fault-control file")
 	f.StringVar(&cfg.WireGuardPool, "wireguard-pool", "10.64.0.0/10", "Cluster address pool used for automatic namespace networking")
 	f.StringVar(&cfg.WireGuardEndpoint, "wireguard-endpoint", "", "Externally reachable WireGuard host or host:port")
 	f.IntVar(&cfg.WireGuardPort, "wireguard-port", 51820, "WireGuard UDP listen port")
@@ -177,6 +180,14 @@ func run(parent context.Context, cfg *config) error {
 			return fmt.Errorf("join cluster: %w", err)
 		}
 	}
+	// Raft construction and joining are asynchronous. Reading the local FSM
+	// before it has applied the leader's committed log can make an existing
+	// cluster look uninitialized, causing a follower to attempt a write that can
+	// never succeed. Do not initialize the control plane (or advertise readiness)
+	// until this member has heard from a leader and applied its local log.
+	if err := waitForRaftSync(ctx, raftStore); err != nil {
+		return fmt.Errorf("wait for raft synchronization: %w", err)
+	}
 
 	stateCtl := server.NewStateController(raftStore, cfg.Cluster)
 	control := server.NewServer(log, local, stateCtl, raftStore, cfg.Cluster, cfg.ServerAdvertise)
@@ -214,12 +225,26 @@ func run(parent context.Context, cfg *config) error {
 		}
 	}
 
-	runtimeClient, err := containerruntime.NewContainerdRuntime(cfg.ContainerdSock)
-	if err != nil {
-		return fmt.Errorf("init runtime: %w", err)
+	var runtimeClient containerruntime.ContainerRuntime
+	var runtimeCloser io.Closer
+	switch cfg.Runtime {
+	case "containerd":
+		r, err := containerruntime.NewContainerdRuntime(cfg.ContainerdSock)
+		if err != nil {
+			return fmt.Errorf("init runtime: %w", err)
+		}
+		runtimeClient, runtimeCloser = r, r
+	case "injected":
+		r, err := containerruntime.NewInjectedRuntime(filepath.Join(cfg.DataDir, "injected-runtime.json"), cfg.RuntimeFaults)
+		if err != nil {
+			return fmt.Errorf("init injected runtime: %w", err)
+		}
+		runtimeClient, runtimeCloser = r, r
+	default:
+		return fmt.Errorf("unsupported runtime %q", cfg.Runtime)
 	}
 	defer func() {
-		if err := runtimeClient.Close(); err != nil {
+		if err := runtimeCloser.Close(); err != nil {
 			log.Error("close runtime", "error", err)
 		}
 	}()
@@ -327,6 +352,15 @@ func run(parent context.Context, cfg *config) error {
 				return fmt.Errorf("leader election event stream closed")
 			}
 			if event.Elected {
+				// LeaderCh can fire before this node's FSM has applied every
+				// committed entry inherited from the previous leader. Reloading at
+				// that point resurrects stale jobs and allocations in memory. A
+				// barrier makes the leadership snapshot include all prior commits.
+				if err := raftStore.Raft().Barrier(10 * time.Second).Error(); err != nil {
+					log.Error("raft leadership barrier failed", "error", err)
+					stop()
+					continue
+				}
 				if err := control.Reload(ctx); err != nil {
 					log.Error("load leader state failed", "error", err)
 					stop()
@@ -348,6 +382,28 @@ func run(parent context.Context, cfg *config) error {
 				leaderCancel()
 				leaderCancel = nil
 			}
+		}
+	}
+}
+
+func waitForRaftSync(ctx context.Context, store *state.RaftStore) error {
+	const timeout = 30 * time.Second
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		r := store.Raft()
+		_, leaderID := r.LeaderWithID()
+		if leaderID != "" && r.AppliedIndex() >= r.LastIndex() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("timed out after %s (leader=%q applied=%d last=%d)", timeout, leaderID, r.AppliedIndex(), r.LastIndex())
+		case <-ticker.C:
 		}
 	}
 }
