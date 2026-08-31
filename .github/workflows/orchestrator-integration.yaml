@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   multi-node:
-    name: multi-node-integration
+    name: multi-node
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,7 +30,7 @@ jobs:
         run: go test -tags=integration ./integration -count=1 -timeout=6m
 
   containerd:
-    name: containerd-e2e
+    name: containerd
     runs-on: ubuntu-latest
     defaults:
       run:
