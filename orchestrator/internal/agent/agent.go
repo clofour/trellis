@@ -572,6 +572,9 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 			if netAttachment != nil {
 				return netAttachment.NetworkNamespace
 			}
+			if hostMode {
+				return "/proc/1/ns/net"
+			}
 			return ""
 		}(),
 		DNSServers: a.dnsServers,

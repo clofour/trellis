@@ -358,6 +358,7 @@ task_groups:
   - name: web
     count: 1
     api_access: true
+    network_mode: host
     tasks:
       - name: dashboard
         image: ${ui_image}
