@@ -50,7 +50,11 @@ func TestMultiNodeFailureRecovery(t *testing.T) {
 
 	t.Run("rolling update across election", func(t *testing.T) {
 		h.submit(job("web", "v2", 3, "rolling"))
-		h.stop(h.leader())
+		oldLeader := h.leader()
+		h.stop(oldLeader)
+		_ = h.leader() // wait until the surviving quorum has elected a replacement
+		h.start(oldLeader)
+		h.waitHTTP(oldLeader)
 		h.waitJob("web", 2, 3)
 	})
 
@@ -110,12 +114,16 @@ func newHarness(t *testing.T, count int) *harness {
 	for i := 0; i < count; i++ {
 		n := &node{dir: filepath.Join(base, fmt.Sprintf("node-%d", i))}
 		_ = os.MkdirAll(n.dir, 0o750)
-		for p := range n.ports {
-			n.ports[p] = freePort(t)
+		listeners := reservePorts(t, len(n.ports))
+		for p, listener := range listeners {
+			n.ports[p] = listener.Addr().(*net.TCPAddr).Port
 		}
 		n.args = []string{"--cluster-token", h.token, "--cluster", "integration", "--data-dir", n.dir, "--runtime", "injected", "--runtime-faults", filepath.Join(n.dir, "fault.json"), "--agent-listen", addr(n.ports[0]), "--agent-advertise", addr(n.ports[0]), "--server-listen", addr(n.ports[1]), "--server-advertise", addr(n.ports[1]), "--raft-listen", addr(n.ports[2]), "--raft-advertise", addr(n.ports[2]), "--dns-listen", addr(n.ports[3]), "--wireguard-port", fmt.Sprint(n.ports[4])}
 		if i > 0 {
 			n.args = append(n.args, "--join", addr(h.nodes[0].ports[1]))
+		}
+		for _, listener := range listeners {
+			_ = listener.Close()
 		}
 		h.nodes = append(h.nodes, n)
 		h.start(i)
@@ -124,13 +132,22 @@ func newHarness(t *testing.T, count int) *harness {
 	return h
 }
 func addr(p int) string { return fmt.Sprintf("127.0.0.1:%d", p) }
-func freePort(t *testing.T) int {
-	l, e := net.Listen("tcp", "127.0.0.1:0")
-	if e != nil {
-		t.Fatal(e)
+func reservePorts(t *testing.T, count int) []net.Listener {
+	t.Helper()
+	listeners := make([]net.Listener, 0, count)
+	t.Cleanup(func() {
+		for _, listener := range listeners {
+			_ = listener.Close()
+		}
+	})
+	for range count {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		listeners = append(listeners, listener)
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return listeners
 }
 func (h *harness) start(i int) {
 	n := h.nodes[i]
@@ -222,14 +239,23 @@ func (h *harness) waitNodes(want int) {
 	}, "node registration did not converge")
 }
 func (h *harness) waitJob(name string, revision, desired int) {
+	var last []byte
+	converged := false
+	defer func() {
+		if !converged {
+			h.t.Logf("last job response: %s", last)
+		}
+	}()
 	h.eventually(70*time.Second, func() bool {
 		r, e := h.request(h.endpoint(), "GET", "/v1/jobs/"+name, nil)
 		if e != nil {
 			return false
 		}
 		defer r.Body.Close()
+		last, _ = io.ReadAll(r.Body)
 		var v struct{ Revision, Desired, Running int }
-		return r.StatusCode == 200 && json.NewDecoder(r.Body).Decode(&v) == nil && v.Revision == revision && v.Desired == desired && v.Running == desired
+		converged = r.StatusCode == 200 && json.Unmarshal(last, &v) == nil && v.Revision == revision && v.Desired == desired && v.Running == desired
+		return converged
 	}, fmt.Sprintf("job %s did not converge", name))
 }
 func (h *harness) eventually(d time.Duration, fn func() bool, msg string) {

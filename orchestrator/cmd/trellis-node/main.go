@@ -180,6 +180,14 @@ func run(parent context.Context, cfg *config) error {
 			return fmt.Errorf("join cluster: %w", err)
 		}
 	}
+	// Raft construction and joining are asynchronous. Reading the local FSM
+	// before it has applied the leader's committed log can make an existing
+	// cluster look uninitialized, causing a follower to attempt a write that can
+	// never succeed. Do not initialize the control plane (or advertise readiness)
+	// until this member has heard from a leader and applied its local log.
+	if err := waitForRaftSync(ctx, raftStore); err != nil {
+		return fmt.Errorf("wait for raft synchronization: %w", err)
+	}
 
 	stateCtl := server.NewStateController(raftStore, cfg.Cluster)
 	control := server.NewServer(log, local, stateCtl, raftStore, cfg.Cluster, cfg.ServerAdvertise)
@@ -344,6 +352,15 @@ func run(parent context.Context, cfg *config) error {
 				return fmt.Errorf("leader election event stream closed")
 			}
 			if event.Elected {
+				// LeaderCh can fire before this node's FSM has applied every
+				// committed entry inherited from the previous leader. Reloading at
+				// that point resurrects stale jobs and allocations in memory. A
+				// barrier makes the leadership snapshot include all prior commits.
+				if err := raftStore.Raft().Barrier(10 * time.Second).Error(); err != nil {
+					log.Error("raft leadership barrier failed", "error", err)
+					stop()
+					continue
+				}
 				if err := control.Reload(ctx); err != nil {
 					log.Error("load leader state failed", "error", err)
 					stop()
@@ -365,6 +382,28 @@ func run(parent context.Context, cfg *config) error {
 				leaderCancel()
 				leaderCancel = nil
 			}
+		}
+	}
+}
+
+func waitForRaftSync(ctx context.Context, store *state.RaftStore) error {
+	const timeout = 30 * time.Second
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		r := store.Raft()
+		_, leaderID := r.LeaderWithID()
+		if leaderID != "" && r.AppliedIndex() >= r.LastIndex() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("timed out after %s (leader=%q applied=%d last=%d)", timeout, leaderID, r.AppliedIndex(), r.LastIndex())
+		case <-ticker.C:
 		}
 	}
 }
