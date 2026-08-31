@@ -38,19 +38,21 @@ func (r Runtime) Valid() bool {
 	return r == RuntimeDefault || r == RuntimeRunc || r == RuntimeRunsc
 }
 
-// NetworkMode controls how a task group joins the host network.
-type NetworkMode string
+// TaskNetworkMode controls how a task container joins the network.
+type TaskNetworkMode string
 
 const (
-	// NetworkModeIsolated and NetworkModeHost select allocation network isolation.
-	NetworkModeIsolated NetworkMode = ""
-	// NetworkModeHost joins the host network.
-	NetworkModeHost NetworkMode = "host"
+	// TaskNetworkIsolated gives the container a private network namespace with no external routes.
+	TaskNetworkIsolated TaskNetworkMode = ""
+	// TaskNetworkHost joins the host network namespace directly.
+	TaskNetworkHost TaskNetworkMode = "host"
+	// TaskNetworkWireGuard gives the container a private namespace connected to the WireGuard mesh.
+	TaskNetworkWireGuard TaskNetworkMode = "wireguard"
 )
 
-// Valid reports whether m is a supported network mode.
-func (m NetworkMode) Valid() bool {
-	return m == NetworkModeIsolated || m == NetworkModeHost
+// Valid reports whether m is a supported task network mode.
+func (m TaskNetworkMode) Valid() bool {
+	return m == TaskNetworkIsolated || m == TaskNetworkHost || m == TaskNetworkWireGuard
 }
 
 // HealthCheckType identifies a supported health-check implementation.
@@ -74,14 +76,7 @@ func (t HealthCheckType) Valid() bool {
 type JobSpec struct {
 	Name       string          `yaml:"name" json:"name"`
 	Namespace  string          `yaml:"namespace" json:"namespace"`
-	Network    *NetworkSpec    `yaml:"network,omitempty" json:"network,omitempty"`
 	TaskGroups []TaskGroupSpec `yaml:"task_groups" json:"task_groups"`
-}
-
-// NetworkSpec selects an implementation mechanism for the namespace network.
-// Namespace isolation and network identity never depend on this setting.
-type NetworkSpec struct {
-	WireGuard bool `yaml:"wireguard" json:"wireguard"`
 }
 
 // UpdateSpec configures allocation replacement for a task group.
@@ -97,7 +92,6 @@ type TaskGroupSpec struct {
 	Runtime     Runtime            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Tasks       []TaskSpec         `yaml:"tasks" json:"tasks"`
 	Labels      map[string]string  `yaml:"labels,omitempty" json:"labels,omitempty"`
-	NetworkMode NetworkMode        `yaml:"network_mode,omitempty" json:"network_mode,omitempty"`
 	APIAccess   bool               `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
 	Constraints []ConstraintSpec   `yaml:"constraints,omitempty" json:"constraints,omitempty"`
@@ -116,16 +110,22 @@ type RestartPolicySpec struct {
 	Window      time.Duration `yaml:"window" json:"window"`
 }
 
+// TaskNetworkingSpec configures a task's network attachment.
+type TaskNetworkingSpec struct {
+	Mode  TaskNetworkMode `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Ports []PortSpec      `yaml:"ports,omitempty" json:"ports,omitempty"`
+}
+
 // TaskSpec describes a container task.
 type TaskSpec struct {
-	Name        string            `yaml:"name" json:"name"`
-	Image       string            `yaml:"image" json:"image"`
-	Env         map[string]string `yaml:"env" json:"env,omitempty"`
-	Ports       []PortSpec        `yaml:"ports" json:"ports,omitempty"`
-	Volumes     []VolumeSpec      `yaml:"volumes" json:"volumes,omitempty"`
-	Resources   *ResourcesSpec    `yaml:"resources" json:"resources,omitempty"`
-	HealthCheck *HealthCheckSpec  `yaml:"health_check" json:"health_check,omitempty"`
-	Secrets     []SecretRefSpec   `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+	Name        string              `yaml:"name" json:"name"`
+	Image       string              `yaml:"image" json:"image"`
+	Env         map[string]string   `yaml:"env" json:"env,omitempty"`
+	Networking  *TaskNetworkingSpec `yaml:"networking,omitempty" json:"networking,omitempty"`
+	Volumes     []VolumeSpec        `yaml:"volumes" json:"volumes,omitempty"`
+	Resources   *ResourcesSpec      `yaml:"resources" json:"resources,omitempty"`
+	HealthCheck *HealthCheckSpec    `yaml:"health_check" json:"health_check,omitempty"`
+	Secrets     []SecretRefSpec     `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 }
 
 // SecretTarget identifies how a secret is delivered to a task.
@@ -186,7 +186,6 @@ func TaskGroupContentHash(g *TaskGroupSpec) string {
 		Name        string
 		Runtime     Runtime
 		Tasks       []TaskSpec
-		NetworkMode NetworkMode
 		APIAccess   bool
 		Restart     *RestartPolicySpec
 		Constraints []ConstraintSpec
@@ -194,7 +193,6 @@ func TaskGroupContentHash(g *TaskGroupSpec) string {
 		Name:        g.Name,
 		Runtime:     g.Runtime,
 		Tasks:       g.Tasks,
-		NetworkMode: g.NetworkMode,
 		APIAccess:   g.APIAccess,
 		Restart:     g.Restart,
 		Constraints: g.Constraints,
@@ -202,4 +200,14 @@ func TaskGroupContentHash(g *TaskGroupSpec) string {
 	raw, _ := json.Marshal(hashable)
 	h := sha256.Sum256(raw)
 	return string(h[:])
+}
+
+// GroupUsesWireGuard reports whether any task in the group requests WireGuard networking.
+func GroupUsesWireGuard(g *TaskGroupSpec) bool {
+	for _, task := range g.Tasks {
+		if task.Networking != nil && task.Networking.Mode == TaskNetworkWireGuard {
+			return true
+		}
+	}
+	return false
 }

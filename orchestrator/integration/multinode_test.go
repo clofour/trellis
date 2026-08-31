@@ -310,5 +310,5 @@ func (h *harness) runtimeState(i int) map[string]any {
 	return v.Containers
 }
 func job(name, image string, count int, strategy string) map[string]any {
-	return map[string]any{"spec": map[string]any{"name": name, "namespace": "default", "task_groups": []any{map[string]any{"name": "web", "count": count, "network_mode": "host", "update": map[string]any{"strategy": strategy, "max_parallel": 1}, "tasks": []any{map[string]any{"name": "web", "image": image}}}}}}
+	return map[string]any{"spec": map[string]any{"name": name, "namespace": "default", "task_groups": []any{map[string]any{"name": "web", "count": count, "update": map[string]any{"strategy": strategy, "max_parallel": 1}, "tasks": []any{map[string]any{"name": "web", "image": image, "networking": map[string]any{"mode": "host"}}}}}}}
 }

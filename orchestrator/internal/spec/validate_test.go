@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseYAML(t *testing.T) {
-	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        ports:\n          - host_port: 8080\n            container_port: 80\n")
+	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        networking:\n          mode: host\n          ports:\n            - host_port: 8080\n              container_port: 80\n")
 	job, err := ParseYAML(raw)
 	if err != nil {
 		t.Fatalf("parse manifest: %v", err)
@@ -14,7 +14,7 @@ func TestParseYAML(t *testing.T) {
 	if err := Validate(job); err != nil {
 		t.Fatalf("validate parsed manifest: %v", err)
 	}
-	port := job.TaskGroups[0].Tasks[0].Ports[0]
+	port := job.TaskGroups[0].Tasks[0].Networking.Ports[0]
 	if port.HostPort != 8080 || port.ContainerPort != 80 {
 		t.Fatalf("unexpected port mapping: %#v", port)
 	}
@@ -27,9 +27,9 @@ func TestValidate(t *testing.T) {
 	}
 
 	withExtensions := &JobSpec{Namespace: "default", Name: "proxy", TaskGroups: []TaskGroupSpec{{
-		Name: "proxy", Count: 1, NetworkMode: "host", APIAccess: true,
+		Name: "proxy", Count: 1, APIAccess: true,
 		Labels: map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"},
-		Tasks:  []TaskSpec{{Name: "nginx", Image: "nginx:latest"}},
+		Tasks:  []TaskSpec{{Name: "nginx", Image: "nginx:latest", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost}}},
 	}}}
 	if err := Validate(withExtensions); err != nil {
 		t.Fatalf("valid job with extensions rejected: %v", err)
@@ -43,8 +43,8 @@ func TestValidate(t *testing.T) {
 		{"missing name", &JobSpec{}},
 		{"zero replicas", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
 		{"missing image", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server"}}}}}},
-		{"invalid port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Ports: []PortSpec{{ContainerPort: 70000}}}}}}}},
-		{"invalid network_mode", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, NetworkMode: "bridge", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
+		{"invalid port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{ContainerPort: 70000}}}}}}}}},
+		{"invalid network_mode", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: "bridge"}}}}}}},
 		{"invalid label key", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Labels: map[string]string{"123bad": "v"}, Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
 	}
 	for _, test := range tests {

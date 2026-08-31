@@ -18,11 +18,9 @@ type AllocationRequest struct {
 	GroupName     string                  `json:"group_name"`
 	Name          string                  `json:"name"`
 	Tasks         []spec.TaskSpec         `json:"tasks"`
-	Runtime       string                  `json:"runtime,omitempty"`
-	WireGuard     bool                    `json:"wireguard"`
-	NetworkPlan   *network.Plan           `json:"network_plan,omitempty"`
-	NetworkMode   string                  `json:"network_mode,omitempty"`
-	EnvOverrides  map[string]string       `json:"env_overrides,omitempty"`
+	Runtime      string                  `json:"runtime,omitempty"`
+	NetworkPlan  *network.Plan           `json:"network_plan,omitempty"`
+	EnvOverrides map[string]string       `json:"env_overrides,omitempty"`
 	Restart       *spec.RestartPolicySpec `json:"restart,omitempty"`
 	Secrets       []DeliveredSecret       `json:"secrets,omitempty"`
 }

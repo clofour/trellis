@@ -51,9 +51,6 @@ func Validate(spec *JobSpec) error {
 		if !group.Runtime.Valid() {
 			return fmt.Errorf("task group %q: unsupported runtime %q", group.Name, group.Runtime)
 		}
-		if !group.NetworkMode.Valid() {
-			return fmt.Errorf("task group %q: unsupported network_mode %q", group.Name, group.NetworkMode)
-		}
 		if group.Restart != nil {
 			if group.Restart.MaxRestarts < 0 {
 				return fmt.Errorf("task group %q: restart max_restarts must be at least 0", group.Name)
@@ -169,9 +166,17 @@ func Validate(spec *JobSpec) error {
 				}
 				volumes[volume.Name] = struct{}{}
 			}
-			for _, port := range task.Ports {
-				if port.HostPort < 0 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
-					return fmt.Errorf("task group %q task %q: invalid port mapping %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)
+			if task.Networking != nil {
+				if !task.Networking.Mode.Valid() {
+					return fmt.Errorf("task group %q task %q: unsupported networking mode %q", group.Name, task.Name, task.Networking.Mode)
+				}
+				if task.Networking.Mode != TaskNetworkHost && len(task.Networking.Ports) > 0 {
+					return fmt.Errorf("task group %q task %q: ports require networking mode host", group.Name, task.Name)
+				}
+				for _, port := range task.Networking.Ports {
+					if port.HostPort < 0 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
+						return fmt.Errorf("task group %q task %q: invalid port mapping %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)
+					}
 				}
 			}
 			if task.HealthCheck != nil {

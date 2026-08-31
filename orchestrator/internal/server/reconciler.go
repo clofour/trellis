@@ -268,22 +268,20 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 			return fmt.Errorf("job %s was deleted before allocation start", alloc.JobName)
 		}
 		var groupRuntime string
-		var groupNetworkMode string
 		var groupAPIAccess bool
 		var groupRestart *spec.RestartPolicySpec
+		var groupUsesWireGuard bool
 		for _, group := range job.Spec.TaskGroups {
 			if group.Name == alloc.TaskGroupName {
 				groupRuntime = string(group.Runtime)
-				groupNetworkMode = string(group.NetworkMode)
 				groupAPIAccess = group.APIAccess
 				groupRestart = group.Restart
+				groupUsesWireGuard = spec.GroupUsesWireGuard(&group)
 				break
 			}
 		}
-		hostMode := groupNetworkMode == "host"
-		wireGuard := job.Spec.Network != nil && job.Spec.Network.WireGuard && !hostMode
-		request := &api.AllocationRequest{AllocationID: alloc.AllocationID(), Generation: alloc.Generation, JobRevision: alloc.JobRevision, Epoch: s.controlEpoch, Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.AllocationID(), Tasks: alloc.Tasks, Runtime: groupRuntime, WireGuard: wireGuard, NetworkMode: groupNetworkMode, Restart: groupRestart}
-		if wireGuard {
+		request := &api.AllocationRequest{AllocationID: alloc.AllocationID(), Generation: alloc.Generation, JobRevision: alloc.JobRevision, Epoch: s.controlEpoch, Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.AllocationID(), Tasks: alloc.Tasks, Runtime: groupRuntime, Restart: groupRestart}
+		if groupUsesWireGuard {
 			plan, err := s.networkPlan(alloc.Namespace, alloc.Node)
 			if err != nil {
 				s.mu.RUnlock()
@@ -409,7 +407,17 @@ func (s *Server) networkPlan(namespace string, target *Node) (*network.Plan, err
 		plan.Peers = append(plan.Peers, network.PeerPlan{PublicKey: node.WireGuardPublicKey, Endpoint: node.WireGuardEndpoint, AllowedIPs: []string{subnet.String()}})
 	}
 	for _, job := range s.jobs {
-		if job.Spec.Network == nil || !job.Spec.Network.WireGuard || job.Spec.Namespace == namespace {
+		if job.Spec.Namespace == namespace {
+			continue
+		}
+		usesWireGuard := false
+		for i := range job.Spec.TaskGroups {
+			if spec.GroupUsesWireGuard(&job.Spec.TaskGroups[i]) {
+				usesWireGuard = true
+				break
+			}
+		}
+		if !usesWireGuard {
 			continue
 		}
 		for _, node := range s.nodes {

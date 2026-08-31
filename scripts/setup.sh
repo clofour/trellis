@@ -366,9 +366,11 @@ task_groups:
 ${allow_writes_env}        resources:
           cpu: 250
           memory: 536870912
-        ports:
-          - host_port: 3000
-            container_port: 3000
+        networking:
+          mode: host
+          ports:
+            - host_port: 3000
+              container_port: 3000
         health_check:
           type: http
           port: 3000
