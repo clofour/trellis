@@ -77,9 +77,9 @@ tasks:
       threshold: 2
 ```
 
-Apply the changed manifest with `trellis jobs apply --file trellis.yaml`. Trellis marks old-revision allocations as draining, starts at most `max_parallel` replacements that are not yet healthy, and stops old allocations as healthy replacements make them surplus.
+Apply the changed manifest with `trellisctl jobs apply --file trellis.yaml`. Trellis marks old-revision allocations as draining, starts at most `max_parallel` replacements that are not yet healthy, and stops old allocations as healthy replacements make them surplus.
 
-This pattern needs spare cluster capacity because old and new allocations overlap. `max_parallel` limits concurrency, not a percentage of replicas. A weak readiness check can promote a broken release; a check that depends on an unavailable downstream can stall the rollout. Inspect progress with `trellis jobs status NAME` and allocation events. To roll back, restore the earlier image/configuration and apply again as a new revision.
+This pattern needs spare cluster capacity because old and new allocations overlap. `max_parallel` limits concurrency, not a percentage of replicas. A weak readiness check can promote a broken release; a check that depends on an unavailable downstream can stall the rollout. Inspect progress with `trellisctl jobs status NAME` and allocation events. To roll back, restore the earlier image/configuration and apply again as a new revision.
 
 A complete starting manifest is available at [`examples/deployment-strategies/rolling.yaml`](../../examples/deployment-strategies/rolling.yaml).
 
@@ -156,7 +156,7 @@ Create the value through standard input or a protected file:
 
 ```sh
 printf %s "$NEW_PASSWORD" | \
-  trellis --namespace payments secrets set database-password --stdin
+  trellisctl --namespace payments secrets set database-password --stdin
 ```
 
 Reference only the secret name. Prefer a file target when the application supports it:

@@ -22,7 +22,7 @@ Prepare at least three nodes, ideally in separate failure domains:
 
 ```sh
 sudo install -d -m 0700 /srv/trellis/patroni
-sudo trellis-node \
+sudo trellis \
   --cluster-token "$TRELLIS_TOKEN" \
   --label database=true \
   --host-volume patroni-data=/srv/trellis/patroni
@@ -40,9 +40,9 @@ The manifest's static `PATRONI_NAME=trellis-member` is a placeholder and is inva
 
 ```sh
 openssl rand -base64 32 | \
-  trellis --namespace database secrets set postgres-password --stdin
+  trellisctl --namespace database secrets set postgres-password --stdin
 openssl rand -base64 32 | \
-  trellis --namespace database secrets set replication-password --stdin
+  trellisctl --namespace database secrets set replication-password --stdin
 ```
 
 Confirm the selected Patroni image actually consumes `PGPASSWORD_SUPERUSER` and `PGPASSWORD_STANDBY`, or adapt the environment to that image's documented configuration contract. Pin the image by digest after qualification.

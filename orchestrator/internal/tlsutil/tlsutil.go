@@ -16,7 +16,7 @@ import (
 )
 
 // ServerName is the DNS identity used by Trellis node certificates.
-const ServerName = "trellis-node"
+const ServerName = "trellis"
 
 // Materials contains a CA and node certificate key pair.
 type Materials struct {

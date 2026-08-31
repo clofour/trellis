@@ -3,25 +3,25 @@
 ## Routine commands
 
 ```sh
-trellis nodes list
-trellis jobs list
-trellis jobs status NAME
-trellis jobs logs --tail 200 ALLOCATION
-trellis jobs logs --follow ALLOCATION
-trellis secrets list --namespace default
+trellisctl nodes list
+trellisctl jobs list
+trellisctl jobs status NAME
+trellisctl jobs logs --tail 200 ALLOCATION
+trellisctl jobs logs --follow ALLOCATION
+trellisctl secrets list --namespace default
 ```
 
 Add `--output json` to list/status/secret commands for automation.
 
 ## Drain and maintenance
 
-`trellis nodes drain ID` prevents new placement and migrates allocations. Wait until workloads have healthy replacements before maintenance. `trellis nodes undrain ID` re-enables scheduling. `nodes remove ID` permanently removes a Raft member and is different from draining. Before stopping the leader, use `nodes transfer-leadership`.
+`trellisctl nodes drain ID` prevents new placement and migrates allocations. Wait until workloads have healthy replacements before maintenance. `trellisctl nodes undrain ID` re-enables scheduling. `nodes remove ID` permanently removes a Raft member and is different from draining. Before stopping the leader, use `nodes transfer-leadership`.
 
 ## Backups
 
 ```sh
-trellis backup create --file trellis-backup.json
-trellis backup restore trellis-backup.json
+trellisctl backup create --file trellis-backup.json
+trellisctl backup restore trellis-backup.json
 ```
 
 Backups contain desired jobs and encrypted secret records, not allocations, container images, local volume data, TLS private keys, or the secret encryption key. Restores schedule fresh allocations. Secure and separately back up the 32-byte secrets key configured with `--secrets-key`; encrypted records are unusable without it.
@@ -29,9 +29,9 @@ Backups contain desired jobs and encrypted secret records, not allocations, cont
 ## Secrets
 
 ```sh
-printf %s 'value' | trellis --namespace default secrets set db-password --stdin
-trellis --namespace default secrets describe db-password
-trellis --namespace default secrets delete db-password
+printf %s 'value' | trellisctl --namespace default secrets set db-password --stdin
+trellisctl --namespace default secrets describe db-password
+trellisctl --namespace default secrets delete db-password
 ```
 
 Use `--expected-version N` for compare-and-swap (`0` means create only). Values are capped at 65,536 bytes. Rotation affects newly started allocations, so apply/restart the consuming workload afterward.

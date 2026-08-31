@@ -13,9 +13,9 @@ if [ ! -s "${TOKEN_FILE}" ]; then
 fi
 
 # Install binaries from the shared folder.
-# Build them first on the host: cd orchestrator && go build -o bin/trellis-node ./cmd/trellis-node && go build -o bin/trellis ./cmd/trellis
-install -m 0755 "${SHARE_DIR}/trellis-node" /usr/local/bin/trellis-node
-install -m 0755 "${SHARE_DIR}/trellis"      /usr/local/bin/trellis
+# Build them first on the host: cd orchestrator && go build -o bin/trellis ./cmd/trellis && go build -o bin/trellisctl ./cmd/trellisctl
+install -m 0755 "${SHARE_DIR}/trellis"    /usr/local/bin/trellis
+install -m 0755 "${SHARE_DIR}/trellisctl" /usr/local/bin/trellisctl
 
 mkdir -p "${DATA_DIR}"
 
@@ -25,14 +25,14 @@ if [ "${HOSTNAME}" != "control.trellis.local" ]; then
     JOIN_FLAG="--join control.trellis.local:8128"
 fi
 
-cat > /etc/systemd/system/trellis-node.service <<EOF
+cat > /etc/systemd/system/trellis.service <<EOF
 [Unit]
 Description=Trellis node
 After=containerd.service network-online.target
 Wants=containerd.service network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/trellis-node \
+ExecStart=/usr/local/bin/trellis \
   --data-dir ${DATA_DIR} \
   --agent-advertise ${HOSTNAME}:8127 \
   --server-advertise ${HOSTNAME}:8128 \
@@ -46,5 +46,5 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable trellis-node
-systemctl start trellis-node
+systemctl enable trellis
+systemctl start trellis

@@ -10,7 +10,7 @@ Create the namespace-scoped values before applying the job:
 
 ```sh
 printf %s 'token-value' | \
-  trellis --namespace default secrets set api-token --stdin
+  trellisctl --namespace default secrets set api-token --stdin
 trellis --namespace default secrets set tls-key --file ./server.key
 trellis jobs apply --file examples/secrets/trellis.yaml
 ```
@@ -32,7 +32,7 @@ Secret APIs and the dashboard return name, version, update time, and key ID—no
 Use the current metadata version as a compare-and-swap guard:
 
 ```sh
-printf %s 'replacement' | trellis --namespace default secrets set api-token \
+printf %s 'replacement' | trellisctl --namespace default secrets set api-token \
   --stdin --expected-version 1
 ```
 

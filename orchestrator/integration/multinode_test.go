@@ -103,8 +103,8 @@ func newHarness(t *testing.T, count int) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := filepath.Join(t.TempDir(), "trellis-node")
-	c := exec.Command("go", "build", "-o", bin, "./cmd/trellis-node")
+	bin := filepath.Join(t.TempDir(), "trellis")
+	c := exec.Command("go", "build", "-o", bin, "./cmd/trellis")
 	c.Dir = root
 	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("build node: %v\n%s", err, out)

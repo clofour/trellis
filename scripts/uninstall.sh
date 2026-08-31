@@ -4,7 +4,7 @@ set -euo pipefail
 INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/trellis/data"
 CONFIG_DIR="/etc/trellis"
-SERVICE_FILE="/etc/systemd/system/trellis-node.service"
+SERVICE_FILE="/etc/systemd/system/trellis.service"
 RUN_DIR="/run/trellis"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -32,7 +32,7 @@ confirm() {
 [ "$(uname -s)" = "Linux" ] || error "This script only supports Linux."
 [ "$(id -u)" -eq 0 ] || error "Run this script as root (or with sudo)."
 
-if [ ! -x "${INSTALL_DIR}/trellis-node" ] && [ ! -f "$SERVICE_FILE" ]; then
+if [ ! -x "${INSTALL_DIR}/trellis" ] && [ ! -f "$SERVICE_FILE" ]; then
     error "Trellis does not appear to be installed on this system."
 fi
 
@@ -45,14 +45,14 @@ confirm "Continue with uninstall?" "n" || { info "Aborted."; exit 0; }
 
 # ── Stop and disable the service ─────────────────────────────────────
 
-if systemctl is-active --quiet trellis-node 2>/dev/null; then
-    info "Stopping trellis-node service..."
-    systemctl stop trellis-node
+if systemctl is-active --quiet trellis 2>/dev/null; then
+    info "Stopping trellis service..."
+    systemctl stop trellis
 fi
 
-if systemctl is-enabled --quiet trellis-node 2>/dev/null; then
-    info "Disabling trellis-node service..."
-    systemctl disable trellis-node
+if systemctl is-enabled --quiet trellis 2>/dev/null; then
+    info "Disabling trellis service..."
+    systemctl disable trellis
 fi
 
 # ── Remove the systemd unit ──────────────────────────────────────────
@@ -67,8 +67,8 @@ fi
 # ── Remove binaries ──────────────────────────────────────────────────
 
 info "Removing binaries..."
-rm -f "${INSTALL_DIR}/trellis-node"
 rm -f "${INSTALL_DIR}/trellis"
+rm -f "${INSTALL_DIR}/trellisctl"
 
 # ── Remove config directory ──────────────────────────────────────────
 

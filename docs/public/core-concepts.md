@@ -2,7 +2,7 @@
 
 ## Cluster and nodes
 
-Every `trellis-node` runs an agent and a control-plane server. Servers replicate desired state with Raft and elect one leader; agents reconcile local containerd state. Nodes report CPU, memory, labels, host-volume names, allocations, and heartbeats. A node may be healthy, unhealthy, or draining.
+Every `trellis` node runs an agent and a control-plane server. Servers replicate desired state with Raft and elect one leader; agents reconcile local containerd state. Nodes report CPU, memory, labels, host-volume names, allocations, and heartbeats. A node may be healthy, unhealthy, or draining.
 
 ## Namespaces and jobs
 

@@ -7,7 +7,7 @@ This example contrasts Trellis-managed allocation storage with an operator-provi
 | Volume | Kind | Lifecycle |
 |---|---|---|
 | `scratch` | Allocation-managed | Created below the node data directory and suitable for replaceable cache/work files. |
-| `database` | Named host volume `app-data` | Resolves to an absolute host path configured when `trellis-node` starts. Trellis mounts but does not create, replicate, snapshot, or back up that data. |
+| `database` | Named host volume `app-data` | Resolves to an absolute host path configured when `trellis` starts. Trellis mounts but does not create, replicate, snapshot, or back up that data. |
 
 The group also requires node label `storage=fast`. Scheduling succeeds only on a healthy node that has both that exact label and an available `app-data` directory.
 
@@ -17,7 +17,7 @@ Create and secure the path before starting the node:
 
 ```sh
 sudo install -d -m 0750 /srv/trellis/app-data
-sudo trellis-node \
+sudo trellis \
   --cluster-token "$TRELLIS_TOKEN" \
   --label storage=fast \
   --host-volume app-data=/srv/trellis/app-data

@@ -11,7 +11,7 @@ The single allocation requires two host volumes. Create them with ownership appr
 ```sh
 sudo install -d -m 0750 /srv/trellis/wordpress-db
 sudo install -d -m 0750 /srv/trellis/wordpress-content
-sudo trellis-node \
+sudo trellis \
   --cluster-token "$TRELLIS_TOKEN" \
   --host-volume wordpress-db=/srv/trellis/wordpress-db \
   --host-volume wordpress-content=/srv/trellis/wordpress-content
@@ -25,9 +25,9 @@ Use independent values for the application account and MariaDB root account:
 
 ```sh
 openssl rand -base64 32 | \
-  trellis --namespace default secrets set wordpress-db-password --stdin
+  trellisctl --namespace default secrets set wordpress-db-password --stdin
 openssl rand -base64 32 | \
-  trellis --namespace default secrets set mariadb-root-password --stdin
+  trellisctl --namespace default secrets set mariadb-root-password --stdin
 ```
 
 Trellis injects the application password into both tasks under the variable names each image expects. The secret value is not stored in the manifest.
