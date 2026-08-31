@@ -18,8 +18,23 @@ func NewNodesCmd() *cobra.Command {
 
 	cmd.AddCommand(NewNodesListCmd())
 	cmd.AddCommand(NewNodesDrainCmd())
+	cmd.AddCommand(NewNodesRemoveCmd())
 
 	return cmd
+}
+
+func NewNodesRemoveCmd() *cobra.Command {
+	return &cobra.Command{Use: "remove ID", Args: cobra.ExactArgs(1), Short: "Permanently remove a node from the Raft cluster", RunE: func(cmd *cobra.Command, args []string) error {
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).RemoveRaftMember(cmd.Context(), args[0]); err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Node permanently removed.")
+		return nil
+	}}
 }
 
 func NewNodesDrainCmd() *cobra.Command {

@@ -35,6 +35,7 @@ const heartbeatInterval = 10 * time.Second
 
 type ClusterJoiner interface {
 	AddVoter(id, address string) error
+	RemoveServer(id string) error
 }
 
 type Server struct {

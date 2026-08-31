@@ -151,6 +151,18 @@ trellis --server-addr leader.example:8128 \
   --cluster-token "$TRELLIS_TOKEN" nodes drain NODE_ID
 ```
 
+After a replacement control-plane node has joined, permanently remove the old
+Raft voter using its advertised server ID (the value configured with
+`--server-advertise`):
+
+```sh
+trellis --server-addr leader.example:8128 \
+  --cluster-token "$TRELLIS_TOKEN" nodes remove old-node.example:8128
+```
+
+This changes Raft membership immediately. Only remove a permanently retired
+member, and ensure the remaining voters still form a quorum.
+
 Inspect a namespaced job and follow allocation output:
 
 ```sh

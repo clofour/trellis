@@ -100,6 +100,14 @@ func (s *ServerClient) DrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *ServerClient) RemoveRaftMember(ctx context.Context, id string) error {
+	path := fmt.Sprintf("%s/v1/raft/members/%s", s.address(), url.PathEscape(id))
+	if err := s.client.request(ctx, http.MethodDelete, path, nil, nil); err != nil {
+		return fmt.Errorf("remove raft member: %w", err)
+	}
+	return nil
+}
+
 func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*api.NodeRegistrationResponse, error) {
 	requestData := &api.NodeRegistrationRequest{
 		ID:                 nodeInfo.ID,

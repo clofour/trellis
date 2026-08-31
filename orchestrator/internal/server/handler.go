@@ -54,6 +54,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
 	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
+	v1.DELETE("/raft/members/:id", h.handleRaftMemberRemove)
 	v1.PUT("/namespaces/:namespace/secrets/:name", h.handleSetSecret)
 	v1.GET("/namespaces/:namespace/secrets", h.handleListSecrets)
 	v1.GET("/namespaces/:namespace/secrets/:name", h.handleGetSecret)
@@ -337,6 +338,23 @@ func (h *Handler) handleRaftJoin(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "cluster CA unavailable")
 	}
 	return c.JSON(http.StatusOK, api.RaftJoinResponse{CACert: caCert, CAKey: caKey})
+}
+
+func (h *Handler) handleRaftMemberRemove(c *echo.Context) error {
+	if admin, _ := c.Request().Context().Value(AdminContextKey).(bool); !admin {
+		return echo.NewHTTPError(http.StatusForbidden, "Raft membership changes require cluster authorization")
+	}
+	id := c.Param("id")
+	if id == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id is required")
+	}
+	if h.server.joiner == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "cluster membership changes not available")
+	}
+	if err := h.server.joiner.RemoveServer(id); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handler) handleMetrics(c *echo.Context) error {
