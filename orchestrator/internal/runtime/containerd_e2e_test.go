@@ -13,6 +13,9 @@ import (
 // injected-runtime process suite, while this test protects the real containerd
 // boundary and the managed-allocation inventory used for restart adoption.
 func TestContainerdAllocationAdoption(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("containerd overlayfs E2E requires root; run this test with sudo")
+	}
 	socket := os.Getenv("CONTAINERD_ADDRESS")
 	if socket == "" {
 		socket = "/run/containerd/containerd.sock"

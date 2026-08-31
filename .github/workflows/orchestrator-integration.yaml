@@ -46,9 +46,10 @@ jobs:
           cache-dependency-path: orchestrator/go.sum
 
       - name: Start containerd
-        run: |
-          sudo systemctl start containerd
-          sudo chmod 666 /run/containerd/containerd.sock
+        run: sudo systemctl start containerd
 
       - name: Run containerd allocation-adoption E2E
-        run: go test -tags=containerd_e2e ./internal/runtime -run TestContainerdAllocationAdoption -count=1 -timeout=3m
+        # Pulling and unpacking an image with containerd's overlayfs snapshotter
+        # mounts snapshot filesystems in the calling process. Socket access by
+        # itself is therefore insufficient; this boundary test must run as root.
+        run: sudo "$(command -v go)" test -tags=containerd_e2e ./internal/runtime -run TestContainerdAllocationAdoption -count=1 -timeout=3m
