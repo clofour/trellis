@@ -77,6 +77,7 @@ type Heartbeat struct {
 	Timestamp   time.Time              `json:"timestamp"`
 	Allocations []api.AllocationStatus `json:"allocations,omitempty"`
 	Volumes     []string               `json:"volumes,omitempty"`
+	Version     string                 `json:"version,omitempty"`
 }
 
 func NewServerClient(token string, addr string, tlsConfig *tls.Config) *ServerClient {
@@ -111,6 +112,20 @@ func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, er
 func (s *ServerClient) DrainNode(ctx context.Context, id uuid.UUID) error {
 	if err := s.client.request(ctx, http.MethodPost, fmt.Sprintf("%s/v1/nodes/%s/drain", s.address(), id), nil, nil); err != nil {
 		return fmt.Errorf("drain node: %w", err)
+	}
+	return nil
+}
+
+func (s *ServerClient) UndrainNode(ctx context.Context, id uuid.UUID) error {
+	if err := s.client.request(ctx, http.MethodDelete, fmt.Sprintf("%s/v1/nodes/%s/drain", s.address(), id), nil, nil); err != nil {
+		return fmt.Errorf("un-drain node: %w", err)
+	}
+	return nil
+}
+
+func (s *ServerClient) TransferLeadership(ctx context.Context) error {
+	if err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/raft/leadership-transfer", nil, nil); err != nil {
+		return fmt.Errorf("transfer Raft leadership: %w", err)
 	}
 	return nil
 }
@@ -249,6 +264,7 @@ func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbea
 		Timestamp:   heartbeat.Timestamp,
 		Allocations: heartbeat.Allocations,
 		Volumes:     heartbeat.Volumes,
+		Version:     heartbeat.Version,
 	}
 	url := fmt.Sprintf("%s/v1/nodes/%s/heartbeat", s.address(), id)
 

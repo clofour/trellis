@@ -43,6 +43,7 @@ type Agent struct {
 	dnsServers []string
 	local      *storage.LocalStorage
 	cluster    string
+	version    string
 	epoch      uint64
 	orphans    map[string]int
 	mu         sync.RWMutex
@@ -170,6 +171,8 @@ func (a *Agent) SetResources(cpu int, memory int64, osName, arch string) {
 func (a *Agent) SetLabels(labels map[string]string) {
 	a.nodeInfo.Labels = labels
 }
+
+func (a *Agent) SetVersion(version string) { a.version = version }
 
 func (a *Agent) Init(ctx context.Context) {
 	a.health.Subscriber = a
@@ -836,6 +839,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 				Timestamp:   time.Now(),
 				Allocations: actual,
 				Volumes:     a.volumes.AvailableHostVolumes(),
+				Version:     a.version,
 			})
 			if err != nil {
 				a.log.Error("send heartbeat failed", "error", err)

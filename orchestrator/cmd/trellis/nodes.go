@@ -18,9 +18,43 @@ func NewNodesCmd() *cobra.Command {
 
 	cmd.AddCommand(NewNodesListCmd())
 	cmd.AddCommand(NewNodesDrainCmd())
+	cmd.AddCommand(NewNodesUndrainCmd())
 	cmd.AddCommand(NewNodesRemoveCmd())
+	cmd.AddCommand(NewNodesLeadershipTransferCmd())
 
 	return cmd
+}
+
+func NewNodesLeadershipTransferCmd() *cobra.Command {
+	return &cobra.Command{Use: "transfer-leadership", Args: cobra.NoArgs, Short: "Transfer Raft leadership to another voter", RunE: func(cmd *cobra.Command, _ []string) error {
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).TransferLeadership(cmd.Context()); err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Raft leadership transfer started.")
+		return nil
+	}}
+}
+
+func NewNodesUndrainCmd() *cobra.Command {
+	return &cobra.Command{Use: "undrain ID", Args: cobra.ExactArgs(1), Short: "Allow scheduling on a drained node", RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := uuid.Parse(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid node ID: %w", err)
+		}
+		tlsCfg, err := buildCLITLSConfig()
+		if err != nil {
+			return err
+		}
+		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).UndrainNode(cmd.Context(), id); err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Node un-drained.")
+		return nil
+	}}
 }
 
 func NewNodesRemoveCmd() *cobra.Command {
@@ -81,13 +115,17 @@ func NewNodesListCmd() *cobra.Command {
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 
-			fmt.Fprintln(w, "ID\tAddress\tStatus\tCPU (m)\tMemory (bytes)\tHeartbeat")
+			fmt.Fprintln(w, "ID\tAddress\tStatus\tVersion\tCPU (m)\tMemory (bytes)\tHeartbeat")
 
 			for _, node := range *nodes {
 				addr := fmt.Sprintf("%s:%d", node.Host, node.Port)
 				heartbeat := node.LastHeartbeat.Format(time.RFC3339)
+				version := node.Version
+				if version == "" {
+					version = "unknown"
+				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, node.CPU, node.Memory, heartbeat)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, version, node.CPU, node.Memory, heartbeat)
 			}
 
 			return w.Flush()

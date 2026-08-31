@@ -36,6 +36,7 @@ const heartbeatInterval = 10 * time.Second
 type ClusterJoiner interface {
 	AddVoter(id, address string) error
 	RemoveServer(id string) error
+	LeadershipTransfer() error
 }
 
 type desiredStateStore interface {
@@ -187,6 +188,7 @@ type Node struct {
 	Volumes            []string
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
+	Version            string
 }
 
 type NodeStatus string
@@ -211,6 +213,7 @@ type NodeSummary struct {
 	WireGuardPublicKey string
 	WireGuardEndpoint  string
 	LastHeartbeat      time.Time
+	Version            string `json:"version,omitempty"`
 }
 
 type Job struct {
@@ -542,7 +545,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 	return nil
 }
 
-func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus, volumes ...[]string) error {
+func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus, version string, volumes ...[]string) error {
 	s.mu.Lock()
 	node, ok := s.nodes[nodeID]
 	if !ok {
@@ -554,6 +557,7 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 		node.Status = NodeStatusHealthy
 	}
 	node.LastHeartbeat = time.Now()
+	node.Version = version
 	if len(volumes) != 0 {
 		node.Volumes = append([]string(nil), volumes[0]...)
 	}
@@ -563,7 +567,7 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 			owned = append(owned, allocation)
 		}
 	}
-	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat}
+	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat, Version: node.Version}
 	s.mu.Unlock()
 	if err := s.state.PutNode(ctx, node.ID.String(), summary); err != nil {
 		return fmt.Errorf("persist node heartbeat: %w", err)
@@ -753,7 +757,7 @@ func (s *Server) Reload(ctx context.Context) error {
 		if summary.Status == NodeStatusDraining {
 			status = NodeStatusDraining
 		}
-		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, OS: summary.OS, Arch: summary.Arch, Labels: summary.Labels, Status: status, WireGuardPublicKey: summary.WireGuardPublicKey, WireGuardEndpoint: summary.WireGuardEndpoint, LastHeartbeat: summary.LastHeartbeat}
+		nodes[summary.ID] = &Node{ID: summary.ID, Host: summary.Host, Port: summary.Port, CPU: summary.CPU, Memory: summary.Memory, OS: summary.OS, Arch: summary.Arch, Labels: summary.Labels, Status: status, WireGuardPublicKey: summary.WireGuardPublicKey, WireGuardEndpoint: summary.WireGuardEndpoint, LastHeartbeat: summary.LastHeartbeat, Version: summary.Version}
 	}
 	allocations := make([]*Allocation, 0, len(allocationMap))
 	for _, allocation := range allocationMap {
@@ -780,11 +784,34 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 	}
 	previousStatus := node.Status
 	node.Status = NodeStatusDraining
-	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat}
+	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels, Volumes: node.Volumes, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat, Version: node.Version}
 	s.mu.Unlock()
 	if err := s.state.PutNode(ctx, id.String(), summary); err != nil {
 		s.mu.Lock()
 		if current := s.nodes[id]; current == node && current.Status == NodeStatusDraining {
+			current.Status = previousStatus
+		}
+		s.mu.Unlock()
+		return err
+	}
+	s.Reconcile(ctx)
+	return nil
+}
+
+func (s *Server) UndrainNode(ctx context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	node := s.nodes[id]
+	if node == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("node not found")
+	}
+	previousStatus := node.Status
+	node.Status = NodeStatusHealthy
+	summary := &NodeSummary{ID: node.ID, Host: node.Host, Port: node.Port, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels, Volumes: node.Volumes, Status: node.Status, WireGuardPublicKey: node.WireGuardPublicKey, WireGuardEndpoint: node.WireGuardEndpoint, LastHeartbeat: node.LastHeartbeat, Version: node.Version}
+	s.mu.Unlock()
+	if err := s.state.PutNode(ctx, id.String(), summary); err != nil {
+		s.mu.Lock()
+		if current := s.nodes[id]; current == node && current.Status == NodeStatusHealthy {
 			current.Status = previousStatus
 		}
 		s.mu.Unlock()

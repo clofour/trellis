@@ -45,6 +45,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/nodes", h.handleRegisterNode)
 	v1.POST("/nodes/:id/heartbeat", h.handleHeartbeat)
 	v1.POST("/nodes/:id/drain", h.handleDrainNode)
+	v1.DELETE("/nodes/:id/drain", h.handleUndrainNode)
 	v1.GET("/jobs", h.handleListJobs)
 	v1.POST("/jobs", h.handleRegisterJob)
 	v1.GET("/jobs/:name", h.handleGetJob)
@@ -55,6 +56,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
 	v1.DELETE("/raft/members/:id", h.handleRaftMemberRemove)
+	v1.POST("/raft/leadership-transfer", h.handleRaftLeadershipTransfer)
 	v1.GET("/backup", h.handleBackupCreate)
 	v1.POST("/backup/restore", h.handleBackupRestore)
 	v1.PUT("/namespaces/:namespace/secrets/:name", h.handleSetSecret)
@@ -223,6 +225,17 @@ func (h *Handler) handleDrainNode(c *echo.Context) error {
 	return c.NoContent(http.StatusAccepted)
 }
 
+func (h *Handler) handleUndrainNode(c *echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid node ID")
+	}
+	if err := h.server.UndrainNode(c.Request().Context(), id); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "node not found")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 func (h *Handler) handleListNodes(c *echo.Context) error {
 	nodes := h.server.ListNodes()
 
@@ -276,7 +289,7 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	err = h.server.Heartbeat(ctx, uuid, request.Allocations, request.Volumes)
+	err = h.server.Heartbeat(ctx, uuid, request.Allocations, request.Version, request.Volumes)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to process heartbeat")
 	}
@@ -393,6 +406,19 @@ func (h *Handler) handleRaftMemberRemove(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+func (h *Handler) handleRaftLeadershipTransfer(c *echo.Context) error {
+	if admin, _ := c.Request().Context().Value(AdminContextKey).(bool); !admin {
+		return echo.NewHTTPError(http.StatusForbidden, "leadership transfer requires cluster authorization")
+	}
+	if h.server.joiner == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "Raft leadership transfer not available")
+	}
+	if err := h.server.joiner.LeadershipTransfer(); err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 func (h *Handler) handleMetrics(c *echo.Context) error {
 	promhttp.Handler().ServeHTTP(c.Response(), c.Request())
 	return nil
@@ -409,5 +435,6 @@ func (h *Handler) convertNode(node *Node) *api.NodeResponse {
 		Memory:        node.Memory,
 		Labels:        node.Labels,
 		Volumes:       node.Volumes,
+		Version:       node.Version,
 	}
 }

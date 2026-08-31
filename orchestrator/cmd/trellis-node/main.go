@@ -41,6 +41,7 @@ import (
 	"github.com/clofour/trellis/internal/state"
 	"github.com/clofour/trellis/internal/storage"
 	"github.com/clofour/trellis/internal/tlsutil"
+	"github.com/clofour/trellis/internal/version"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -260,6 +261,7 @@ func run(parent context.Context, cfg *config) error {
 		volumeManager.SetHostVolumes(hostVolumes)
 	}
 	ag := agent.NewAgent(log, runtimeClient, healthMgr, restartCtl, agent.NewPortManager(runtimeClient, 0, 0, 0), volumeManager, leaderClient, id)
+	ag.SetVersion(version.Current())
 	ag.ConfigureDurability(local, cfg.Cluster)
 	networkManager, err := network.NewAutomatedWireGuardManager(filepath.Join(cfg.DataDir, "network"), cfg.WireGuardPort)
 	if err != nil {
