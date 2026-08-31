@@ -1,3 +1,4 @@
+// Package runtime manages containers used for Trellis allocations.
 package runtime
 
 import (
@@ -20,22 +21,26 @@ import (
 const trellisNamespace = "trellis"
 const gracePeriod = 10 * time.Second
 
+// ContainerdRuntime implements container lifecycle operations with containerd.
 type ContainerdRuntime struct {
 	client *containerd.Client
 	logDir string
 }
 
+// Port maps a host port to a container port.
 type Port struct {
 	HostPort      int
 	ContainerPort int
 }
 
+// Mount describes a host path mounted into a container.
 type Mount struct {
 	HostPath      string
 	ContainerPath string
 	ReadOnly      bool
 }
 
+// NewContainerdRuntime connects to containerd at socketPath.
 func NewContainerdRuntime(socketPath string) (*ContainerdRuntime, error) {
 	client, err := containerd.New(socketPath)
 	if err != nil {
@@ -48,10 +53,12 @@ func NewContainerdRuntime(socketPath string) (*ContainerdRuntime, error) {
 	}, nil
 }
 
+// Close releases the containerd client.
 func (c *ContainerdRuntime) Close() error {
 	return c.client.Close()
 }
 
+// Pull downloads a container image.
 func (c *ContainerdRuntime) Pull(ctx context.Context, image string) error {
 	ctx = c.withNamespace(ctx)
 
@@ -63,6 +70,7 @@ func (c *ContainerdRuntime) Pull(ctx context.Context, image string) error {
 	return nil
 }
 
+// Create creates a container from the supplied options.
 func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (string, error) {
 	ctx = c.withNamespace(ctx)
 
@@ -123,6 +131,7 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 	return container.ID(), nil
 }
 
+// Start starts a created container.
 func (c *ContainerdRuntime) Start(ctx context.Context, containerID string) error {
 	ctx = c.withNamespace(ctx)
 
@@ -152,6 +161,7 @@ func (c *ContainerdRuntime) logPath(containerID string) string {
 	return filepath.Join(c.logDir, filepath.Base(containerID)+".log")
 }
 
+// Logs opens the log stream for a container.
 func (c *ContainerdRuntime) Logs(ctx context.Context, containerID string, follow bool, tail int) (io.ReadCloser, error) {
 	file, err := os.Open(c.logPath(containerID))
 	if err != nil {
@@ -160,6 +170,7 @@ func (c *ContainerdRuntime) Logs(ctx context.Context, containerID string, follow
 	return newLogReader(ctx, file, follow, tail)
 }
 
+// Restart stops and starts a container.
 func (c *ContainerdRuntime) Restart(ctx context.Context, containerID string) error {
 	err := c.Stop(ctx, containerID)
 	if err != nil {
@@ -174,6 +185,7 @@ func (c *ContainerdRuntime) Restart(ctx context.Context, containerID string) err
 	return nil
 }
 
+// Stop stops a running container.
 func (c *ContainerdRuntime) Stop(ctx context.Context, containerID string) error {
 	ctx = c.withNamespace(ctx)
 
@@ -228,6 +240,7 @@ func (c *ContainerdRuntime) Stop(ctx context.Context, containerID string) error 
 	return nil
 }
 
+// Remove deletes a container and its resources.
 func (c *ContainerdRuntime) Remove(ctx context.Context, containerID string) error {
 	ctx = c.withNamespace(ctx)
 
@@ -247,6 +260,7 @@ func (c *ContainerdRuntime) Remove(ctx context.Context, containerID string) erro
 	return nil
 }
 
+// Exec runs a command in a container and returns its exit code.
 func (c *ContainerdRuntime) Exec(ctx context.Context, containerID string, command []string) (int, error) {
 	ctx = c.withNamespace(ctx)
 
@@ -291,6 +305,7 @@ func (c *ContainerdRuntime) Exec(ctx context.Context, containerID string, comman
 	return int(code), nil
 }
 
+// Inspect returns the current state of a container.
 func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*ContainerInfo, error) {
 	ctx = c.withNamespace(ctx)
 
@@ -339,6 +354,7 @@ func (c *ContainerdRuntime) Inspect(ctx context.Context, containerID string) (*C
 	return result, nil
 }
 
+// ListManaged lists containers owned by a Trellis cluster.
 func (c *ContainerdRuntime) ListManaged(ctx context.Context, cluster string) ([]ContainerInfo, error) {
 	ctx = c.withNamespace(ctx)
 	containers, err := c.client.Containers(ctx)

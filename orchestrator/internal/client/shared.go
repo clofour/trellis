@@ -32,6 +32,7 @@ type client struct {
 	client    *http.Client
 }
 
+// HTTPError contains a non-successful HTTP response.
 type HTTPError struct {
 	Status int
 	Body   []byte

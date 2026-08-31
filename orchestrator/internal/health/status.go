@@ -1,13 +1,20 @@
 package health
 
+// HealthStatus describes the observed health of a task.
+//
+//nolint:revive // The established name emphasizes that this type belongs to health checking.
 type HealthStatus string
 
 const (
+	// StatusInitializing indicates that a task has not met its health threshold.
 	StatusInitializing HealthStatus = "initializing"
-	StatusHealthy      HealthStatus = "healthy"
-	StatusUnhealthy    HealthStatus = "unhealthy"
+	// StatusHealthy indicates that a task met its health threshold.
+	StatusHealthy HealthStatus = "healthy"
+	// StatusUnhealthy indicates that a task failed its health threshold.
+	StatusUnhealthy HealthStatus = "unhealthy"
 )
 
+// TaskHealth tracks consecutive health-check results.
 type TaskHealth struct {
 	Status          HealthStatus
 	ConsecutivePass int
@@ -15,6 +22,7 @@ type TaskHealth struct {
 	threshold       int
 }
 
+// NewTaskHealth creates a tracker with the supplied success threshold.
 func NewTaskHealth(threshold int) *TaskHealth {
 	if threshold <= 0 {
 		threshold = defaultCheckThreshold
@@ -27,6 +35,7 @@ func NewTaskHealth(threshold int) *TaskHealth {
 	}
 }
 
+// RecordResult updates health state and reports whether it changed.
 func (t *TaskHealth) RecordResult(pass bool) (bool, HealthStatus) {
 	if pass {
 		t.ConsecutivePass++

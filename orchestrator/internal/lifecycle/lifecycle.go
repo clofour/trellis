@@ -13,11 +13,16 @@ const (
 	PhasePlaced Phase = "placed"
 	// PhaseStarting and the following values describe subsequent execution states.
 	PhaseStarting Phase = "starting"
-	PhaseRunning  Phase = "running"
+	// PhaseRunning indicates that the allocation is running.
+	PhaseRunning Phase = "running"
+	// PhaseStopping indicates that the allocation is stopping.
 	PhaseStopping Phase = "stopping"
-	PhaseStopped  Phase = "stopped"
-	PhaseFailed   Phase = "failed"
-	PhaseLost     Phase = "lost"
+	// PhaseStopped indicates that the allocation has stopped.
+	PhaseStopped Phase = "stopped"
+	// PhaseFailed indicates that the allocation failed.
+	PhaseFailed Phase = "failed"
+	// PhaseLost indicates that the allocation was lost.
+	PhaseLost Phase = "lost"
 )
 
 // Health describes the health-check state of an allocation.
@@ -27,7 +32,8 @@ const (
 	// HealthUnknown indicates that health is not yet known.
 	HealthUnknown Health = "unknown"
 	// HealthHealthy and HealthUnhealthy describe completed health checks.
-	HealthHealthy   Health = "healthy"
+	HealthHealthy Health = "healthy"
+	// HealthUnhealthy indicates that a health check failed.
 	HealthUnhealthy Health = "unhealthy"
 )
 

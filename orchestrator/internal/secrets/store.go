@@ -1,3 +1,4 @@
+// Package secrets encrypts and persists namespace-scoped secrets.
 package secrets
 
 import (
@@ -19,13 +20,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxValueSize is the largest accepted plaintext secret.
 const MaxValueSize = 64 << 10
 
 var (
-	ErrNotFound        = errors.New("secret not found")
+	// ErrNotFound indicates that a secret does not exist.
+	ErrNotFound = errors.New("secret not found")
+	// ErrVersionConflict indicates a failed version precondition.
 	ErrVersionConflict = errors.New("secret version conflict")
 )
 
+// Metadata describes an encrypted secret without exposing its value.
 type Metadata struct {
 	Namespace      string    `json:"namespace"`
 	Name           string    `json:"name"`
@@ -45,6 +50,7 @@ type record struct {
 	WrappedDEK string `json:"wrapped_dek"`
 }
 
+// Store encrypts secret values before persisting them in state storage.
 type Store struct {
 	state   state.StateStore
 	cluster string
@@ -82,6 +88,7 @@ func aad(namespace, name, recordID string, version uint64) []byte {
 	return []byte(fmt.Sprintf("trellis-secret\x00%s\x00%s\x00%s\x00%d", namespace, name, recordID, version))
 }
 
+// Set creates or updates a secret with an optional version precondition.
 func (s *Store) Set(ctx context.Context, namespace, name string, value []byte, expected *uint64) (*Metadata, error) {
 	if len(value) == 0 || len(value) > MaxValueSize {
 		return nil, fmt.Errorf("secret value must be between 1 and %d bytes", MaxValueSize)
@@ -153,6 +160,7 @@ func (s *Store) load(ctx context.Context, namespace, name string) (*record, erro
 	return &rec, nil
 }
 
+// GetMetadata returns metadata for a secret.
 func (s *Store) GetMetadata(ctx context.Context, namespace, name string) (*Metadata, error) {
 	rec, err := s.load(ctx, namespace, name)
 	if err != nil {
@@ -162,6 +170,7 @@ func (s *Store) GetMetadata(ctx context.Context, namespace, name string) (*Metad
 	return &meta, nil
 }
 
+// List returns secret metadata for a namespace.
 func (s *Store) List(ctx context.Context, namespace string) ([]Metadata, error) {
 	values, err := s.state.List(ctx, s.prefix(namespace))
 	if err != nil {
@@ -179,6 +188,7 @@ func (s *Store) List(ctx context.Context, namespace string) ([]Metadata, error) 
 	return result, nil
 }
 
+// Resolve decrypts a secret and returns its value and version.
 func (s *Store) Resolve(ctx context.Context, namespace, name string) ([]byte, uint64, error) {
 	rec, err := s.load(ctx, namespace, name)
 	if err != nil {
@@ -223,6 +233,7 @@ func (s *Store) Resolve(ctx context.Context, namespace, name string) ([]byte, ui
 	return plaintext, rec.Version, nil
 }
 
+// Delete removes a secret.
 func (s *Store) Delete(ctx context.Context, namespace, name string) error {
 	if _, err := s.load(ctx, namespace, name); err != nil {
 		return err

@@ -17,11 +17,17 @@ const (
 	defaultCheckThreshold = 3
 )
 
+// HealthSubscriber receives allocation health changes.
+//
+//nolint:revive // The established name emphasizes that this type belongs to health checking.
 type HealthSubscriber interface {
 	OnHealthy(ctx context.Context, allocID string) error
 	OnUnhealthy(ctx context.Context, allocID string) error
 }
 
+// HealthConfig tracks the health-check configuration for an allocation.
+//
+//nolint:revive // The established name emphasizes that this type belongs to health checking.
 type HealthConfig struct {
 	Type      string
 	Addr      string
@@ -42,6 +48,9 @@ type trackedTask struct {
 	cancel context.CancelFunc
 }
 
+// HealthManager schedules health checks and publishes status changes.
+//
+//nolint:revive // The established name emphasizes that this type belongs to health checking.
 type HealthManager struct {
 	log        *slog.Logger
 	runtime    runtime.ContainerRuntime
@@ -52,6 +61,7 @@ type HealthManager struct {
 	ctx   context.Context
 }
 
+// NewHealthManager creates a health-check manager.
 func NewHealthManager(log *slog.Logger, runtime runtime.ContainerRuntime, subscriber HealthSubscriber) *HealthManager {
 	return &HealthManager{
 		log:        log,
@@ -62,12 +72,14 @@ func NewHealthManager(log *slog.Logger, runtime runtime.ContainerRuntime, subscr
 	}
 }
 
+// SetContext replaces the context used for health-check workers.
 func (h *HealthManager) SetContext(ctx context.Context) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.ctx = ctx
 }
 
+// RegisterTask starts health checking an allocation task.
 func (h *HealthManager) RegisterTask(allocID string, containerID string, spec *spec.HealthCheckSpec) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -117,6 +129,7 @@ func newHealthConfig(spec *spec.HealthCheckSpec) HealthConfig {
 	return config
 }
 
+// DeregisterTask stops health checking an allocation.
 func (h *HealthManager) DeregisterTask(allocID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

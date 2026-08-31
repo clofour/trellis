@@ -12,7 +12,8 @@ type UpdateStrategy string
 const (
 	// UpdateRecreate and UpdateRolling describe allocation replacement strategies.
 	UpdateRecreate UpdateStrategy = "recreate"
-	UpdateRolling  UpdateStrategy = "rolling"
+	// UpdateRolling replaces allocations incrementally.
+	UpdateRolling UpdateStrategy = "rolling"
 )
 
 // Valid reports whether s is a supported update strategy.
@@ -24,10 +25,12 @@ func (s UpdateStrategy) Valid() bool {
 type Runtime string
 
 const (
-	// RuntimeDefault, RuntimeRunc, and RuntimeRunsc select an OCI runtime.
+	// RuntimeDefault uses the orchestrator default OCI runtime.
 	RuntimeDefault Runtime = ""
-	RuntimeRunc    Runtime = "runc"
-	RuntimeRunsc   Runtime = "runsc"
+	// RuntimeRunc selects the runc OCI runtime.
+	RuntimeRunc Runtime = "runc"
+	// RuntimeRunsc selects the runsc OCI runtime.
+	RuntimeRunsc Runtime = "runsc"
 )
 
 // Valid reports whether r is a supported runtime.
@@ -41,7 +44,8 @@ type NetworkMode string
 const (
 	// NetworkModeIsolated and NetworkModeHost select allocation network isolation.
 	NetworkModeIsolated NetworkMode = ""
-	NetworkModeHost     NetworkMode = "host"
+	// NetworkModeHost joins the host network.
+	NetworkModeHost NetworkMode = "host"
 )
 
 // Valid reports whether m is a supported network mode.
@@ -54,8 +58,10 @@ type HealthCheckType string
 
 const (
 	// HealthCheckHTTP and the following values select a health-check mechanism.
-	HealthCheckHTTP   HealthCheckType = "http"
-	HealthCheckTCP    HealthCheckType = "tcp"
+	HealthCheckHTTP HealthCheckType = "http"
+	// HealthCheckTCP performs a TCP health check.
+	HealthCheckTCP HealthCheckType = "tcp"
+	// HealthCheckScript performs a command health check.
 	HealthCheckScript HealthCheckType = "script"
 )
 
@@ -127,7 +133,8 @@ type SecretTarget string
 
 const (
 	// SecretTargetEnv and SecretTargetFile select the delivery mechanism.
-	SecretTargetEnv  SecretTarget = "env"
+	SecretTargetEnv SecretTarget = "env"
+	// SecretTargetFile delivers a secret as a file.
 	SecretTargetFile SecretTarget = "file"
 )
 

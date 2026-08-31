@@ -26,9 +26,11 @@ type NodeStatusResponse string
 
 const (
 	// StatusHealthy and the following values describe node states.
-	StatusHealthy   NodeStatusResponse = "healthy"
+	StatusHealthy NodeStatusResponse = "healthy"
+	// StatusUnhealthy indicates that a node is not healthy.
 	StatusUnhealthy NodeStatusResponse = "unhealthy"
-	StatusDraining  NodeStatusResponse = "draining"
+	// StatusDraining indicates that a node is evacuating allocations.
+	StatusDraining NodeStatusResponse = "draining"
 )
 
 // NodeResponse contains the reported state and capacity of a node.
@@ -84,12 +86,14 @@ type DesiredAllocation struct {
 	Draining   bool   `json:"draining,omitempty"`
 }
 
+// HeartbeatResponse returns the desired allocations for a node.
 type HeartbeatResponse struct {
 	Epoch              uint64              `json:"epoch"`
 	Desired            []DesiredAllocation `json:"desired"`
 	OrphanConfirmation bool                `json:"orphan_confirmation"`
 }
 
+// AllocationStatus reports the observed state of an allocation.
 type AllocationStatus struct {
 	ID         string           `json:"id"`
 	Generation uint64           `json:"generation,omitempty"`
@@ -100,15 +104,18 @@ type AllocationStatus struct {
 	Ports      []PortMapping    `json:"ports,omitempty"`
 }
 
+// PortMapping maps a host port to a container port.
 type PortMapping struct {
 	HostPort      int `json:"host_port"`
 	ContainerPort int `json:"container_port"`
 }
 
+// JobRegistrationRequest contains the job specification to register.
 type JobRegistrationRequest struct {
 	Spec spec.JobSpec `json:"spec"`
 }
 
+// JobStatusResponse summarizes the desired and observed state of a job.
 type JobStatusResponse struct {
 	Name        string               `json:"name"`
 	Revision    int                  `json:"revision"`
@@ -119,6 +126,7 @@ type JobStatusResponse struct {
 	Spec        *spec.JobSpec        `json:"spec,omitempty"`
 }
 
+// AllocationResponse describes an allocation and its latest state.
 type AllocationResponse struct {
 	ID               string            `json:"id"`
 	Job              string            `json:"job,omitempty"`
@@ -143,8 +151,10 @@ type AllocationResponse struct {
 	NextRetryAt      *time.Time        `json:"next_retry_at,omitempty"`
 }
 
+// AllocationListResponse is the response returned when listing allocations.
 type AllocationListResponse = []AllocationResponse
 
+// AllocationEventResponse describes an allocation lifecycle event.
 type AllocationEventResponse struct {
 	Phase   lifecycle.Phase `json:"phase"`
 	Reason  string          `json:"reason,omitempty"`
@@ -152,10 +162,13 @@ type AllocationEventResponse struct {
 	At      time.Time       `json:"at"`
 }
 
+// AllocationEventListResponse is the response returned when listing allocation events.
 type AllocationEventListResponse = []AllocationEventResponse
 
+// JobListResponse is the response returned when listing jobs.
 type JobListResponse = []JobStatusResponse
 
+// ServiceEntry describes a discoverable allocation endpoint.
 type ServiceEntry struct {
 	ID        string            `json:"id"`
 	Job       string            `json:"job"`
@@ -167,13 +180,16 @@ type ServiceEntry struct {
 	Status    string            `json:"status"`
 }
 
+// ServiceListResponse is the response returned for service discovery.
 type ServiceListResponse = []ServiceEntry
 
+// RaftJoinRequest identifies a server joining the Raft cluster.
 type RaftJoinRequest struct {
 	ID          string `json:"id"`
 	RaftAddress string `json:"raft_address"`
 }
 
+// RaftJoinResponse returns cluster TLS materials to a joining server.
 type RaftJoinResponse struct {
 	CACert string `json:"ca_cert"`
 	CAKey  string `json:"ca_key"`

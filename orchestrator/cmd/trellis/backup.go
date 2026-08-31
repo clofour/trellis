@@ -1,3 +1,4 @@
+// Command trellis provides the Trellis command-line client.
 package main
 
 import (

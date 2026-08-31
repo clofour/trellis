@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// PlacementIntent describes an allocation placement request.
+// Placement associates a task group index with a node.
 type PlacementIntent struct {
 	Namespace     string
 	JobName       string
@@ -21,11 +23,13 @@ type PlacementIntent struct {
 	Task *spec.TaskSpec
 }
 
+// Placement associates a task group index with a selected node.
 type Placement struct {
 	TaskGroupName string
 	NodeID        uuid.UUID
 }
 
+// Schedule selects placements for an intent.
 func Schedule(intent *PlacementIntent) []Placement {
 	result := make([]Placement, 0, intent.Count)
 

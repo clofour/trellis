@@ -1,3 +1,4 @@
+// Package server implements Trellis orchestration and HTTP APIs.
 package server
 
 import (
@@ -6,6 +7,7 @@ import (
 	"github.com/clofour/trellis/internal/api"
 )
 
+// AllocationListFilter restricts allocation query results.
 type AllocationListFilter struct {
 	Job   string
 	Label string // "key:value" or key-existence format

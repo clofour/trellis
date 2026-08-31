@@ -27,7 +27,7 @@ func NewJobsCmd() *cobra.Command {
 }
 
 func NewJobsListCmd() *cobra.Command {
-	return &cobra.Command{Use: "list", Short: "List jobs in a cluster", RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "list", Short: "List jobs in a cluster", RunE: func(cmd *cobra.Command, _ []string) error {
 		tlsCfg, err := buildCLITLSConfig()
 		if err != nil {
 			return err
@@ -123,7 +123,7 @@ func NewJobsApplyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a job manifest to a cluster",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("read file %s: %w", path, err)

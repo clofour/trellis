@@ -1,3 +1,4 @@
+// Package dns provides DNS-based Trellis service discovery.
 package dns
 
 import (
@@ -14,11 +15,14 @@ import (
 )
 
 const (
+	// DefaultDomain is the default DNS suffix for Trellis services.
 	DefaultDomain = "trellis"
-	DefaultTTL    = 5
-	maxUDPSize    = 512
+	// DefaultTTL is the default lifetime of DNS answers, in seconds.
+	DefaultTTL = 5
+	maxUDPSize = 512
 )
 
+// DiscoveryLookup lists service-discovery records.
 type DiscoveryLookup interface {
 	ListDiscovery(ctx context.Context) (*api.ServiceListResponse, error)
 }
@@ -27,6 +31,7 @@ type record struct {
 	addresses []net.IP
 }
 
+// Resolver serves DNS records backed by service discovery.
 type Resolver struct {
 	log    *slog.Logger
 	domain string
@@ -36,6 +41,7 @@ type Resolver struct {
 	cache map[string]*record // "job.namespace" -> record
 }
 
+// NewResolver creates a DNS resolver for the supplied discovery source.
 func NewResolver(log *slog.Logger, lookup DiscoveryLookup, domain string) *Resolver {
 	if domain == "" {
 		domain = DefaultDomain
@@ -48,6 +54,7 @@ func NewResolver(log *slog.Logger, lookup DiscoveryLookup, domain string) *Resol
 	}
 }
 
+// Run serves DNS queries on addr until ctx is canceled.
 func (r *Resolver) Run(ctx context.Context, addr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {

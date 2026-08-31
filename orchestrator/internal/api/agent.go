@@ -1,3 +1,4 @@
+// Package api defines the wire protocol shared by Trellis components.
 package api
 
 import (
@@ -38,11 +39,15 @@ type OperationCode string
 
 const (
 	// OperationOK and the following values describe agent operation results.
-	OperationOK              OperationCode = "ok"
-	OperationStaleEpoch      OperationCode = "stale_epoch"
+	OperationOK OperationCode = "ok"
+	// OperationStaleEpoch indicates that the request used an old leadership epoch.
+	OperationStaleEpoch OperationCode = "stale_epoch"
+	// OperationStaleGeneration indicates that the request used an old allocation generation.
 	OperationStaleGeneration OperationCode = "stale_generation"
-	OperationConflict        OperationCode = "execution_conflict"
-	OperationFailed          OperationCode = "operation_failed"
+	// OperationConflict indicates a conflicting allocation execution.
+	OperationConflict OperationCode = "execution_conflict"
+	// OperationFailed indicates that an agent operation failed.
+	OperationFailed OperationCode = "operation_failed"
 )
 
 // OperationResponse reports the outcome of an agent operation.

@@ -117,8 +117,12 @@ func TestRaftStore_List(t *testing.T) {
 	if err := store.Put(ctx, "prefix/a", []byte("1")); err != nil {
 		t.Fatal(err)
 	}
-	store.Put(ctx, "prefix/b", []byte("2"))
-	store.Put(ctx, "other/c", []byte("3"))
+	if err := store.Put(ctx, "prefix/b", []byte("2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(ctx, "other/c", []byte("3")); err != nil {
+		t.Fatal(err)
+	}
 
 	entries, err := store.List(ctx, "prefix/")
 	if err != nil {
@@ -175,7 +179,9 @@ func TestRaftStore_Snapshot(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 20; i++ {
-		store.Put(ctx, fmt.Sprintf("key-%d", i), []byte(fmt.Sprintf("val-%d", i)))
+		if err := store.Put(ctx, fmt.Sprintf("key-%d", i), []byte(fmt.Sprintf("val-%d", i))); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	snap := store.Raft().Snapshot()

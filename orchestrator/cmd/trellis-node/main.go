@@ -1,3 +1,4 @@
+// Command trellis-node runs a Trellis orchestrator and allocation agent.
 package main
 
 import (

@@ -9,6 +9,7 @@ import (
 	"github.com/clofour/trellis/internal/state"
 )
 
+// StateController persists typed server state.
 type StateController struct {
 	store state.StateStore
 
@@ -17,6 +18,7 @@ type StateController struct {
 
 const trellisNamespace = "trellis"
 
+// NewStateController creates a typed state controller.
 func NewStateController(store state.StateStore, cluster string) *StateController {
 	return &StateController{
 		store:   store,
@@ -24,6 +26,7 @@ func NewStateController(store state.StateStore, cluster string) *StateController
 	}
 }
 
+// GetCluster loads cluster state.
 func (s *StateController) GetCluster(ctx context.Context) (*Cluster, error) {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
 
@@ -39,6 +42,7 @@ func (s *StateController) GetCluster(ctx context.Context) (*Cluster, error) {
 	return &cluster, nil
 }
 
+// PutCluster persists cluster state.
 func (s *StateController) PutCluster(ctx context.Context, cluster *Cluster) error {
 	key := fmt.Sprintf("%s/%s/meta", trellisNamespace, s.cluster)
 
@@ -50,6 +54,7 @@ func (s *StateController) PutCluster(ctx context.Context, cluster *Cluster) erro
 	return nil
 }
 
+// PutNode persists a node summary.
 func (s *StateController) PutNode(ctx context.Context, id string, node *NodeSummary) error {
 	key := fmt.Sprintf("%s/%s/nodes/%s", trellisNamespace, s.cluster, id)
 
@@ -61,6 +66,7 @@ func (s *StateController) PutNode(ctx context.Context, id string, node *NodeSumm
 	return nil
 }
 
+// ListJobs loads all persisted jobs.
 func (s *StateController) ListJobs(ctx context.Context) (map[string]*Job, error) {
 	prefix := fmt.Sprintf("%s/%s/jobs/", trellisNamespace, s.cluster)
 	values, err := listValues[Job](ctx, s.store, prefix)
@@ -74,6 +80,7 @@ func (s *StateController) ListJobs(ctx context.Context) (map[string]*Job, error)
 	return result, nil
 }
 
+// PutJob persists a job.
 func (s *StateController) PutJob(ctx context.Context, id string, job *Job) error {
 	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, url.QueryEscape(id))
 
@@ -85,6 +92,7 @@ func (s *StateController) PutJob(ctx context.Context, id string, job *Job) error
 	return nil
 }
 
+// DeleteJob removes a persisted job.
 func (s *StateController) DeleteJob(ctx context.Context, id string) error {
 	key := fmt.Sprintf("%s/%s/jobs/%s", trellisNamespace, s.cluster, url.QueryEscape(id))
 	if err := s.store.Delete(ctx, key); err != nil {
@@ -93,21 +101,25 @@ func (s *StateController) DeleteJob(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListNodes loads all persisted nodes.
 func (s *StateController) ListNodes(ctx context.Context) (map[string]*NodeSummary, error) {
 	prefix := fmt.Sprintf("%s/%s/nodes/", trellisNamespace, s.cluster)
 	return listValues[NodeSummary](ctx, s.store, prefix)
 }
 
+// ListAllocations loads all persisted allocations.
 func (s *StateController) ListAllocations(ctx context.Context) (map[string]*Allocation, error) {
 	prefix := fmt.Sprintf("%s/%s/allocations/", trellisNamespace, s.cluster)
 	return listValues[Allocation](ctx, s.store, prefix)
 }
 
+// PutAllocation persists an allocation.
 func (s *StateController) PutAllocation(ctx context.Context, allocation *Allocation) error {
 	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, allocation.Name)
 	return s.put(ctx, key, allocation)
 }
 
+// DeleteAllocation removes a persisted allocation.
 func (s *StateController) DeleteAllocation(ctx context.Context, id string) error {
 	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, id)
 	return s.store.Delete(ctx, key)

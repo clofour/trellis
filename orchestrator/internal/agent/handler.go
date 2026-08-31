@@ -14,16 +14,19 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// Handler exposes agent operations through HTTP.
 type Handler struct {
 	agent *Agent
 }
 
+// NewHandler creates an HTTP handler for an agent.
 func NewHandler(agent *Agent) *Handler {
 	return &Handler{
 		agent: agent,
 	}
 }
 
+// Register adds agent routes to an Echo instance.
 func (h *Handler) Register(e *echo.Echo) {
 	v1 := e.Group("/v1")
 	v1.GET("/allocations", h.handleList)
@@ -78,9 +81,9 @@ func (h *Handler) handleRun(c *echo.Context) error {
 		request.Generation = 1
 	}
 	if request.ExecutionHash == "" {
-		copy := request
-		copy.Epoch, copy.ExecutionHash = 0, ""
-		raw, _ := json.Marshal(copy)
+		requestCopy := request
+		requestCopy.Epoch, requestCopy.ExecutionHash = 0, ""
+		raw, _ := json.Marshal(requestCopy)
 		sum := sha256.Sum256(raw)
 		request.ExecutionHash = hex.EncodeToString(sum[:])
 	}

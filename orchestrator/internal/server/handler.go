@@ -16,13 +16,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// Handler exposes a Server through HTTP routes.
 type Handler struct {
 	server *Server
 }
 
 type contextKey string
 
+// NamespaceContextKey stores the authenticated namespace in a request context.
 const NamespaceContextKey contextKey = "trellis-namespace"
+
+// AdminContextKey stores cluster-administrator status in a request context.
 const AdminContextKey contextKey = "trellis-admin"
 
 func requestNamespace(c *echo.Context) string {
@@ -32,12 +36,14 @@ func requestNamespace(c *echo.Context) string {
 	return c.Request().Header.Get("X-Trellis-Namespace")
 }
 
+// NewHandler creates an HTTP handler for server.
 func NewHandler(server *Server) *Handler {
 	return &Handler{
 		server: server,
 	}
 }
 
+// Register adds server routes to an Echo instance.
 func (h *Handler) Register(e *echo.Echo) {
 	e.GET("/metrics", h.handleMetrics)
 	v1 := e.Group("/v1")

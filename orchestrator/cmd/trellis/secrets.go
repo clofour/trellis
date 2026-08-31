@@ -87,7 +87,9 @@ func newSecretsListCmd() *cobra.Command {
 			return writeJSON(cmd.OutOrStdout(), items)
 		}
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "Name\tVersion\tUpdated\tKey")
+		if _, err := fmt.Fprintln(w, "Name\tVersion\tUpdated\tKey"); err != nil {
+			return err
+		}
 		for _, item := range *items {
 			if _, err := fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", item.Name, item.Version, item.UpdatedAt.Format("2006-01-02T15:04:05Z"), item.KeyID); err != nil {
 				return err
@@ -110,8 +112,8 @@ func newSecretsDescribeCmd() *cobra.Command {
 		if config.Output == "json" {
 			return writeJSON(cmd.OutOrStdout(), meta)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Name: %s\nNamespace: %s\nVersion: %d\nUpdated: %s\nKey: %s\n", meta.Name, meta.Namespace, meta.Version, meta.UpdatedAt.Format("2006-01-02T15:04:05Z"), meta.KeyID)
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Name: %s\nNamespace: %s\nVersion: %d\nUpdated: %s\nKey: %s\n", meta.Name, meta.Namespace, meta.Version, meta.UpdatedAt.Format("2006-01-02T15:04:05Z"), meta.KeyID)
+		return err
 	}}
 }
 
@@ -124,7 +126,7 @@ func newSecretsDeleteCmd() *cobra.Command {
 		if err := c.DeleteSecret(cmd.Context(), config.Namespace, args[0]); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Secret deleted. Running allocations retain values already delivered.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Secret deleted. Running allocations retain values already delivered.")
+		return err
 	}}
 }

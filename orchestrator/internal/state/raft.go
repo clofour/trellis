@@ -18,6 +18,7 @@ import (
 
 var _ StateStore = (*RaftStore)(nil)
 
+// RaftStore replicates state through a Raft cluster.
 type RaftStore struct {
 	raft             *raft.Raft
 	fsm              *fsm
@@ -61,6 +62,7 @@ func (r *RaftStore) RestoreDesired(cluster string, snapshot *DesiredSnapshot) er
 	return nil
 }
 
+// RaftConfig configures replicated state storage.
 type RaftConfig struct {
 	DataDir   string
 	BindAddr  string
@@ -104,6 +106,7 @@ func (t *tlsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration)
 	return tlsConn, nil
 }
 
+// NewRaftStore creates a Raft-backed state store.
 func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 	raftDir := filepath.Join(cfg.DataDir, "raft")
 	if err := os.MkdirAll(raftDir, 0o750); err != nil {
@@ -190,18 +193,26 @@ func NewRaftStore(cfg RaftConfig) (*RaftStore, error) {
 	}, nil
 }
 
-func (r *RaftStore) Raft() *raft.Raft       { return r.raft }
-func (r *RaftStore) LocalAddr() string      { return string(r.transport.LocalAddr()) }
+// Raft returns the underlying Raft instance.
+func (r *RaftStore) Raft() *raft.Raft { return r.raft }
+
+// LocalAddr returns the local Raft transport address.
+func (r *RaftStore) LocalAddr() string { return string(r.transport.LocalAddr()) }
+
+// HadExistingState reports whether persistent Raft state existed at startup.
 func (r *RaftStore) HadExistingState() bool { return r.hadExistingState }
 
+// Get returns a replicated value by key.
 func (r *RaftStore) Get(ctx context.Context, key string) ([]byte, error) {
 	return r.fsm.store.Get(ctx, key)
 }
 
+// List returns replicated values whose keys start with prefix.
 func (r *RaftStore) List(ctx context.Context, prefix string) (map[string][]byte, error) {
 	return r.fsm.store.List(ctx, prefix)
 }
 
+// Put applies a replicated value update.
 func (r *RaftStore) Put(_ context.Context, key string, value []byte) error {
 	cmd := fsmCommand{Op: "put", Key: key, Value: value}
 	data, err := json.Marshal(cmd)
@@ -218,6 +229,7 @@ func (r *RaftStore) Put(_ context.Context, key string, value []byte) error {
 	return nil
 }
 
+// Delete applies a replicated key deletion.
 func (r *RaftStore) Delete(_ context.Context, key string) error {
 	cmd := fsmCommand{Op: "delete", Key: key}
 	data, err := json.Marshal(cmd)
@@ -234,11 +246,13 @@ func (r *RaftStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// AddVoter adds a voting server to Raft.
 func (r *RaftStore) AddVoter(id, address string) error {
 	fut := r.raft.AddVoter(raft.ServerID(id), raft.ServerAddress(address), 0, 30*time.Second)
 	return fut.Error()
 }
 
+// RemoveServer removes a server from Raft.
 func (r *RaftStore) RemoveServer(id string) error {
 	fut := r.raft.RemoveServer(raft.ServerID(id), 0, 10*time.Second)
 	return fut.Error()
@@ -249,6 +263,7 @@ func (r *RaftStore) LeadershipTransfer() error {
 	return r.raft.LeadershipTransfer().Error()
 }
 
+// Close shuts down Raft and closes its stores.
 func (r *RaftStore) Close() error {
 	if fut := r.raft.Shutdown(); fut.Error() != nil {
 		return fut.Error()

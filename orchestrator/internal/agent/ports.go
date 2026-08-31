@@ -11,6 +11,7 @@ import (
 	"github.com/clofour/trellis/internal/spec"
 )
 
+// PortManager reserves host ports for allocations.
 type PortManager struct {
 	runtime runtime.ContainerRuntime
 
@@ -22,12 +23,13 @@ type PortManager struct {
 	mu     sync.Mutex
 }
 
-func NewPortManager(containerRuntime runtime.ContainerRuntime, min int, max int, cursor int) *PortManager {
-	if min == 0 {
-		min = 20000
+// NewPortManager creates a port manager for an inclusive range.
+func NewPortManager(containerRuntime runtime.ContainerRuntime, minPort int, maxPort int, cursor int) *PortManager {
+	if minPort == 0 {
+		minPort = 20000
 	}
-	if max == 0 {
-		max = 40000
+	if maxPort == 0 {
+		maxPort = 40000
 	}
 
 	return &PortManager{
@@ -35,12 +37,13 @@ func NewPortManager(containerRuntime runtime.ContainerRuntime, min int, max int,
 
 		claims: make(map[int]*runtime.Port),
 
-		min:    min,
-		max:    max,
-		cursor: min,
+		min:    minPort,
+		max:    maxPort,
+		cursor: minPort,
 	}
 }
 
+// Check reports whether a host port is available.
 func (p *PortManager) Check(hostPort int) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -68,6 +71,7 @@ func (p *PortManager) check(hostPort int) (bool, error) {
 	return false, nil
 }
 
+// Claim reserves a host port.
 func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -117,6 +121,7 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 	return port, nil
 }
 
+// Release releases a reserved host port.
 func (p *PortManager) Release(port *runtime.Port) error {
 	if port == nil {
 		return nil
@@ -135,6 +140,7 @@ func (p *PortManager) Release(port *runtime.Port) error {
 	return nil
 }
 
+// Adopt records an existing host-port reservation.
 func (p *PortManager) Adopt(port *runtime.Port) error {
 	if port == nil {
 		return nil
@@ -144,7 +150,7 @@ func (p *PortManager) Adopt(port *runtime.Port) error {
 	if existing := p.claims[port.HostPort]; existing != nil && existing.ContainerPort != port.ContainerPort {
 		return fmt.Errorf("port %d already belongs to another allocation", port.HostPort)
 	}
-	copy := *port
-	p.claims[port.HostPort] = &copy
+	portCopy := *port
+	p.claims[port.HostPort] = &portCopy
 	return nil
 }

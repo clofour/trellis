@@ -1,3 +1,4 @@
+// Package catalog maintains the set of discoverable service instances.
 package catalog
 
 import (
@@ -6,6 +7,7 @@ import (
 	"github.com/clofour/trellis/internal/api"
 )
 
+// ServiceInstance describes one discoverable allocation endpoint.
 type ServiceInstance struct {
 	ID      string
 	Job     string
@@ -15,17 +17,20 @@ type ServiceInstance struct {
 	Labels  map[string]string
 }
 
+// ServiceCatalog stores service instances by namespace.
 type ServiceCatalog struct {
 	mu       sync.RWMutex
 	services map[string][]ServiceInstance // keyed by namespace
 }
 
+// New creates an empty service catalog.
 func New() *ServiceCatalog {
 	return &ServiceCatalog{
 		services: make(map[string][]ServiceInstance),
 	}
 }
 
+// Update replaces all service instances in a namespace.
 func (c *ServiceCatalog) Update(namespace string, instances []ServiceInstance) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -36,6 +41,7 @@ func (c *ServiceCatalog) Update(namespace string, instances []ServiceInstance) {
 	}
 }
 
+// Lookup returns instances for a job in a namespace.
 func (c *ServiceCatalog) Lookup(namespace, jobName string) []ServiceInstance {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -48,6 +54,7 @@ func (c *ServiceCatalog) Lookup(namespace, jobName string) []ServiceInstance {
 	return result
 }
 
+// ListFilter restricts service catalog results by job or label.
 type ListFilter struct {
 	Job   string
 	Label string // "key:value" format

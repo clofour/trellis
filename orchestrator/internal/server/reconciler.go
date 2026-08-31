@@ -19,13 +19,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// ActionType identifies a reconciliation operation.
 type ActionType string
 
 const (
+	// ActionStart starts or updates an allocation.
 	ActionStart ActionType = "start"
-	ActionStop  ActionType = "stop"
+	// ActionStop stops an allocation.
+	ActionStop ActionType = "stop"
 )
 
+// Action describes one allocation reconciliation operation.
 type Action struct {
 	Type       ActionType
 	Allocation *Allocation
@@ -247,6 +251,7 @@ func (s *Server) nodePointers() []*Node {
 	return nodes
 }
 
+// Execute performs a reconciliation action.
 func (s *Server) Execute(ctx context.Context, action *Action) error {
 	alloc := action.Allocation
 	alloc.mu.Lock()
