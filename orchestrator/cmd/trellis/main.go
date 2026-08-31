@@ -90,6 +90,9 @@ func loadConfig(cmd *cobra.Command) error {
 	flagConfig := config
 	merged := CLIConfig{
 		ServerAddr: "localhost:8128",
+		CACert:     flagConfig.CACert,
+		Cert:       flagConfig.Cert,
+		Key:        flagConfig.Key,
 		Output:     flagConfig.Output,
 	}
 
