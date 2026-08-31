@@ -244,6 +244,11 @@ func (r *RaftStore) RemoveServer(id string) error {
 	return fut.Error()
 }
 
+// LeadershipTransfer asks Raft to hand leadership to another voter.
+func (r *RaftStore) LeadershipTransfer() error {
+	return r.raft.LeadershipTransfer().Error()
+}
+
 func (r *RaftStore) Close() error {
 	if fut := r.raft.Shutdown(); fut.Error() != nil {
 		return fut.Error()

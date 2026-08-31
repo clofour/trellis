@@ -38,6 +38,7 @@ type NodeResponse struct {
 	Memory        int64              `json:"memory"`
 	Labels        map[string]string  `json:"labels,omitempty"`
 	Volumes       []string           `json:"volumes,omitempty"`
+	Version       string             `json:"version,omitempty"`
 }
 
 type NodeListResponse = []NodeResponse
@@ -65,6 +66,7 @@ type HeartbeatRequest struct {
 	Timestamp   time.Time          `json:"timestamp"`
 	Allocations []AllocationStatus `json:"allocations,omitempty"`
 	Volumes     []string           `json:"volumes,omitempty"`
+	Version     string             `json:"version,omitempty"`
 }
 
 type DesiredAllocation struct {

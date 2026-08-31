@@ -192,6 +192,44 @@ trellis --server-addr leader.example:8128 \
 This changes Raft membership immediately. Only remove a permanently retired
 member, and ensure the remaining voters still form a quorum.
 
+### Rolling upgrades
+
+Trellis supports rolling upgrades from the immediately preceding release. Raft
+log entries and FSM records remain readable by both versions during that
+window, so **do not create an upgrade backup or replace the data directory**.
+Rollback consists of stopping the service, putting the previous binary back,
+and restarting it; the on-disk state survives the binary swap.
+
+Before starting, use `trellis nodes list` and verify that every node reports the
+expected current version. Then upgrade one non-leader at a time:
+
+1. Drain it with `trellis nodes drain NODE_ID` and wait for its allocations to
+   migrate.
+2. Stop it with `sudo systemctl stop trellis-node`.
+3. Replace `/usr/local/bin/trellis-node` with the new binary. Do not move,
+   rewrite, or restore `/var/lib/trellis/data`.
+4. Start it with `sudo systemctl start trellis-node`, wait for it to become
+   healthy, and confirm its new version in `trellis nodes list`.
+5. Allow scheduling again with `trellis nodes undrain NODE_ID`.
+
+After every non-leader is upgraded, ask the current leader to hand leadership
+to one of those upgraded voters:
+
+```sh
+trellis --server-addr leader.example:8128 --cluster-token "$TRELLIS_TOKEN" \
+  nodes transfer-leadership
+```
+
+Confirm the API is available through the new leader, then drain, stop, replace,
+start, and un-drain the former leader using the same steps. A mixed version in
+`nodes list` is expected only while this procedure is in progress.
+
+Trellis never performs a breaking Raft-log or FSM migration automatically. If
+a future release needs one, its release notes will name a release-specific,
+explicit migration flag and the operation will refuse to run without that
+flag. Do not skip releases during a rolling upgrade, and never enable a
+migration flag while an older binary might rejoin the cluster.
+
 Inspect a namespaced job and follow allocation output:
 
 ```sh

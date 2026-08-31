@@ -16,6 +16,7 @@ type recordingClusterJoiner struct {
 }
 
 func (*recordingClusterJoiner) AddVoter(string, string) error { return nil }
+func (*recordingClusterJoiner) LeadershipTransfer() error     { return nil }
 
 func (j *recordingClusterJoiner) RemoveServer(id string) error {
 	j.removedID = id
