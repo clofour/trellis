@@ -1,3 +1,4 @@
+// Package state provides persistent and replicated orchestrator state stores.
 package state
 
 import (
@@ -9,10 +10,12 @@ import (
 
 var bucketName = []byte("trellis")
 
+// BoltStore persists state in a local Bolt database.
 type BoltStore struct {
 	db *bolt.DB
 }
 
+// NewBoltStore opens a Bolt-backed state store.
 func NewBoltStore(path string) (*BoltStore, error) {
 	db, err := bolt.Open(path, 0o600, nil)
 	if err != nil {
@@ -29,6 +32,7 @@ func NewBoltStore(path string) (*BoltStore, error) {
 	return &BoltStore{db: db}, nil
 }
 
+// Get returns a copy of the value stored at key.
 func (b *BoltStore) Get(_ context.Context, key string) ([]byte, error) {
 	var result []byte
 	err := b.db.View(func(tx *bolt.Tx) error {
@@ -45,6 +49,7 @@ func (b *BoltStore) Get(_ context.Context, key string) ([]byte, error) {
 	return result, nil
 }
 
+// List returns values whose keys start with prefix.
 func (b *BoltStore) List(_ context.Context, prefix string) (map[string][]byte, error) {
 	result := make(map[string][]byte)
 	err := b.db.View(func(tx *bolt.Tx) error {
@@ -63,6 +68,7 @@ func (b *BoltStore) List(_ context.Context, prefix string) (map[string][]byte, e
 	return result, nil
 }
 
+// Put stores value at key.
 func (b *BoltStore) Put(_ context.Context, key string, value []byte) error {
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		return tx.Bucket(bucketName).Put([]byte(key), value)
@@ -73,6 +79,7 @@ func (b *BoltStore) Put(_ context.Context, key string, value []byte) error {
 	return nil
 }
 
+// Delete removes key.
 func (b *BoltStore) Delete(_ context.Context, key string) error {
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		return tx.Bucket(bucketName).Delete([]byte(key))
@@ -83,6 +90,7 @@ func (b *BoltStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// Restore atomically replaces all stored state.
 func (b *BoltStore) Restore(data map[string][]byte) error {
 	return b.db.Update(func(tx *bolt.Tx) error {
 		_ = tx.DeleteBucket(bucketName)
@@ -133,6 +141,7 @@ func (b *BoltStore) RestoreDesired(cluster string, snapshot *DesiredSnapshot) er
 	})
 }
 
+// Close closes the Bolt database.
 func (b *BoltStore) Close() error {
 	return b.db.Close()
 }

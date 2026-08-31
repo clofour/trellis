@@ -5,15 +5,21 @@ import (
 	"io"
 )
 
+// ContainerStatus describes the observed state of a container.
 type ContainerStatus string
 
 const (
+	// StatusCreated indicates that a container has been created.
 	StatusCreated ContainerStatus = "created"
+	// StatusRunning indicates that a container is running.
 	StatusRunning ContainerStatus = "running"
+	// StatusStopped indicates that a container has stopped.
 	StatusStopped ContainerStatus = "stopped"
+	// StatusUnknown indicates that container state is unavailable.
 	StatusUnknown ContainerStatus = "unknown"
 )
 
+// CreateOptions configures a new allocation container.
 type CreateOptions struct {
 	ID               string
 	Image            string
@@ -27,6 +33,7 @@ type CreateOptions struct {
 	Labels           map[string]string
 }
 
+// ContainerInfo describes a managed container.
 type ContainerInfo struct {
 	ID     string
 	Status ContainerStatus
@@ -39,6 +46,7 @@ type ManagedRuntime interface {
 	ListManaged(ctx context.Context, cluster string) ([]ContainerInfo, error)
 }
 
+// ContainerRuntime defines the operations required by an allocation runtime.
 type ContainerRuntime interface {
 	Pull(ctx context.Context, image string) error
 	Create(ctx context.Context, options CreateOptions) (string, error)

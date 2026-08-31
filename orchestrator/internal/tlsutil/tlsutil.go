@@ -1,3 +1,4 @@
+// Package tlsutil generates and configures Trellis mutual TLS materials.
 package tlsutil
 
 import (
@@ -14,8 +15,10 @@ import (
 	"time"
 )
 
+// ServerName is the DNS identity used by Trellis node certificates.
 const ServerName = "trellis-node"
 
+// Materials contains a CA and node certificate key pair.
 type Materials struct {
 	CACert []byte
 	CAKey  []byte
@@ -23,6 +26,7 @@ type Materials struct {
 	Key    []byte
 }
 
+// GenerateCA generates a self-signed cluster certificate authority.
 func GenerateCA() (certPEM, keyPEM []byte, err error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -55,6 +59,7 @@ func GenerateCA() (certPEM, keyPEM []byte, err error) {
 	return certPEM, keyPEM, nil
 }
 
+// GenerateNodeCert generates a node certificate signed by the cluster CA.
 func GenerateNodeCert(caCertPEM, caKeyPEM []byte) (certPEM, keyPEM []byte, err error) {
 	caBlock, _ := pem.Decode(caCertPEM)
 	if caBlock == nil {
@@ -115,6 +120,7 @@ func buildCertAndPool(m *Materials) (tls.Certificate, *x509.CertPool, error) {
 	return cert, pool, nil
 }
 
+// ServerTLSConfig creates a mutually authenticated server configuration.
 func ServerTLSConfig(m *Materials) (*tls.Config, error) {
 	cert, pool, err := buildCertAndPool(m)
 	if err != nil {
@@ -128,6 +134,7 @@ func ServerTLSConfig(m *Materials) (*tls.Config, error) {
 	}, nil
 }
 
+// LeaderTLSConfig creates a server configuration that permits unauthenticated bootstrap clients.
 func LeaderTLSConfig(m *Materials) (*tls.Config, error) {
 	cert, pool, err := buildCertAndPool(m)
 	if err != nil {
@@ -141,6 +148,7 @@ func LeaderTLSConfig(m *Materials) (*tls.Config, error) {
 	}, nil
 }
 
+// ClientTLSConfig creates a mutually authenticated client configuration.
 func ClientTLSConfig(m *Materials) (*tls.Config, error) {
 	cert, pool, err := buildCertAndPool(m)
 	if err != nil {
@@ -154,6 +162,7 @@ func ClientTLSConfig(m *Materials) (*tls.Config, error) {
 	}, nil
 }
 
+// PeerTLSConfig creates a configuration suitable for both peer client and server use.
 func PeerTLSConfig(m *Materials) (*tls.Config, error) {
 	cert, pool, err := buildCertAndPool(m)
 	if err != nil {
@@ -169,6 +178,7 @@ func PeerTLSConfig(m *Materials) (*tls.Config, error) {
 	}, nil
 }
 
+// CAClientTLSConfig creates a client configuration using only the cluster CA.
 func CAClientTLSConfig(caCertPEM []byte) (*tls.Config, error) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caCertPEM) {

@@ -10,10 +10,13 @@ import (
 type UpdateStrategy string
 
 const (
+	// UpdateRecreate and UpdateRolling describe allocation replacement strategies.
 	UpdateRecreate UpdateStrategy = "recreate"
-	UpdateRolling  UpdateStrategy = "rolling"
+	// UpdateRolling replaces allocations incrementally.
+	UpdateRolling UpdateStrategy = "rolling"
 )
 
+// Valid reports whether s is a supported update strategy.
 func (s UpdateStrategy) Valid() bool {
 	return s == "" || s == UpdateRecreate || s == UpdateRolling
 }
@@ -22,11 +25,15 @@ func (s UpdateStrategy) Valid() bool {
 type Runtime string
 
 const (
+	// RuntimeDefault uses the orchestrator default OCI runtime.
 	RuntimeDefault Runtime = ""
-	RuntimeRunc    Runtime = "runc"
-	RuntimeRunsc   Runtime = "runsc"
+	// RuntimeRunc selects the runc OCI runtime.
+	RuntimeRunc Runtime = "runc"
+	// RuntimeRunsc selects the runsc OCI runtime.
+	RuntimeRunsc Runtime = "runsc"
 )
 
+// Valid reports whether r is a supported runtime.
 func (r Runtime) Valid() bool {
 	return r == RuntimeDefault || r == RuntimeRunc || r == RuntimeRunsc
 }
@@ -35,10 +42,13 @@ func (r Runtime) Valid() bool {
 type NetworkMode string
 
 const (
+	// NetworkModeIsolated and NetworkModeHost select allocation network isolation.
 	NetworkModeIsolated NetworkMode = ""
-	NetworkModeHost     NetworkMode = "host"
+	// NetworkModeHost joins the host network.
+	NetworkModeHost NetworkMode = "host"
 )
 
+// Valid reports whether m is a supported network mode.
 func (m NetworkMode) Valid() bool {
 	return m == NetworkModeIsolated || m == NetworkModeHost
 }
@@ -47,15 +57,20 @@ func (m NetworkMode) Valid() bool {
 type HealthCheckType string
 
 const (
-	HealthCheckHTTP   HealthCheckType = "http"
-	HealthCheckTCP    HealthCheckType = "tcp"
+	// HealthCheckHTTP and the following values select a health-check mechanism.
+	HealthCheckHTTP HealthCheckType = "http"
+	// HealthCheckTCP performs a TCP health check.
+	HealthCheckTCP HealthCheckType = "tcp"
+	// HealthCheckScript performs a command health check.
 	HealthCheckScript HealthCheckType = "script"
 )
 
+// Valid reports whether t is a supported health-check type.
 func (t HealthCheckType) Valid() bool {
 	return t == HealthCheckHTTP || t == HealthCheckTCP || t == HealthCheckScript
 }
 
+// JobSpec describes a job and its task groups.
 type JobSpec struct {
 	Name       string          `yaml:"name" json:"name"`
 	Namespace  string          `yaml:"namespace" json:"namespace"`
@@ -69,11 +84,13 @@ type NetworkSpec struct {
 	WireGuard bool `yaml:"wireguard" json:"wireguard"`
 }
 
+// UpdateSpec configures allocation replacement for a task group.
 type UpdateSpec struct {
 	Strategy    UpdateStrategy `yaml:"strategy" json:"strategy"`
 	MaxParallel int            `yaml:"max_parallel,omitempty" json:"max_parallel,omitempty"`
 }
 
+// TaskGroupSpec describes a scalable group of tasks.
 type TaskGroupSpec struct {
 	Name        string             `yaml:"name" json:"name"`
 	Count       int                `yaml:"count" json:"count"`
@@ -87,16 +104,19 @@ type TaskGroupSpec struct {
 	Update      *UpdateSpec        `yaml:"update,omitempty" json:"update,omitempty"`
 }
 
+// ConstraintSpec requires a node attribute to match a value.
 type ConstraintSpec struct {
 	Attribute string `yaml:"attribute" json:"attribute"`
 	Value     string `yaml:"value" json:"value"`
 }
 
+// RestartPolicySpec configures retries for failed tasks.
 type RestartPolicySpec struct {
 	MaxRestarts int           `yaml:"max_restarts" json:"max_restarts"`
 	Window      time.Duration `yaml:"window" json:"window"`
 }
 
+// TaskSpec describes a container task.
 type TaskSpec struct {
 	Name        string            `yaml:"name" json:"name"`
 	Image       string            `yaml:"image" json:"image"`
@@ -108,13 +128,17 @@ type TaskSpec struct {
 	Secrets     []SecretRefSpec   `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 }
 
+// SecretTarget identifies how a secret is delivered to a task.
 type SecretTarget string
 
 const (
-	SecretTargetEnv  SecretTarget = "env"
+	// SecretTargetEnv and SecretTargetFile select the delivery mechanism.
+	SecretTargetEnv SecretTarget = "env"
+	// SecretTargetFile delivers a secret as a file.
 	SecretTargetFile SecretTarget = "file"
 )
 
+// SecretRefSpec maps a stored secret into a task.
 type SecretRefSpec struct {
 	Name   string       `yaml:"name" json:"name"`
 	Target SecretTarget `yaml:"target" json:"target"`
@@ -123,16 +147,19 @@ type SecretRefSpec struct {
 	Mode   uint32       `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
+// PortSpec maps a host port to a container port.
 type PortSpec struct {
 	HostPort      int `yaml:"host_port" json:"host_port"`
 	ContainerPort int `yaml:"container_port" json:"container_port"`
 }
 
+// ResourcesSpec describes task CPU and memory requirements.
 type ResourcesSpec struct {
 	CPU    int `yaml:"cpu" json:"cpu"`
 	Memory int `yaml:"memory" json:"memory"`
 }
 
+// HealthCheckSpec configures task health monitoring.
 type HealthCheckSpec struct {
 	Type      HealthCheckType `yaml:"type" json:"type"`
 	Port      int             `yaml:"port" json:"port"`
@@ -143,6 +170,7 @@ type HealthCheckSpec struct {
 	Threshold int             `yaml:"threshold,omitempty" json:"threshold,omitempty"`
 }
 
+// VolumeSpec mounts a host volume into a task.
 type VolumeSpec struct {
 	Name       string `yaml:"name" json:"name"`
 	Path       string `yaml:"path" json:"path"`

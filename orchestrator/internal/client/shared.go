@@ -32,6 +32,7 @@ type client struct {
 	client    *http.Client
 }
 
+// HTTPError contains a non-successful HTTP response.
 type HTTPError struct {
 	Status int
 	Body   []byte
@@ -105,7 +106,7 @@ func (c *client) stream(ctx context.Context, url string) (io.ReadCloser, error) 
 		return nil, fmt.Errorf("executing request %s: %w", url, err)
 	}
 	if checkStatusCode(response.StatusCode) {
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		body, _ := io.ReadAll(io.LimitReader(response.Body, maxResponseBody))
 		return nil, fmt.Errorf("status %d: %s", response.StatusCode, bytes.TrimSpace(body))
 	}

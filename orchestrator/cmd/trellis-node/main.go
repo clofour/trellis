@@ -1,3 +1,4 @@
+// Command trellis-node runs a Trellis orchestrator and allocation agent.
 package main
 
 import (
@@ -173,7 +174,7 @@ func run(parent context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("init raft store: %w", err)
 	}
-	defer raftStore.Close()
+	defer func() { _ = raftStore.Close() }()
 
 	if cfg.Join != "" && !raftStore.HadExistingState() {
 		log.Info("joining cluster", "address", cfg.Join)
@@ -556,7 +557,7 @@ func joinClusterTLS(ctx context.Context, log *slog.Logger, joinAddr, clusterToke
 		resp, err := httpClient.Do(req)
 		if err == nil {
 			respBody, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				var joinResp api.RaftJoinResponse
 				if err := json.Unmarshal(respBody, &joinResp); err != nil {
@@ -597,8 +598,8 @@ func joinClusterRaft(ctx context.Context, log *slog.Logger, joinAddr, clusterTok
 		req.Header.Set("Authorization", "Bearer "+clusterToken)
 		resp, err := httpClient.Do(req)
 		if err == nil {
-			io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_, _ = io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				log.Info("joined cluster successfully")
 				return nil

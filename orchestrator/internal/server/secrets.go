@@ -15,6 +15,7 @@ func secretMetadata(meta *secretstore.Metadata) *api.SecretMetadata {
 	return &api.SecretMetadata{Namespace: meta.Namespace, Name: meta.Name, Version: meta.Version, CreatedAt: meta.CreatedAt, UpdatedAt: meta.UpdatedAt, CiphertextSize: meta.CiphertextSize, KeyID: meta.KeyID}
 }
 
+// SetSecret creates or updates an encrypted namespace secret.
 func (s *Server) SetSecret(ctx context.Context, namespace, name string, value []byte, expected *uint64) (*api.SecretMetadata, error) {
 	if s.secrets == nil {
 		return nil, fmt.Errorf("secrets are not configured")
@@ -29,6 +30,7 @@ func (s *Server) SetSecret(ctx context.Context, namespace, name string, value []
 	return secretMetadata(meta), nil
 }
 
+// ListSecrets returns secret metadata for a namespace.
 func (s *Server) ListSecrets(ctx context.Context, namespace string) (api.SecretListResponse, error) {
 	if s.secrets == nil {
 		return nil, fmt.Errorf("secrets are not configured")
@@ -44,6 +46,7 @@ func (s *Server) ListSecrets(ctx context.Context, namespace string) (api.SecretL
 	return result, nil
 }
 
+// GetSecretMetadata returns metadata for a namespace secret.
 func (s *Server) GetSecretMetadata(ctx context.Context, namespace, name string) (*api.SecretMetadata, error) {
 	if s.secrets == nil {
 		return nil, fmt.Errorf("secrets are not configured")
@@ -52,6 +55,7 @@ func (s *Server) GetSecretMetadata(ctx context.Context, namespace, name string) 
 	return secretMetadata(meta), err
 }
 
+// DeleteSecret removes a namespace secret.
 func (s *Server) DeleteSecret(ctx context.Context, namespace, name string) error {
 	if s.secrets == nil {
 		return fmt.Errorf("secrets are not configured")

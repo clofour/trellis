@@ -1,3 +1,4 @@
+// Package auth creates and validates Trellis authentication tokens.
 package auth
 
 import (
@@ -13,19 +14,23 @@ import (
 	"github.com/clofour/trellis/internal/state"
 )
 
+// TokenScope describes the namespace access granted by a token.
 type TokenScope struct {
 	Namespace string `json:"namespace"`
 }
 
+// TokenManager creates and validates persisted namespace tokens.
 type TokenManager struct {
 	store   state.StateStore
 	cluster string
 }
 
+// NewTokenManager creates a token manager backed by state storage.
 func NewTokenManager(store state.StateStore, cluster string) *TokenManager {
 	return &TokenManager{store: store, cluster: cluster}
 }
 
+// CreateNamespaceToken creates and persists a token for namespace.
 func (m *TokenManager) CreateNamespaceToken(ctx context.Context, namespace string) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -55,6 +60,7 @@ func (m *TokenManager) CreateNamespaceToken(ctx context.Context, namespace strin
 	return token, nil
 }
 
+// ValidateToken returns the scope for a valid token.
 func (m *TokenManager) ValidateToken(ctx context.Context, rawToken string) (*TokenScope, error) {
 	hash := sha256.Sum256([]byte(rawToken))
 	hashHex := hex.EncodeToString(hash[:])
@@ -75,6 +81,7 @@ func (m *TokenManager) ValidateToken(ctx context.Context, rawToken string) (*Tok
 	return &scope, nil
 }
 
+// GetOrCreateNamespaceToken returns the persistent token for namespace.
 func (m *TokenManager) GetOrCreateNamespaceToken(ctx context.Context, namespace string) (string, error) {
 	rawKey := fmt.Sprintf("trellis/%s/namespace-tokens/%s", m.cluster, namespace)
 	existing, err := m.store.Get(ctx, rawKey)
@@ -94,6 +101,7 @@ func (m *TokenManager) GetOrCreateNamespaceToken(ctx context.Context, namespace 
 	return m.CreateNamespaceToken(ctx, namespace)
 }
 
+// ValidateClusterToken compares a token with a stored cluster token hash.
 func ValidateClusterToken(clusterHash, candidate string) bool {
 	hash := sha256.Sum256([]byte(candidate))
 	hashHex := hex.EncodeToString(hash[:])

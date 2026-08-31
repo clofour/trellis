@@ -1,3 +1,4 @@
+// Command trellis provides the Trellis command-line client.
 package main
 
 import (
@@ -55,17 +56,17 @@ func writeBackupFile(path string, data []byte) error {
 		return fmt.Errorf("create backup file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("write backup: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("sync backup: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -91,7 +92,7 @@ func newBackupRestoreCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("open backup: %w", err)
 				}
-				defer file.Close()
+				defer func() { _ = file.Close() }()
 				reader = file
 			}
 			var snapshot api.BackupSnapshot
@@ -109,8 +110,8 @@ func newBackupRestoreCmd() *cobra.Command {
 			if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).RestoreBackup(cmd.Context(), &snapshot); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Backup restored successfully; jobs will be scheduled fresh.")
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Backup restored successfully; jobs will be scheduled fresh.")
+			return err
 		},
 	}
 }

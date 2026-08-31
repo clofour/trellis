@@ -1,3 +1,4 @@
+// Package api defines the wire protocol shared by Trellis components.
 package api
 
 import (
@@ -5,6 +6,7 @@ import (
 	"github.com/clofour/trellis/internal/spec"
 )
 
+// AllocationRequest describes an allocation for an agent to start.
 type AllocationRequest struct {
 	AllocationID  string                  `json:"allocation_id"`
 	Generation    uint64                  `json:"generation"`
@@ -25,22 +27,30 @@ type AllocationRequest struct {
 	Secrets       []DeliveredSecret       `json:"secrets,omitempty"`
 }
 
+// StopAllocationRequest identifies an allocation generation to stop.
 type StopAllocationRequest struct {
 	AllocationID string `json:"allocation_id"`
 	Generation   uint64 `json:"generation"`
 	Epoch        uint64 `json:"epoch"`
 }
 
+// OperationCode identifies the result of an agent operation.
 type OperationCode string
 
 const (
-	OperationOK              OperationCode = "ok"
-	OperationStaleEpoch      OperationCode = "stale_epoch"
+	// OperationOK and the following values describe agent operation results.
+	OperationOK OperationCode = "ok"
+	// OperationStaleEpoch indicates that the request used an old leadership epoch.
+	OperationStaleEpoch OperationCode = "stale_epoch"
+	// OperationStaleGeneration indicates that the request used an old allocation generation.
 	OperationStaleGeneration OperationCode = "stale_generation"
-	OperationConflict        OperationCode = "execution_conflict"
-	OperationFailed          OperationCode = "operation_failed"
+	// OperationConflict indicates a conflicting allocation execution.
+	OperationConflict OperationCode = "execution_conflict"
+	// OperationFailed indicates that an agent operation failed.
+	OperationFailed OperationCode = "operation_failed"
 )
 
+// OperationResponse reports the outcome of an agent operation.
 type OperationResponse struct {
 	Code       OperationCode `json:"code"`
 	Message    string        `json:"message,omitempty"`

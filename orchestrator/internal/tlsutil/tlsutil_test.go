@@ -66,20 +66,20 @@ func TestMutualTLSHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})}
-	go srv.Serve(ln)
-	defer srv.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
 
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: clientCfg}}
 	resp, err := client.Get("https://" + ln.Addr().String())
 	if err != nil {
 		t.Fatalf("mTLS request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "ok" {
 		t.Fatalf("unexpected response: %s", body)
@@ -99,13 +99,13 @@ func TestRejectUntrustedClientCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("should not reach here"))
+		_, _ = w.Write([]byte("should not reach here"))
 	})}
-	go srv.Serve(ln)
-	defer srv.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
 
 	clientCfg, err := ClientTLSConfig(untrustedMaterials)
 	if err != nil {
@@ -130,13 +130,13 @@ func TestRejectNoClientCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("should not reach here"))
+		_, _ = w.Write([]byte("should not reach here"))
 	})}
-	go srv.Serve(ln)
-	defer srv.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
 
 	caOnlyCfg, err := CAClientTLSConfig(m.CACert)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestPeerTLSConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	done := make(chan string, 1)
 	go func() {
@@ -169,7 +169,7 @@ func TestPeerTLSConfig(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		buf := make([]byte, 16)
 		n, _ := conn.Read(buf)
 		done <- string(buf[:n])
@@ -179,8 +179,8 @@ func TestPeerTLSConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("peer TLS dial failed: %v", err)
 	}
-	conn.Write([]byte("hello"))
-	conn.Close()
+	_, _ = conn.Write([]byte("hello"))
+	_ = conn.Close()
 
 	msg := <-done
 	if msg != "hello" {
@@ -200,13 +200,13 @@ func TestLeaderTLSConfigAllowsNoClientCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})}
-	go srv.Serve(ln)
-	defer srv.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
 
 	caOnlyCfg, err := CAClientTLSConfig(m.CACert)
 	if err != nil {
@@ -217,7 +217,7 @@ func TestLeaderTLSConfigAllowsNoClientCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("leader TLS request without client cert should succeed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "ok" {
 		t.Fatalf("unexpected response: %s", body)

@@ -1,3 +1,4 @@
+// Package spec defines and validates Trellis job specifications.
 package spec
 
 import (

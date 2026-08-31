@@ -11,11 +11,13 @@ import (
 	"github.com/clofour/trellis/internal/spec"
 )
 
+// VolumeManager manages allocation volume mounts.
 type VolumeManager struct {
 	dataRootPath string
 	hostVolumes  map[string]string
 }
 
+// NewVolumeManager creates a volume manager.
 func NewVolumeManager(dataRoot ...string) *VolumeManager {
 	root := "/var/lib/trellis/data"
 	if len(dataRoot) > 0 && dataRoot[0] != "" {
@@ -42,6 +44,7 @@ func (vm *VolumeManager) AvailableHostVolumes() []string {
 	return available
 }
 
+// Create resolves and prepares an allocation volume mount.
 func (vm *VolumeManager) Create(namespace string, jobName string, taskName string, volume spec.VolumeSpec) (*runtime.Mount, error) {
 	if volume.HostVolume != "" {
 		hostPath, ok := vm.hostVolumes[volume.HostVolume]
@@ -71,6 +74,7 @@ func (vm *VolumeManager) Create(namespace string, jobName string, taskName strin
 	}, nil
 }
 
+// Check reports whether an allocation volume is available.
 func (vm *VolumeManager) Check(namespace string, jobName string, taskName string, volume spec.VolumeSpec) (bool, error) {
 	hostPath, err := vm.getHostPath(namespace, jobName, taskName, volume.Name)
 	if err != nil {
@@ -85,6 +89,7 @@ func (vm *VolumeManager) Check(namespace string, jobName string, taskName string
 	return info.IsDir(), nil
 }
 
+// Delete removes an allocation-managed volume.
 func (vm *VolumeManager) Delete(namespace string, jobName string, taskName string, volume spec.VolumeSpec) error {
 	hostPath, err := vm.getHostPath(namespace, jobName, taskName, volume.Name)
 	if err != nil {

@@ -11,7 +11,7 @@ func TestBoltStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	ctx := context.Background()
 
 	val, err := store.Get(ctx, "missing")
@@ -39,13 +39,15 @@ func TestBoltStoreListPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	ctx := context.Background()
 
-	store.Put(ctx, "trellis/default/jobs/web", []byte("web"))
-	store.Put(ctx, "trellis/default/jobs/api", []byte("api"))
-	store.Put(ctx, "trellis/default/nodes/n1", []byte("node1"))
-	store.Put(ctx, "trellis/other/jobs/x", []byte("x"))
+	_ = store.Put(ctx, "trellis/default/jobs/web", []byte("web"))
+	_ = store.Put(ctx, "trellis/default/jobs/api", []byte("api"))
+	_ = store.Put(ctx, "trellis/default/nodes/n1", []byte("node1"))
+	if err := store.Put(ctx, "trellis/other/jobs/x", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := store.List(ctx, "trellis/default/jobs/")
 	if err != nil {
@@ -67,10 +69,12 @@ func TestBoltStoreDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	ctx := context.Background()
 
-	store.Put(ctx, "key", []byte("value"))
+	if err := store.Put(ctx, "key", []byte("value")); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.Delete(ctx, "key"); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +96,7 @@ func TestRestoreDesiredKeepsRuntimeStateAndRequiresFreshTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	ctx := context.Background()
 	if err := store.Put(ctx, "trellis/new/nodes/local", []byte(`{"id":"local"}`)); err != nil {
 		t.Fatal(err)

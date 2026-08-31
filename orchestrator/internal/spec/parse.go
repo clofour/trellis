@@ -5,6 +5,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ParseYAML decodes a YAML job specification.
 func ParseYAML(raw []byte) (*JobSpec, error) {
 	var data map[string]interface{}
 	err := yaml.Unmarshal(raw, &data)

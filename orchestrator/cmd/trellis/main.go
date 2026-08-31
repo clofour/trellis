@@ -35,7 +35,7 @@ func main() {
 	root := &cobra.Command{
 		Use:   "trellis",
 		Short: "Trellis CLI",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return loadConfig(cmd)
 		},
 	}

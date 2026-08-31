@@ -17,16 +17,19 @@ import (
 	"github.com/google/uuid"
 )
 
+// ServerClient sends authenticated requests to the Trellis server API.
 type ServerClient struct {
 	baseURL string
 	client  *client
 	mu      sync.RWMutex
 }
 
+// AllocationLogs streams logs for an allocation.
 func (s *ServerClient) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
 	return s.client.stream(ctx, fmt.Sprintf("%s/v1/allocations/%s/logs?follow=%t&tail=%d", s.address(), url.PathEscape(id), follow, tail))
 }
 
+// SetAddress updates the server address used by the client.
 func (s *ServerClient) SetAddress(addr string) {
 	s.mu.Lock()
 	s.baseURL = normalizeBaseURL(addr)
@@ -39,10 +42,12 @@ func (s *ServerClient) address() string {
 	return s.baseURL
 }
 
+// Ready reports whether the client has a server address.
 func (s *ServerClient) Ready() bool {
 	return s.address() != ""
 }
 
+// CreateBackup downloads a desired-state backup.
 func (s *ServerClient) CreateBackup(ctx context.Context) (*api.BackupSnapshot, error) {
 	var snapshot api.BackupSnapshot
 	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/backup", nil, &snapshot); err != nil {
@@ -51,6 +56,7 @@ func (s *ServerClient) CreateBackup(ctx context.Context) (*api.BackupSnapshot, e
 	return &snapshot, nil
 }
 
+// RestoreBackup uploads a desired-state backup.
 func (s *ServerClient) RestoreBackup(ctx context.Context, snapshot *api.BackupSnapshot) error {
 	if err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/backup/restore", snapshot, nil); err != nil {
 		return fmt.Errorf("restore backup: %w", err)
@@ -58,6 +64,7 @@ func (s *ServerClient) RestoreBackup(ctx context.Context, snapshot *api.BackupSn
 	return nil
 }
 
+// NodeInfo contains the identity and capacity used to register a node.
 type NodeInfo struct {
 	ID                 uuid.UUID
 	Host               string
@@ -72,6 +79,7 @@ type NodeInfo struct {
 	WireGuardEndpoint  string
 }
 
+// Heartbeat contains the state periodically reported by a node.
 type Heartbeat struct {
 	NodeID      uuid.UUID              `json:"id"`
 	Timestamp   time.Time              `json:"timestamp"`
@@ -80,10 +88,12 @@ type Heartbeat struct {
 	Version     string                 `json:"version,omitempty"`
 }
 
+// NewServerClient creates a client for cluster-scoped server APIs.
 func NewServerClient(token string, addr string, tlsConfig *tls.Config) *ServerClient {
 	return NewNamespaceServerClient(token, addr, "", tlsConfig)
 }
 
+// NewNamespaceServerClient creates a client for namespace-scoped server APIs.
 func NewNamespaceServerClient(token string, addr string, namespace string, tlsConfig *tls.Config) *ServerClient {
 	baseURL := normalizeBaseURL(addr)
 	c := &client{
@@ -98,6 +108,7 @@ func NewNamespaceServerClient(token string, addr string, namespace string, tlsCo
 	}
 }
 
+// ListNodes returns all registered nodes.
 func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, error) {
 	var responseData api.NodeListResponse
 
@@ -109,6 +120,7 @@ func (s *ServerClient) ListNodes(ctx context.Context) (*api.NodeListResponse, er
 	return &responseData, nil
 }
 
+// DrainNode requests allocation evacuation from a node.
 func (s *ServerClient) DrainNode(ctx context.Context, id uuid.UUID) error {
 	if err := s.client.request(ctx, http.MethodPost, fmt.Sprintf("%s/v1/nodes/%s/drain", s.address(), id), nil, nil); err != nil {
 		return fmt.Errorf("drain node: %w", err)
@@ -116,6 +128,7 @@ func (s *ServerClient) DrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// UndrainNode makes a drained node schedulable.
 func (s *ServerClient) UndrainNode(ctx context.Context, id uuid.UUID) error {
 	if err := s.client.request(ctx, http.MethodDelete, fmt.Sprintf("%s/v1/nodes/%s/drain", s.address(), id), nil, nil); err != nil {
 		return fmt.Errorf("un-drain node: %w", err)
@@ -123,6 +136,7 @@ func (s *ServerClient) UndrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// TransferLeadership asks Raft to transfer leadership.
 func (s *ServerClient) TransferLeadership(ctx context.Context) error {
 	if err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/raft/leadership-transfer", nil, nil); err != nil {
 		return fmt.Errorf("transfer Raft leadership: %w", err)
@@ -130,6 +144,7 @@ func (s *ServerClient) TransferLeadership(ctx context.Context) error {
 	return nil
 }
 
+// RemoveRaftMember permanently removes a server from Raft.
 func (s *ServerClient) RemoveRaftMember(ctx context.Context, id string) error {
 	path := fmt.Sprintf("%s/v1/raft/members/%s", s.address(), url.PathEscape(id))
 	if err := s.client.request(ctx, http.MethodDelete, path, nil, nil); err != nil {
@@ -138,6 +153,7 @@ func (s *ServerClient) RemoveRaftMember(ctx context.Context, id string) error {
 	return nil
 }
 
+// RegisterNode registers a node with the cluster.
 func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*api.NodeRegistrationResponse, error) {
 	requestData := &api.NodeRegistrationRequest{
 		ID:                 nodeInfo.ID,
@@ -162,6 +178,7 @@ func (s *ServerClient) RegisterNode(ctx context.Context, nodeInfo *NodeInfo) (*a
 	return &responseData, nil
 }
 
+// GetJob returns a job and its allocations.
 func (s *ServerClient) GetJob(ctx context.Context, name string) (*api.JobStatusResponse, error) {
 	var response api.JobStatusResponse
 	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/jobs/"+url.PathEscape(name), nil, &response); err != nil {
@@ -170,6 +187,7 @@ func (s *ServerClient) GetJob(ctx context.Context, name string) (*api.JobStatusR
 	return &response, nil
 }
 
+// ListJobs returns jobs in the configured namespace.
 func (s *ServerClient) ListJobs(ctx context.Context) (*api.JobListResponse, error) {
 	var response api.JobListResponse
 	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/jobs", nil, &response); err != nil {
@@ -178,6 +196,7 @@ func (s *ServerClient) ListJobs(ctx context.Context) (*api.JobListResponse, erro
 	return &response, nil
 }
 
+// SubmitJob creates or updates a job.
 func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error {
 	requestData := &api.JobRegistrationRequest{
 		Spec: *spec,
@@ -191,6 +210,7 @@ func (s *ServerClient) SubmitJob(ctx context.Context, spec *spec.JobSpec) error 
 	return nil
 }
 
+// DeleteJob deletes a job.
 func (s *ServerClient) DeleteJob(ctx context.Context, name string) error {
 	if err := s.client.request(ctx, http.MethodDelete, s.address()+"/v1/jobs/"+url.PathEscape(name), nil, nil); err != nil {
 		return fmt.Errorf("delete job: %w", err)
@@ -198,6 +218,7 @@ func (s *ServerClient) DeleteJob(ctx context.Context, name string) error {
 	return nil
 }
 
+// SetSecret creates or updates a namespace secret.
 func (s *ServerClient) SetSecret(ctx context.Context, namespace, name string, value []byte, expected *uint64) (*api.SecretMetadata, error) {
 	request := api.SecretWriteRequest{ValueBase64: base64.StdEncoding.EncodeToString(value), ExpectedVersion: expected}
 	var response api.SecretMetadata
@@ -208,6 +229,7 @@ func (s *ServerClient) SetSecret(ctx context.Context, namespace, name string, va
 	return &response, nil
 }
 
+// ListSecrets returns secret metadata for a namespace.
 func (s *ServerClient) ListSecrets(ctx context.Context, namespace string) (*api.SecretListResponse, error) {
 	var response api.SecretListResponse
 	path := fmt.Sprintf("%s/v1/namespaces/%s/secrets", s.address(), url.PathEscape(namespace))
@@ -217,6 +239,7 @@ func (s *ServerClient) ListSecrets(ctx context.Context, namespace string) (*api.
 	return &response, nil
 }
 
+// GetSecretMetadata returns metadata for a secret.
 func (s *ServerClient) GetSecretMetadata(ctx context.Context, namespace, name string) (*api.SecretMetadata, error) {
 	var response api.SecretMetadata
 	path := fmt.Sprintf("%s/v1/namespaces/%s/secrets/%s", s.address(), url.PathEscape(namespace), url.PathEscape(name))
@@ -226,6 +249,7 @@ func (s *ServerClient) GetSecretMetadata(ctx context.Context, namespace, name st
 	return &response, nil
 }
 
+// DeleteSecret removes a secret.
 func (s *ServerClient) DeleteSecret(ctx context.Context, namespace, name string) error {
 	path := fmt.Sprintf("%s/v1/namespaces/%s/secrets/%s", s.address(), url.PathEscape(namespace), url.PathEscape(name))
 	if err := s.client.request(ctx, http.MethodDelete, path, nil, nil); err != nil {
@@ -234,6 +258,7 @@ func (s *ServerClient) DeleteSecret(ctx context.Context, namespace, name string)
 	return nil
 }
 
+// ListDiscovery returns discoverable service instances.
 func (s *ServerClient) ListDiscovery(ctx context.Context) (*api.ServiceListResponse, error) {
 	var responseData api.ServiceListResponse
 	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/internal/discovery", nil, &responseData); err != nil {
@@ -258,6 +283,7 @@ func (s *ServerClient) ListAllocations(ctx context.Context, label string) (*api.
 	return &responseData, nil
 }
 
+// SendHeartbeat reports node state and returns desired allocations.
 func (s *ServerClient) SendHeartbeat(ctx context.Context, id uuid.UUID, heartbeat *Heartbeat) (*api.HeartbeatResponse, error) {
 	requestData := &api.HeartbeatRequest{
 		NodeID:      heartbeat.NodeID,

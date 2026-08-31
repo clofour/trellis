@@ -1,3 +1,4 @@
+// Package storage provides filesystem-backed persistent storage.
 package storage
 
 import (
@@ -8,16 +9,19 @@ import (
 	"strings"
 )
 
+// LocalStorage stores JSON values under a local data directory.
 type LocalStorage struct {
 	dataRoot string
 }
 
+// NewLocalStorage creates local storage rooted at dataRoot.
 func NewLocalStorage(dataRoot string) *LocalStorage {
 	return &LocalStorage{
 		dataRoot: dataRoot,
 	}
 }
 
+// Init creates the storage root.
 func (s *LocalStorage) Init() error {
 	err := os.MkdirAll(s.dataRoot, 0o750)
 	if err != nil {
@@ -27,6 +31,7 @@ func (s *LocalStorage) Init() error {
 	return nil
 }
 
+// Get decodes the JSON value stored at key into value.
 func (s *LocalStorage) Get(key string, value any) error {
 	path := s.formatPath(key)
 	if path == "" {
@@ -46,6 +51,7 @@ func (s *LocalStorage) Get(key string, value any) error {
 	return nil
 }
 
+// Put atomically encodes and stores a JSON value at key.
 func (s *LocalStorage) Put(key string, value any) error {
 	path := s.formatPath(key)
 	if path == "" {
@@ -89,7 +95,7 @@ func (s *LocalStorage) Put(key string, value any) error {
 		return fmt.Errorf("rename tmp file: %w", err)
 	}
 	if dir, err := os.Open(filepath.Dir(path)); err == nil {
-		defer dir.Close()
+		defer func() { _ = dir.Close() }()
 		if err := dir.Sync(); err != nil {
 			return fmt.Errorf("sync parent directory: %w", err)
 		}
@@ -98,6 +104,7 @@ func (s *LocalStorage) Put(key string, value any) error {
 	return nil
 }
 
+// Delete removes key if it exists.
 func (s *LocalStorage) Delete(key string) error {
 	path := s.formatPath(key)
 	if path == "" {

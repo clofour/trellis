@@ -1,3 +1,4 @@
+// Package health evaluates and tracks allocation health checks.
 package health
 
 import (
@@ -10,6 +11,7 @@ import (
 	"github.com/clofour/trellis/internal/runtime"
 )
 
+// CheckHTTP runs an HTTP health check.
 func CheckHTTP(ctx context.Context, addr string, port int, path string) (bool, error) {
 	client := &http.Client{}
 	url := fmt.Sprintf("http://%s:%d%s", addr, port, path)
@@ -30,6 +32,7 @@ func CheckHTTP(ctx context.Context, addr string, port int, path string) (bool, e
 	return response.StatusCode >= 200 && response.StatusCode < 300, nil
 }
 
+// CheckTCP runs a TCP health check.
 func CheckTCP(ctx context.Context, addr string, port int) (bool, error) {
 	url := net.JoinHostPort(addr, strconv.Itoa(port))
 
@@ -45,6 +48,7 @@ func CheckTCP(ctx context.Context, addr string, port int) (bool, error) {
 	return true, nil
 }
 
+// CheckScript runs a command health check in a container.
 func CheckScript(ctx context.Context, c runtime.ContainerRuntime, containerID string, command []string) (bool, error) {
 	code, err := c.Exec(ctx, containerID, command)
 	if err != nil {

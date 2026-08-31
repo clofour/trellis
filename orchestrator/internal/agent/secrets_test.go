@@ -18,7 +18,7 @@ func TestPrepareSecretsDeliversEnvAndMemoryBackedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	if env["PASSWORD"] != "env-value" || env["IGNORED"] != "" {
 		t.Fatalf("unexpected env: %#v", env)
 	}

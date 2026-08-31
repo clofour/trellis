@@ -20,6 +20,7 @@ type injectedState struct {
 	Containers map[string]ContainerInfo `json:"containers"`
 }
 
+// InjectedRuntime is a persistent test runtime with injectable failures.
 type InjectedRuntime struct {
 	mu        sync.Mutex
 	path      string
@@ -37,6 +38,7 @@ type InjectedFault struct {
 	Count     int    `json:"count"`
 }
 
+// NewInjectedRuntime opens or creates a persistent injected runtime.
 func NewInjectedRuntime(path, faultPath string) (*InjectedRuntime, error) {
 	r := &InjectedRuntime{path: path, faultPath: faultPath, state: injectedState{Containers: map[string]ContainerInfo{}}}
 	b, err := os.ReadFile(path)
@@ -53,9 +55,13 @@ func NewInjectedRuntime(path, faultPath string) (*InjectedRuntime, error) {
 	return r, nil
 }
 
-func (r *InjectedRuntime) Close() error                       { return nil }
+// Close releases the injected runtime.
+func (r *InjectedRuntime) Close() error { return nil }
+
+// Pull records an injected image-pull operation.
 func (r *InjectedRuntime) Pull(context.Context, string) error { return r.operation("pull", nil) }
 
+// Create records a container in the injected runtime.
 func (r *InjectedRuntime) Create(_ context.Context, o CreateOptions) (string, error) {
 	id := o.ID
 	err := r.operation("create", func() error {
@@ -68,15 +74,22 @@ func (r *InjectedRuntime) Create(_ context.Context, o CreateOptions) (string, er
 	return id, err
 }
 
+// Start marks a container as running.
 func (r *InjectedRuntime) Start(_ context.Context, id string) error {
 	return r.setStatus("start", id, StatusRunning)
 }
+
+// Restart marks a container as running after an injected restart.
 func (r *InjectedRuntime) Restart(_ context.Context, id string) error {
 	return r.setStatus("restart", id, StatusRunning)
 }
+
+// Stop marks a container as stopped.
 func (r *InjectedRuntime) Stop(_ context.Context, id string) error {
 	return r.setStatus("stop", id, StatusStopped)
 }
+
+// Remove deletes a container from injected state.
 func (r *InjectedRuntime) Remove(_ context.Context, id string) error {
 	return r.operation("remove", func() error {
 		if _, ok := r.state.Containers[id]; !ok {
@@ -97,7 +110,11 @@ func (r *InjectedRuntime) setStatus(op, id string, status ContainerStatus) error
 		return nil
 	})
 }
+
+// Exec simulates a successful container command.
 func (r *InjectedRuntime) Exec(context.Context, string, []string) (int, error) { return 0, nil }
+
+// Inspect returns a copy of injected container state.
 func (r *InjectedRuntime) Inspect(_ context.Context, id string) (*ContainerInfo, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -105,13 +122,17 @@ func (r *InjectedRuntime) Inspect(_ context.Context, id string) (*ContainerInfo,
 	if !ok {
 		return nil, fmt.Errorf("container %s not found", id)
 	}
-	copy := c
-	copy.Labels = cloneLabels(c.Labels)
-	return &copy, nil
+	result := c
+	result.Labels = cloneLabels(c.Labels)
+	return &result, nil
 }
+
+// Logs returns an empty log stream.
 func (r *InjectedRuntime) Logs(context.Context, string, bool, int) (io.ReadCloser, error) {
 	return io.NopCloser(&emptyReader{}), nil
 }
+
+// ListManaged lists injected containers owned by a cluster.
 func (r *InjectedRuntime) ListManaged(_ context.Context, cluster string) ([]ContainerInfo, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

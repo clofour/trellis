@@ -33,6 +33,7 @@ import (
 const reconcileInterval = 10 * time.Second
 const heartbeatInterval = 10 * time.Second
 
+// ClusterJoiner adds and removes Raft cluster members.
 type ClusterJoiner interface {
 	AddVoter(id, address string) error
 	RemoveServer(id string) error
@@ -44,6 +45,7 @@ type desiredStateStore interface {
 	RestoreDesired(cluster string, snapshot *state.DesiredSnapshot) error
 }
 
+// Server coordinates desired state, scheduling, and node operations.
 type Server struct {
 	log     *slog.Logger
 	storage *storage.LocalStorage
@@ -80,9 +82,11 @@ type Server struct {
 	secrets      *secretstore.Store
 }
 
+// SetSecretStore configures encrypted secret storage.
 func (s *Server) SetSecretStore(store *secretstore.Store) { s.secrets = store }
 
-func (s *Server) Backup(ctx context.Context) (*api.BackupSnapshot, error) {
+// Backup captures desired cluster state.
+func (s *Server) Backup(_ context.Context) (*api.BackupSnapshot, error) {
 	if s.backupStore == nil {
 		return nil, fmt.Errorf("backup is unavailable")
 	}
@@ -105,6 +109,7 @@ func (s *Server) Backup(ctx context.Context) (*api.BackupSnapshot, error) {
 	return result, nil
 }
 
+// Restore replaces desired state from a backup.
 func (s *Server) Restore(ctx context.Context, backup *api.BackupSnapshot) error {
 	if backup.FormatVersion != api.BackupFormatVersion {
 		return fmt.Errorf("unsupported backup format version %d", backup.FormatVersion)
@@ -133,10 +138,12 @@ func (s *Server) Restore(ctx context.Context, backup *api.BackupSnapshot) error 
 	return s.Reload(ctx)
 }
 
+// AllocationLogs opens logs for an allocation.
 func (s *Server) AllocationLogs(ctx context.Context, id string, follow bool, tail int) (io.ReadCloser, error) {
 	return s.AllocationLogsForNamespace(ctx, "", id, follow, tail)
 }
 
+// AllocationLogsForNamespace opens allocation logs after namespace validation.
 func (s *Server) AllocationLogsForNamespace(ctx context.Context, namespace, id string, follow bool, tail int) (io.ReadCloser, error) {
 	s.mu.RLock()
 	var found *Allocation
@@ -155,11 +162,13 @@ func (s *Server) AllocationLogsForNamespace(ctx context.Context, namespace, id s
 	return s.client.Logs(ctx, address, id, follow, tail)
 }
 
+// Cluster contains persisted cluster identity and TLS state.
 type Cluster struct {
 	Hash         string
 	ControlEpoch uint64 `json:"control_epoch,omitempty"`
 }
 
+// NodeRegistration contains the identity and capacity of a node.
 type NodeRegistration struct {
 	ID                 uuid.UUID
 	Host               string
@@ -174,6 +183,7 @@ type NodeRegistration struct {
 	WireGuardEndpoint  string
 }
 
+// Node contains the in-memory state of a registered node.
 type Node struct {
 	ID                 uuid.UUID
 	Host               string
@@ -191,14 +201,19 @@ type Node struct {
 	Version            string
 }
 
+// NodeStatus describes whether a node can receive allocations.
 type NodeStatus string
 
 const (
-	NodeStatusHealthy   NodeStatus = "healthy"
+	// NodeStatusHealthy indicates that a node is schedulable.
+	NodeStatusHealthy NodeStatus = "healthy"
+	// NodeStatusUnhealthy indicates that a node is not schedulable.
 	NodeStatusUnhealthy NodeStatus = "unhealthy"
-	NodeStatusDraining  NodeStatus = "draining"
+	// NodeStatusDraining indicates that a node is evacuating allocations.
+	NodeStatusDraining NodeStatus = "draining"
 )
 
+// NodeSummary is the persisted representation of a node.
 type NodeSummary struct {
 	ID                 uuid.UUID
 	Host               string
@@ -216,6 +231,7 @@ type NodeSummary struct {
 	Version            string `json:"version,omitempty"`
 }
 
+// Job contains a persisted job specification and revision.
 type Job struct {
 	Spec     *spec.JobSpec
 	Revision int
@@ -224,14 +240,19 @@ type Job struct {
 	ContentHashes map[string]string `json:"content_hashes,omitempty"`
 }
 
+// AllocationStatus is the legacy allocation state representation.
 type AllocationStatus string
 
 const (
-	AllocationStatusPending   AllocationStatus = "pending"
-	AllocationStatusHealthy   AllocationStatus = "healthy"
+	// AllocationStatusPending indicates that an allocation awaits execution.
+	AllocationStatusPending AllocationStatus = "pending"
+	// AllocationStatusHealthy indicates that an allocation passed health checks.
+	AllocationStatusHealthy AllocationStatus = "healthy"
+	// AllocationStatusUnhealthy indicates that an allocation failed health checks.
 	AllocationStatusUnhealthy AllocationStatus = "unhealthy"
 )
 
+// Allocation contains desired and observed allocation state.
 type Allocation struct {
 	mu            sync.Mutex
 	Namespace     string
@@ -264,6 +285,7 @@ type Allocation struct {
 	Events *lifecycle.RingBuffer `json:"-"`
 }
 
+// AllocationID returns the stable allocation identifier.
 func (a *Allocation) AllocationID() string {
 	if a.ID != "" {
 		return a.ID
@@ -302,6 +324,7 @@ func (a *Allocation) normalize(now time.Time) {
 	a.Status = AllocationStatus(lifecycle.CompatibilityStatus(a.Phase, a.Health))
 }
 
+// Transition records a validated allocation phase change.
 func (a *Allocation) Transition(to lifecycle.Phase, now time.Time, reason, message string) error {
 	a.normalize(now)
 	if err := lifecycle.Transition(a.Phase, to); err != nil {
@@ -320,6 +343,7 @@ func (a *Allocation) Transition(to lifecycle.Phase, now time.Time, reason, messa
 	return nil
 }
 
+// SetHealth updates the allocation health state.
 func (a *Allocation) SetHealth(health lifecycle.Health) error {
 	if !health.Valid() {
 		return fmt.Errorf("invalid allocation health %q", health)
@@ -329,6 +353,7 @@ func (a *Allocation) SetHealth(health lifecycle.Health) error {
 	return nil
 }
 
+// UnmarshalJSON decodes allocation state with legacy compatibility.
 func (a *Allocation) UnmarshalJSON(data []byte) error {
 	type plain Allocation
 	var decoded plain
@@ -357,6 +382,7 @@ func (a *Allocation) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// NewServer constructs an orchestrator server.
 func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController, store state.StateStore, cluster, serverAddr string) *Server {
 	pool := netip.MustParsePrefix("10.64.0.0/10")
 	s := &Server{
@@ -397,6 +423,7 @@ func (s *Server) AcquireLeadership(ctx context.Context) error {
 	return nil
 }
 
+// SetNetworkPool configures the allocation address pool.
 func (s *Server) SetNetworkPool(pool string) error {
 	p, err := netip.ParsePrefix(pool)
 	if err != nil || !p.Addr().Is4() || p.Bits() > 16 {
@@ -406,10 +433,12 @@ func (s *Server) SetNetworkPool(pool string) error {
 	return nil
 }
 
+// Init initializes cluster state and returns its token.
 func (s *Server) Init(ctx context.Context) (string, error) {
 	return s.InitWithToken(ctx, "")
 }
 
+// InitWithToken initializes cluster state with an optional configured token.
 func (s *Server) InitWithToken(ctx context.Context, configuredToken string) (string, error) {
 	cluster, err := s.state.GetCluster(ctx)
 	if err != nil {
@@ -467,10 +496,12 @@ func (s *Server) InitWithToken(ctx context.Context, configuredToken string) (str
 	return token, nil
 }
 
+// SetClientTLS configures TLS for agent requests.
 func (s *Server) SetClientTLS(cfg *tls.Config) {
 	s.clientTLS = cfg
 }
 
+// ClusterCA returns the cluster certificate authority materials.
 func (s *Server) ClusterCA() (certPEM, keyPEM string, err error) {
 	if err := s.storage.Get("tls/ca-cert", &certPEM); err != nil {
 		return "", "", fmt.Errorf("load CA cert: %w", err)
@@ -487,10 +518,12 @@ func validateToken(cluster *Cluster, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(hashHex), []byte(cluster.Hash)) == 1
 }
 
+// Run starts background reconciliation until the context ends.
 func (s *Server) Run(ctx context.Context) {
 	go s.runReconcileLoop(ctx)
 }
 
+// ListNodes returns registered nodes.
 func (s *Server) ListNodes() []Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -503,6 +536,7 @@ func (s *Server) ListNodes() []Node {
 	return result
 }
 
+// RegisterNode adds or updates a cluster node.
 func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistration) error {
 	s.mu.RLock()
 	status := NodeStatusHealthy
@@ -545,6 +579,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 	return nil
 }
 
+// Heartbeat records a node heartbeat and allocation state.
 func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus, version string, volumes ...[]string) error {
 	s.mu.Lock()
 	node, ok := s.nodes[nodeID]
@@ -636,6 +671,7 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	return nil
 }
 
+// HeartbeatResponse returns desired allocation state for a node.
 func (s *Server) HeartbeatResponse(nodeID uuid.UUID) api.HeartbeatResponse {
 	s.mu.RLock()
 	epoch, leaderSince := s.controlEpoch, s.leaderSince
@@ -659,18 +695,7 @@ func jobKey(namespace, name string) string {
 	return namespace + "\x00" + name
 }
 
-func requestedResources(jobSpec *spec.JobSpec) (cpu, memory int) {
-	for _, group := range jobSpec.TaskGroups {
-		for _, task := range group.Tasks {
-			if task.Resources != nil {
-				cpu += task.Resources.CPU * group.Count
-				memory += task.Resources.Memory * group.Count
-			}
-		}
-	}
-	return
-}
-
+// RegisterJob creates or updates desired job state.
 func (s *Server) RegisterJob(ctx context.Context, namespace string, jobSpec *spec.JobSpec) error {
 	if err := spec.Validate(jobSpec); err != nil {
 		return fmt.Errorf("validate job: %w", err)
@@ -775,6 +800,7 @@ func (s *Server) Reload(ctx context.Context) error {
 	return nil
 }
 
+// DrainNode marks a node for allocation evacuation.
 func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	node := s.nodes[id]
@@ -798,6 +824,7 @@ func (s *Server) DrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// UndrainNode makes a drained node schedulable.
 func (s *Server) UndrainNode(ctx context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	node := s.nodes[id]
@@ -821,6 +848,7 @@ func (s *Server) UndrainNode(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// ListJobs returns jobs in a namespace.
 func (s *Server) ListJobs(namespace string) api.JobListResponse {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -854,6 +882,7 @@ func (s *Server) ListJobs(namespace string) api.JobListResponse {
 	return result
 }
 
+// GetJob returns a job and its allocation state.
 func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -889,6 +918,7 @@ func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 	return r, true
 }
 
+// DeleteJob removes desired job state.
 func (s *Server) DeleteJob(ctx context.Context, namespace, name string) error {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
@@ -909,6 +939,7 @@ func (s *Server) DeleteJob(ctx context.Context, namespace, name string) error {
 	return nil
 }
 
+// ValidateAPIToken validates the cluster API token.
 func (s *Server) ValidateAPIToken(token string) bool {
 	if s.cluster == nil {
 		return false
@@ -929,10 +960,12 @@ func unwrapPathError(err error) error {
 	}
 }
 
+// ListServices returns discoverable service instances.
 func (s *Server) ListServices(namespace string, filter *catalog.ListFilter) api.ServiceListResponse {
 	return s.catalog.List(namespace, filter)
 }
 
+// Catalog returns the service catalog.
 func (s *Server) Catalog() *catalog.ServiceCatalog {
 	return s.catalog
 }
@@ -986,14 +1019,17 @@ func (s *Server) refreshCatalog() {
 	}
 }
 
+// TokenManager returns the namespace token manager.
 func (s *Server) TokenManager() *auth.TokenManager {
 	return s.tokenManager
 }
 
+// ServerAddr returns the advertised server address.
 func (s *Server) ServerAddr() string {
 	return s.serverAddr
 }
 
+// SetClusterJoiner configures Raft membership operations.
 func (s *Server) SetClusterJoiner(j ClusterJoiner) {
 	s.joiner = j
 }

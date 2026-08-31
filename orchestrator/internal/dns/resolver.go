@@ -1,3 +1,4 @@
+// Package dns provides DNS-based Trellis service discovery.
 package dns
 
 import (
@@ -14,11 +15,14 @@ import (
 )
 
 const (
+	// DefaultDomain is the default DNS suffix for Trellis services.
 	DefaultDomain = "trellis"
-	DefaultTTL    = 5
-	maxUDPSize    = 512
+	// DefaultTTL is the default lifetime of DNS answers, in seconds.
+	DefaultTTL = 5
+	maxUDPSize = 512
 )
 
+// DiscoveryLookup lists service-discovery records.
 type DiscoveryLookup interface {
 	ListDiscovery(ctx context.Context) (*api.ServiceListResponse, error)
 }
@@ -27,6 +31,7 @@ type record struct {
 	addresses []net.IP
 }
 
+// Resolver serves DNS records backed by service discovery.
 type Resolver struct {
 	log    *slog.Logger
 	domain string
@@ -36,6 +41,7 @@ type Resolver struct {
 	cache map[string]*record // "job.namespace" -> record
 }
 
+// NewResolver creates a DNS resolver for the supplied discovery source.
 func NewResolver(log *slog.Logger, lookup DiscoveryLookup, domain string) *Resolver {
 	if domain == "" {
 		domain = DefaultDomain
@@ -48,6 +54,7 @@ func NewResolver(log *slog.Logger, lookup DiscoveryLookup, domain string) *Resol
 	}
 }
 
+// Run serves DNS queries on addr until ctx is canceled.
 func (r *Resolver) Run(ctx context.Context, addr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -57,7 +64,7 @@ func (r *Resolver) Run(ctx context.Context, addr string) error {
 	if err != nil {
 		return fmt.Errorf("listen udp: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	go r.refreshLoop(ctx)
 
@@ -70,7 +77,9 @@ func (r *Resolver) Run(ctx context.Context, addr string) error {
 			return nil
 		default:
 		}
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			return fmt.Errorf("set DNS read deadline: %w", err)
+		}
 		n, remote, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
@@ -84,7 +93,9 @@ func (r *Resolver) Run(ctx context.Context, addr string) error {
 		}
 		response := r.handleQuery(buf[:n])
 		if response != nil {
-			conn.WriteToUDP(response, remote)
+			if _, err := conn.WriteToUDP(response, remote); err != nil {
+				r.log.Error("dns write error", "error", err)
+			}
 		}
 	}
 }

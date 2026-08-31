@@ -1,3 +1,4 @@
+// Package agent executes and monitors allocations on a Trellis node.
 package agent
 
 import (
@@ -26,6 +27,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Agent manages allocation lifecycle on a node.
 type Agent struct {
 	nodeID      uuid.UUID
 	allocations map[string]*Allocation
@@ -49,6 +51,7 @@ type Agent struct {
 	mu         sync.RWMutex
 }
 
+// Allocation contains agent-local allocation state.
 type Allocation struct {
 	ID              string
 	AllocationID    string
@@ -77,17 +80,24 @@ type Allocation struct {
 const heartbeatInterval = 10 * time.Second
 
 var (
+	// ErrAllocationNotFound indicates that an allocation does not exist.
 	ErrAllocationNotFound = errors.New("allocation not found")
-	ErrAllocationExists   = errors.New("allocation already exists")
-	ErrStaleEpoch         = errors.New("stale control-plane epoch")
-	ErrStaleGeneration    = errors.New("stale allocation generation")
-	ErrExecutionConflict  = errors.New("allocation execution metadata conflict")
+	// ErrAllocationExists indicates that an allocation already exists.
+	ErrAllocationExists = errors.New("allocation already exists")
+	// ErrStaleEpoch indicates that an operation used an old leadership epoch.
+	ErrStaleEpoch = errors.New("stale control-plane epoch")
+	// ErrStaleGeneration indicates that an operation used an old allocation generation.
+	ErrStaleGeneration = errors.New("stale allocation generation")
+	// ErrExecutionConflict indicates conflicting allocation execution metadata.
+	ErrExecutionConflict = errors.New("allocation execution metadata conflict")
 )
 
+// ConfigureDurability enables persistent agent state.
 func (a *Agent) ConfigureDurability(local *storage.LocalStorage, cluster string) {
 	a.local, a.cluster = local, cluster
 }
 
+// AcceptEpoch validates and persists a leadership epoch.
 func (a *Agent) AcceptEpoch(epoch uint64) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -124,6 +134,7 @@ func (a *Agent) deleteAllocationRecord(id string) error {
 	return a.local.Delete(allocationRecordKey(id))
 }
 
+// NewAgent creates an allocation agent.
 func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health.HealthManager, reconciler *AllocationReconciler, ports *PortManager, volumes *VolumeManager, server *client.ServerClient, nodeID uuid.UUID) *Agent {
 	agent := &Agent{
 		nodeID:      nodeID,
@@ -145,35 +156,43 @@ func NewAgent(log *slog.Logger, runtime runtime.ContainerRuntime, health *health
 	return agent
 }
 
+// SetNetworkManager configures allocation networking.
 func (a *Agent) SetNetworkManager(manager network.Manager) {
 	if manager != nil {
 		a.network = manager
 	}
 }
 
+// SetWireGuardIdentity configures the node WireGuard endpoint.
 func (a *Agent) SetWireGuardIdentity(publicKey, endpoint string) {
 	a.nodeInfo.WireGuardPublicKey, a.nodeInfo.WireGuardEndpoint = publicKey, endpoint
 }
 
+// SetDNSServers configures allocation DNS servers.
 func (a *Agent) SetDNSServers(servers []string) {
 	a.dnsServers = servers
 }
 
+// SetAdvertiseAddress configures the agent endpoint.
 func (a *Agent) SetAdvertiseAddress(host string, port int) {
 	a.nodeInfo.Host = host
 	a.nodeInfo.Port = port
 }
 
+// SetResources configures node capacity and platform attributes.
 func (a *Agent) SetResources(cpu int, memory int64, osName, arch string) {
 	a.nodeInfo.CPU, a.nodeInfo.Memory, a.nodeInfo.OS, a.nodeInfo.Arch = cpu, memory, osName, arch
 }
 
+// SetLabels configures node scheduling labels.
 func (a *Agent) SetLabels(labels map[string]string) {
 	a.nodeInfo.Labels = labels
 }
 
+// SetVersion configures the reported agent version.
 func (a *Agent) SetVersion(version string) { a.version = version }
 
+// Init restores durable allocations and starts reconciliation.
 func (a *Agent) Init(ctx context.Context) {
 	a.health.Subscriber = a
 	a.health.SetContext(ctx)
@@ -277,20 +296,22 @@ func (a *Agent) recover(ctx context.Context) error {
 	return nil
 }
 
+// GetAllocations returns copies of agent allocation state.
 func (a *Agent) GetAllocations() []*Allocation {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	result := make([]*Allocation, 0, len(a.allocations))
 	for _, alloc := range a.allocations {
-		copy := *alloc
-		copy.Ports = append([]*runtime.Port(nil), alloc.Ports...)
-		copy.Mounts = append([]*runtime.Mount(nil), alloc.Mounts...)
-		result = append(result, &copy)
+		allocationCopy := *alloc
+		allocationCopy.Ports = append([]*runtime.Port(nil), alloc.Ports...)
+		allocationCopy.Mounts = append([]*runtime.Mount(nil), alloc.Mounts...)
+		result = append(result, &allocationCopy)
 	}
 
 	return result
 }
 
+// PrepareStart validates and begins an allocation start operation.
 func (a *Agent) PrepareStart(ctx context.Context, request *api.AllocationRequest) error {
 	if err := a.AcceptEpoch(request.Epoch); err != nil {
 		return err
@@ -322,6 +343,7 @@ func (a *Agent) PrepareStart(ctx context.Context, request *api.AllocationRequest
 	return nil
 }
 
+// StopGroup stops all tasks in an allocation group.
 func (a *Agent) StopGroup(ctx context.Context, request *api.StopAllocationRequest) error {
 	if err := a.AcceptEpoch(request.Epoch); err != nil {
 		return err
@@ -390,6 +412,7 @@ func (a *Agent) reconcileDesired(ctx context.Context, response *api.HeartbeatRes
 	}
 }
 
+// RunAllocation creates and starts one allocation task.
 func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, generation uint64, jobRevision int, executionHash, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan, networkMode string, envOverrides map[string]string, delivered []api.DeliveredSecret, restartPolicy *spec.RestartPolicySpec) error {
 	spec := taskSpec
 	if spec == nil {
@@ -627,6 +650,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	return nil
 }
 
+// Logs opens the log stream for an allocation.
 func (a *Agent) Logs(ctx context.Context, allocID string, follow bool, tail int) (io.ReadCloser, error) {
 	a.mu.RLock()
 	alloc := a.allocations[allocID]
@@ -637,6 +661,7 @@ func (a *Agent) Logs(ctx context.Context, allocID string, follow bool, tail int)
 	return a.runtime.Logs(ctx, alloc.ContainerID, follow, tail)
 }
 
+// StopAllocation stops and removes an allocation.
 func (a *Agent) StopAllocation(ctx context.Context, allocID string) error {
 	a.mu.RLock()
 	stored, ok := a.allocations[allocID]
@@ -762,6 +787,7 @@ func (a *Agent) OnHealthy(_ context.Context, allocID string) error {
 	return nil
 }
 
+// OnUnhealthy handles an unhealthy allocation.
 func (a *Agent) OnUnhealthy(_ context.Context, allocID string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -772,6 +798,7 @@ func (a *Agent) OnUnhealthy(_ context.Context, allocID string) error {
 	return nil
 }
 
+// OnReconciledStatus records reconciled allocation status.
 func (a *Agent) OnReconciledStatus(allocID, status string) {
 	a.mu.Lock()
 	if alloc := a.allocations[allocID]; alloc != nil {
@@ -787,6 +814,7 @@ func (a *Agent) OnReconciledStatus(allocID, status string) {
 	a.mu.Unlock()
 }
 
+// OnRestartState records allocation restart state.
 func (a *Agent) OnRestartState(allocID string, attempts int, window time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

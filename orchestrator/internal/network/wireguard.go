@@ -18,11 +18,14 @@ import (
 	"sync"
 )
 
+// Peer describes a WireGuard peer configuration.
 type Peer struct {
 	PublicKey  string   `json:"public_key"`
 	Endpoint   string   `json:"endpoint"`
 	AllowedIPs []string `json:"allowed_ips"`
 }
+
+// Config describes a WireGuard network.
 type Config struct {
 	CIDR             string `json:"cidr"`
 	Gateway          string `json:"gateway"`
@@ -45,6 +48,7 @@ func (execRunner) Run(ctx context.Context, name string, args ...string) error {
 	return nil
 }
 
+// WireGuardManager manages allocation networking with WireGuard.
 type WireGuardManager struct {
 	configDir  string
 	stateDir   string
@@ -53,6 +57,7 @@ type WireGuardManager struct {
 	listenPort int
 }
 
+// NewAutomatedWireGuardManager creates a manager with an automatically generated identity.
 func NewAutomatedWireGuardManager(stateDir string, listenPort int) (*WireGuardManager, error) {
 	m := &WireGuardManager{stateDir: stateDir, run: execRunner{}, listenPort: listenPort}
 	if _, err := m.Identity(); err != nil {
@@ -61,6 +66,7 @@ func NewAutomatedWireGuardManager(stateDir string, listenPort int) (*WireGuardMa
 	return m, nil
 }
 
+// Identity returns the manager public key, generating its key pair if needed.
 func (m *WireGuardManager) Identity() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -85,6 +91,7 @@ func (m *WireGuardManager) Identity() (string, error) {
 	return public, nil
 }
 
+// NewWireGuardManager creates a manager that loads named network configurations.
 func NewWireGuardManager(configDir string) *WireGuardManager {
 	return &WireGuardManager{configDir: configDir, stateDir: "/var/lib/trellis/network", run: execRunner{}}
 }
@@ -165,6 +172,7 @@ func allocationAddress(cidr, allocation string) (string, error) {
 	return fmt.Sprintf("%d.%d.%d.%d/%d", byte(b>>24), byte(b>>16), byte(b>>8), byte(b), p.Bits()), nil
 }
 
+// Attach configures networking for an allocation.
 func (m *WireGuardManager) Attach(ctx context.Context, request AttachRequest) (_ *Attachment, retErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -180,7 +188,7 @@ func (m *WireGuardManager) Attach(ctx context.Context, request AttachRequest) (_
 		cfg = &Config{CIDR: request.Plan.CIDR, Gateway: request.Plan.Gateway, WireGuardAddress: request.Plan.WireGuardAddress,
 			PrivateKeyFile: filepath.Join(m.stateDir, "identity.key"), ListenPort: m.listenPort}
 		for _, peer := range request.Plan.Peers {
-			cfg.Peers = append(cfg.Peers, Peer{PublicKey: peer.PublicKey, Endpoint: peer.Endpoint, AllowedIPs: peer.AllowedIPs})
+			cfg.Peers = append(cfg.Peers, Peer(peer))
 		}
 	}
 	if err != nil {
@@ -282,6 +290,7 @@ func (m *WireGuardManager) Attach(ctx context.Context, request AttachRequest) (_
 	return &Attachment{AllocationID: allocation, Namespace: namespace, Network: networkName, NetworkNamespace: ns, HostVeth: hostVeth, Address: address, LeasePath: lease}, nil
 }
 
+// Detach removes networking resources for an allocation.
 func (m *WireGuardManager) Detach(ctx context.Context, a *Attachment) error {
 	if a == nil {
 		return nil

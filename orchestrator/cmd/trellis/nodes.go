@@ -34,8 +34,8 @@ func NewNodesLeadershipTransferCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).TransferLeadership(cmd.Context()); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Raft leadership transfer started.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Raft leadership transfer started.")
+		return err
 	}}
 }
 
@@ -52,8 +52,8 @@ func NewNodesUndrainCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).UndrainNode(cmd.Context(), id); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Node un-drained.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node un-drained.")
+		return err
 	}}
 }
 
@@ -66,8 +66,8 @@ func NewNodesRemoveCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).RemoveRaftMember(cmd.Context(), args[0]); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Node permanently removed.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node permanently removed.")
+		return err
 	}}
 }
 
@@ -84,8 +84,8 @@ func NewNodesDrainCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).DrainNode(cmd.Context(), id); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Node drain started.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node drain started.")
+		return err
 	}}
 }
 
@@ -93,7 +93,7 @@ func NewNodesListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List nodes in a cluster",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			tlsCfg, err := buildCLITLSConfig()
 			if err != nil {
 				return err
@@ -109,13 +109,15 @@ func NewNodesListCmd() *cobra.Command {
 			}
 
 			if len(*nodes) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No nodes")
-				return nil
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "No nodes")
+				return err
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 
-			fmt.Fprintln(w, "ID\tAddress\tStatus\tVersion\tCPU (m)\tMemory (bytes)\tHeartbeat")
+			if _, err := fmt.Fprintln(w, "ID\tAddress\tStatus\tVersion\tCPU (m)\tMemory (bytes)\tHeartbeat"); err != nil {
+				return err
+			}
 
 			for _, node := range *nodes {
 				addr := fmt.Sprintf("%s:%d", node.Host, node.Port)
@@ -125,7 +127,9 @@ func NewNodesListCmd() *cobra.Command {
 					version = "unknown"
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, version, node.CPU, node.Memory, heartbeat)
+				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, version, node.CPU, node.Memory, heartbeat); err != nil {
+					return err
+				}
 			}
 
 			return w.Flush()

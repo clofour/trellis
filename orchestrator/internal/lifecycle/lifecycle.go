@@ -9,20 +9,31 @@ import (
 type Phase string
 
 const (
-	PhasePlaced   Phase = "placed"
+	// PhasePlaced describes an allocation accepted for placement.
+	PhasePlaced Phase = "placed"
+	// PhaseStarting and the following values describe subsequent execution states.
 	PhaseStarting Phase = "starting"
-	PhaseRunning  Phase = "running"
+	// PhaseRunning indicates that the allocation is running.
+	PhaseRunning Phase = "running"
+	// PhaseStopping indicates that the allocation is stopping.
 	PhaseStopping Phase = "stopping"
-	PhaseStopped  Phase = "stopped"
-	PhaseFailed   Phase = "failed"
-	PhaseLost     Phase = "lost"
+	// PhaseStopped indicates that the allocation has stopped.
+	PhaseStopped Phase = "stopped"
+	// PhaseFailed indicates that the allocation failed.
+	PhaseFailed Phase = "failed"
+	// PhaseLost indicates that the allocation was lost.
+	PhaseLost Phase = "lost"
 )
 
+// Health describes the health-check state of an allocation.
 type Health string
 
 const (
-	HealthUnknown   Health = "unknown"
-	HealthHealthy   Health = "healthy"
+	// HealthUnknown indicates that health is not yet known.
+	HealthUnknown Health = "unknown"
+	// HealthHealthy and HealthUnhealthy describe completed health checks.
+	HealthHealthy Health = "healthy"
+	// HealthUnhealthy indicates that a health check failed.
 	HealthUnhealthy Health = "unhealthy"
 )
 
@@ -36,19 +47,23 @@ var transitions = map[Phase]map[Phase]bool{
 	PhaseLost:     {PhaseStarting: true, PhaseStopping: true, PhaseStopped: true},
 }
 
+// Valid reports whether p is a recognized phase.
 func (p Phase) Valid() bool {
 	_, ok := transitions[p]
 	return ok
 }
 
+// Valid reports whether h is a recognized health state.
 func (h Health) Valid() bool {
 	return h == HealthUnknown || h == HealthHealthy || h == HealthUnhealthy
 }
 
+// CanTransition reports whether an allocation can move between two phases.
 func CanTransition(from, to Phase) bool {
 	return from == to || transitions[from][to]
 }
 
+// Transition validates an allocation phase change.
 func Transition(from, to Phase) error {
 	if !from.Valid() || !to.Valid() {
 		return fmt.Errorf("unknown allocation phase transition %q -> %q", from, to)
@@ -94,6 +109,7 @@ func CompatibilityStatus(phase Phase, health Health) string {
 	return string(phase)
 }
 
+// Diagnostic records details about the latest allocation transition.
 type Diagnostic struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	TransitionedAt time.Time  `json:"last_transition_at"`

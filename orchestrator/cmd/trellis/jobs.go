@@ -27,7 +27,7 @@ func NewJobsCmd() *cobra.Command {
 }
 
 func NewJobsListCmd() *cobra.Command {
-	return &cobra.Command{Use: "list", Short: "List jobs in a cluster", RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "list", Short: "List jobs in a cluster", RunE: func(cmd *cobra.Command, _ []string) error {
 		tlsCfg, err := buildCLITLSConfig()
 		if err != nil {
 			return err
@@ -40,14 +40,18 @@ func NewJobsListCmd() *cobra.Command {
 			return writeJSON(cmd.OutOrStdout(), jobs)
 		}
 		if len(*jobs) == 0 {
-			fmt.Fprintln(cmd.OutOrStdout(), "No jobs")
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "No jobs")
+			return err
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "Name\tDesired\tRunning\tHealthy\tRevision")
+		if _, err := fmt.Fprintln(w, "Name\tDesired\tRunning\tHealthy\tRevision"); err != nil {
+			return err
+		}
 		for _, job := range *jobs {
-			fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\n", job.Name, job.Desired, job.Running, job.Healthy, job.Revision)
+			if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\n", job.Name, job.Desired, job.Running, job.Healthy, job.Revision); err != nil {
+				return err
+			}
 		}
 		return w.Flush()
 	}}
@@ -65,7 +69,7 @@ func NewJobsLogsCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		defer logs.Close()
+		defer func() { _ = logs.Close() }()
 		_, err = io.Copy(cmd.OutOrStdout(), logs)
 		return err
 	}}
@@ -87,9 +91,13 @@ func NewJobsStatusCmd() *cobra.Command {
 		if config.Output == "json" {
 			return writeJSON(cmd.OutOrStdout(), status)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Job: %s\nRevision: %d\nDesired: %d\nRunning: %d\nHealthy: %d\n", status.Name, status.Revision, status.Desired, status.Running, status.Healthy)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Job: %s\nRevision: %d\nDesired: %d\nRunning: %d\nHealthy: %d\n", status.Name, status.Revision, status.Desired, status.Running, status.Healthy); err != nil {
+			return err
+		}
 		for _, a := range status.Allocations {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s/%s\t%s\tphase=%s\thealth=%s\tgeneration=%d\n", a.ID, a.Group, a.Task, a.NodeID, a.Phase, a.Health, a.Generation)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s/%s\t%s\tphase=%s\thealth=%s\tgeneration=%d\n", a.ID, a.Group, a.Task, a.NodeID, a.Phase, a.Health, a.Generation); err != nil {
+				return err
+			}
 		}
 		return nil
 	}}
@@ -104,8 +112,8 @@ func NewJobsDestroyCmd() *cobra.Command {
 		if err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).DeleteJob(cmd.Context(), args[0]); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Job destroyed successfully.")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Job destroyed successfully.")
+		return err
 	}}
 }
 
@@ -115,7 +123,7 @@ func NewJobsApplyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a job manifest to a cluster",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("read file %s: %w", path, err)
@@ -143,9 +151,8 @@ func NewJobsApplyCmd() *cobra.Command {
 				return fmt.Errorf("submit job: %w", err)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Job submitted successfully.")
-
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Job submitted successfully.")
+			return err
 		},
 	}
 

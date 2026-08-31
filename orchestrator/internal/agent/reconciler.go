@@ -28,6 +28,7 @@ type AllocationReconciler struct {
 	Subscriber AllocationReconcileSubscriber
 }
 
+// AllocationReconcileSubscriber receives reconciliation state changes.
 type AllocationReconcileSubscriber interface {
 	OnReconciledStatus(allocID, status string)
 }
@@ -41,6 +42,7 @@ type allocationReconcileState struct {
 	restartWindow time.Duration
 }
 
+// NewAllocationReconciler creates an allocation reconciliation controller.
 func NewAllocationReconciler(runtime runtime.ContainerRuntime, subscriber AllocationReconcileSubscriber) *AllocationReconciler {
 	return &AllocationReconciler{
 		runtime:    runtime,
@@ -49,10 +51,12 @@ func NewAllocationReconciler(runtime runtime.ContainerRuntime, subscriber Alloca
 	}
 }
 
+// Track begins reconciliation for an allocation.
 func (r *AllocationReconciler) Track(allocID string, healthManaged bool, policy *spec.RestartPolicySpec) {
 	r.TrackRecovered(allocID, healthManaged, policy, 0, time.Time{})
 }
 
+// TrackRecovered restores reconciliation state for an allocation.
 func (r *AllocationReconciler) TrackRecovered(allocID string, healthManaged bool, policy *spec.RestartPolicySpec, attempts int, window time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -75,6 +79,7 @@ func (r *AllocationReconciler) TrackRecovered(allocID string, healthManaged bool
 	}
 }
 
+// Untrack stops reconciliation for an allocation.
 func (r *AllocationReconciler) Untrack(allocID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

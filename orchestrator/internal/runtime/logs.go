@@ -25,8 +25,8 @@ func newLogReader(ctx context.Context, file *os.File, follow bool, tail int) (io
 	}
 	reader, writer := io.Pipe()
 	go func() {
-		defer file.Close()
-		defer writer.Close()
+		defer func() { _ = file.Close() }()
+		defer func() { _ = writer.Close() }()
 		buf := bufio.NewReader(file)
 		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
