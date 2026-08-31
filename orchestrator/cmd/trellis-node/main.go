@@ -33,6 +33,7 @@ import (
 	"github.com/clofour/trellis/internal/client"
 	trellisdns "github.com/clofour/trellis/internal/dns"
 	"github.com/clofour/trellis/internal/election"
+	"github.com/clofour/trellis/internal/localconfig"
 	"github.com/clofour/trellis/internal/health"
 	"github.com/clofour/trellis/internal/network"
 	containerruntime "github.com/clofour/trellis/internal/runtime"
@@ -155,6 +156,21 @@ func run(parent context.Context, cfg *config) error {
 	tlsMaterials, err := loadOrBootstrapTLS(ctx, log, cfg, local)
 	if err != nil {
 		return fmt.Errorf("TLS bootstrap: %w", err)
+	}
+
+	_, serverPort, err := splitAddress(cfg.ServerListen)
+	if err != nil {
+		return fmt.Errorf("server listen address: %w", err)
+	}
+	runFile := localconfig.DefaultPath
+	if writeErr := localconfig.Write(runFile, &localconfig.Config{
+		ServerAddr:   net.JoinHostPort("localhost", strconv.Itoa(serverPort)),
+		ClusterToken: cfg.ClusterToken,
+		CACert:       string(tlsMaterials.CACert),
+	}); writeErr != nil {
+		log.Warn("could not write local connection file", "path", runFile, "error", writeErr)
+	} else {
+		defer func() { _ = os.Remove(runFile) }()
 	}
 
 	peerTLS, err := tlsutil.PeerTLSConfig(tlsMaterials)
