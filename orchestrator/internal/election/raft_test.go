@@ -22,7 +22,7 @@ func freePort(t *testing.T) int {
 		t.Fatal(err)
 	}
 	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	_ = l.Close()
 	return port
 }
 
@@ -65,7 +65,7 @@ func newTestRaft(t *testing.T) (*raft.Raft, string) {
 	}
 	t.Cleanup(func() {
 		r.Shutdown()
-		logStore.Close()
+		_ = logStore.Close()
 	})
 
 	r.BootstrapCluster(raft.Configuration{
@@ -84,7 +84,7 @@ func TestRaftElector_ElectedEvent(t *testing.T) {
 	defer cancel()
 
 	events := make(chan Event, 1)
-	go elector.Run(ctx, events)
+	go func() { _ = elector.Run(ctx, events) }()
 
 	select {
 	case event := <-events:

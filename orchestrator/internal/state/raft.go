@@ -322,7 +322,7 @@ func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
 }
 
 func (f *fsm) Restore(rc io.ReadCloser) error {
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	var data map[string][]byte
 	if err := json.NewDecoder(rc).Decode(&data); err != nil {
 		return err
@@ -337,11 +337,11 @@ type fsmSnapshot struct {
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	data, err := json.Marshal(s.data)
 	if err != nil {
-		sink.Cancel()
+		_ = sink.Cancel()
 		return err
 	}
 	if _, err := sink.Write(data); err != nil {
-		sink.Cancel()
+		_ = sink.Cancel()
 		return err
 	}
 	return sink.Close()

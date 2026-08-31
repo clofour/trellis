@@ -45,11 +45,11 @@ func freePort(t *testing.T) int {
 		t.Fatal(err)
 	}
 	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	_ = l.Close()
 	return port
 }
 
-func newTestRaftStore(t *testing.T, bootstrap bool) *RaftStore {
+func newTestRaftStore(t *testing.T) *RaftStore {
 	t.Helper()
 	dir := t.TempDir()
 	port := freePort(t)
@@ -59,7 +59,7 @@ func newTestRaftStore(t *testing.T, bootstrap bool) *RaftStore {
 		BindAddr:  bind,
 		Advertise: bind,
 		ServerID:  bind,
-		Bootstrap: bootstrap,
+		Bootstrap: true,
 		TLS:       testTLSConfig(t),
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func waitLeader(t *testing.T, store *RaftStore) {
 }
 
 func TestRaftStore_PutGetDelete(t *testing.T) {
-	store := newTestRaftStore(t, true)
+	store := newTestRaftStore(t)
 	waitLeader(t, store)
 	ctx := context.Background()
 
@@ -110,7 +110,7 @@ func TestRaftStore_PutGetDelete(t *testing.T) {
 }
 
 func TestRaftStore_List(t *testing.T) {
-	store := newTestRaftStore(t, true)
+	store := newTestRaftStore(t)
 	waitLeader(t, store)
 	ctx := context.Background()
 
@@ -128,7 +128,7 @@ func TestRaftStore_List(t *testing.T) {
 }
 
 func TestRaftStore_Replication(t *testing.T) {
-	leader := newTestRaftStore(t, true)
+	leader := newTestRaftStore(t)
 	waitLeader(t, leader)
 
 	followerDir := t.TempDir()
@@ -145,7 +145,7 @@ func TestRaftStore_Replication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { follower.Close() })
+	t.Cleanup(func() { _ = follower.Close() })
 
 	if err := leader.AddVoter(followerBind, follower.LocalAddr()); err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestRaftStore_Replication(t *testing.T) {
 }
 
 func TestRaftStore_Snapshot(t *testing.T) {
-	store := newTestRaftStore(t, true)
+	store := newTestRaftStore(t)
 	waitLeader(t, store)
 	ctx := context.Background()
 
@@ -195,7 +195,7 @@ func TestRaftStore_Snapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { follower.Close() })
+	t.Cleanup(func() { _ = follower.Close() })
 
 	if err := store.AddVoter(followerBind, follower.LocalAddr()); err != nil {
 		t.Fatal(err)
@@ -225,14 +225,14 @@ func TestRaftStore_RejoinExistingState(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLeader(t, store1)
-	store1.Put(context.Background(), "persist", []byte("yes"))
-	store1.Close()
+	_ = store1.Put(context.Background(), "persist", []byte("yes"))
+	_ = store1.Close()
 
 	store2, err := NewRaftStore(RaftConfig{DataDir: dir, BindAddr: bind, Advertise: bind, ServerID: bind, Bootstrap: true, TLS: tlsCfg})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store2.Close()
+	defer func() { _ = store2.Close() }()
 	waitLeader(t, store2)
 
 	if !store2.HadExistingState() {

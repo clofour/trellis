@@ -9,6 +9,7 @@ import (
 type Phase string
 
 const (
+	// PhasePlaced and the following values describe allocation execution states.
 	PhasePlaced   Phase = "placed"
 	PhaseStarting Phase = "starting"
 	PhaseRunning  Phase = "running"
@@ -18,9 +19,11 @@ const (
 	PhaseLost     Phase = "lost"
 )
 
+// Health describes the health-check state of an allocation.
 type Health string
 
 const (
+	// HealthUnknown and the following values describe allocation health states.
 	HealthUnknown   Health = "unknown"
 	HealthHealthy   Health = "healthy"
 	HealthUnhealthy Health = "unhealthy"
@@ -36,6 +39,7 @@ var transitions = map[Phase]map[Phase]bool{
 	PhaseLost:     {PhaseStarting: true, PhaseStopping: true, PhaseStopped: true},
 }
 
+// Valid reports whether p is a recognized phase.
 func (p Phase) Valid() bool {
 	_, ok := transitions[p]
 	return ok

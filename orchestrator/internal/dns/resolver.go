@@ -57,7 +57,7 @@ func (r *Resolver) Run(ctx context.Context, addr string) error {
 	if err != nil {
 		return fmt.Errorf("listen udp: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	go r.refreshLoop(ctx)
 
@@ -70,7 +70,9 @@ func (r *Resolver) Run(ctx context.Context, addr string) error {
 			return nil
 		default:
 		}
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			return fmt.Errorf("set DNS read deadline: %w", err)
+		}
 		n, remote, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
@@ -84,7 +86,9 @@ func (r *Resolver) Run(ctx context.Context, addr string) error {
 		}
 		response := r.handleQuery(buf[:n])
 		if response != nil {
-			conn.WriteToUDP(response, remote)
+			if _, err := conn.WriteToUDP(response, remote); err != nil {
+				r.log.Error("dns write error", "error", err)
+			}
 		}
 	}
 }

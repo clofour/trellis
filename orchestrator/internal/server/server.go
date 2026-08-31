@@ -659,18 +659,6 @@ func jobKey(namespace, name string) string {
 	return namespace + "\x00" + name
 }
 
-func requestedResources(jobSpec *spec.JobSpec) (cpu, memory int) {
-	for _, group := range jobSpec.TaskGroups {
-		for _, task := range group.Tasks {
-			if task.Resources != nil {
-				cpu += task.Resources.CPU * group.Count
-				memory += task.Resources.Memory * group.Count
-			}
-		}
-	}
-	return
-}
-
 func (s *Server) RegisterJob(ctx context.Context, namespace string, jobSpec *spec.JobSpec) error {
 	if err := spec.Validate(jobSpec); err != nil {
 		return fmt.Errorf("validate job: %w", err)
