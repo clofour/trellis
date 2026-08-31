@@ -165,6 +165,12 @@ for cmd in curl tar systemctl; do
     command -v "$cmd" >/dev/null 2>&1 || error "Required command not found: $cmd"
 done
 
+if [ -x "${INSTALL_DIR}/trellis-node" ]; then
+    installed_version="$("${INSTALL_DIR}/trellis-node" --version 2>/dev/null | awk '{print $NF}')" \
+        || installed_version="unknown"
+    error "Trellis is already installed (${installed_version}). To upgrade, run scripts/upgrade.sh instead."
+fi
+
 if ! systemctl is-active --quiet containerd 2>/dev/null; then
     if command -v containerd >/dev/null 2>&1; then
         info "containerd is installed but not running. Starting it..."
