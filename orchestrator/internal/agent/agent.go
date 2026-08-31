@@ -413,9 +413,9 @@ func (a *Agent) reconcileDesired(ctx context.Context, response *api.HeartbeatRes
 }
 
 // RunAllocation creates and starts one allocation task.
-func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, generation uint64, jobRevision int, executionHash, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, wireGuard bool, networkPlan *network.Plan, networkMode string, envOverrides map[string]string, delivered []api.DeliveredSecret, restartPolicy *spec.RestartPolicySpec) error {
-	spec := taskSpec
-	if spec == nil {
+func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, generation uint64, jobRevision int, executionHash, namespace, jobName, groupName, taskName string, taskSpec *spec.TaskSpec, groupRuntime string, networkPlan *network.Plan, envOverrides map[string]string, delivered []api.DeliveredSecret, restartPolicy *spec.RestartPolicySpec) error {
+	ts := taskSpec
+	if ts == nil {
 		return fmt.Errorf("task spec is required")
 	}
 	if allocID == "" {
@@ -430,7 +430,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		}
 		return fmt.Errorf("%w: %s", ErrAllocationExists, allocID)
 	}
-	alloc := &Allocation{ID: allocID, ContainerID: allocID, AllocationID: schedulerID, Generation: generation, JobRevision: jobRevision, ExecutionHash: executionHash, Namespace: namespace, JobName: jobName, GroupName: groupName, TaskName: taskName, Spec: spec, Status: "starting", Health: "unknown"}
+	alloc := &Allocation{ID: allocID, ContainerID: allocID, AllocationID: schedulerID, Generation: generation, JobRevision: jobRevision, ExecutionHash: executionHash, Namespace: namespace, JobName: jobName, GroupName: groupName, TaskName: taskName, Spec: ts, Status: "starting", Health: "unknown"}
 	a.allocations[allocID] = alloc
 	a.mu.Unlock()
 	if err := a.persistAllocation(alloc); err != nil {
@@ -476,7 +476,11 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		_ = a.deleteAllocationRecord(allocID)
 	}()
 
-	for _, p := range spec.Ports {
+	var taskPorts []spec.PortSpec
+	if ts.Networking != nil {
+		taskPorts = ts.Networking.Ports
+	}
+	for _, p := range taskPorts {
 		port, err := a.ports.Claim(p)
 		if err != nil {
 			return fmt.Errorf("claim port %d: %w", p.HostPort, err)
@@ -490,7 +494,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	}
 
 	var mounts []*runtime.Mount
-	for _, v := range spec.Volumes {
+	for _, v := range ts.Volumes {
 		mount, err := a.volumes.Create(namespace, jobName, taskName, v)
 		if err != nil {
 			return fmt.Errorf("create volume %s: %w", v.Name, err)
@@ -503,15 +507,20 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		return fmt.Errorf("persist volume metadata: %w", err)
 	}
 
-	err := a.runtime.Pull(ctx, spec.Image)
+	err := a.runtime.Pull(ctx, ts.Image)
 	if err != nil {
-		return fmt.Errorf("pull image %s: %w", spec.Image, err)
+		return fmt.Errorf("pull image %s: %w", ts.Image, err)
 	}
 
 	containerID := allocID
 	alloc.ContainerID = containerID
-	hostMode := networkMode == "host"
-	if wireGuard && !hostMode {
+	var taskNetMode spec.TaskNetworkMode
+	if ts.Networking != nil {
+		taskNetMode = ts.Networking.Mode
+	}
+	hostMode := taskNetMode == spec.TaskNetworkHost
+	wireGuard := taskNetMode == spec.TaskNetworkWireGuard
+	if wireGuard {
 		if networkPlan == nil {
 			return fmt.Errorf("automatic WireGuard network plan is required")
 		}
@@ -524,8 +533,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 			return fmt.Errorf("persist network attachment: %w", err)
 		}
 	}
-	env := make(map[string]string, len(spec.Env)+len(envOverrides))
-	for k, v := range spec.Env {
+	env := make(map[string]string, len(ts.Env)+len(envOverrides))
+	for k, v := range ts.Env {
 		env[k] = v
 	}
 	for k, v := range envOverrides {
@@ -552,18 +561,18 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	}
 	_, err = a.runtime.Create(ctx, runtime.CreateOptions{
 		ID:     containerID,
-		Image:  spec.Image,
+		Image:  ts.Image,
 		Env:    env,
 		Mounts: mounts,
 		CPU: func() int {
-			if spec.Resources != nil {
-				return spec.Resources.CPU
+			if ts.Resources != nil {
+				return ts.Resources.CPU
 			}
 			return 0
 		}(),
 		Memory: func() int64 {
-			if spec.Resources != nil {
-				return int64(spec.Resources.Memory)
+			if ts.Resources != nil {
+				return int64(ts.Resources.Memory)
 			}
 			return 0
 		}(),
@@ -597,8 +606,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	}
 	containerStarted = true
 
-	if spec.HealthCheck != nil {
-		check := *spec.HealthCheck
+	if ts.HealthCheck != nil {
+		check := *ts.HealthCheck
 		for _, p := range ports {
 			if p.ContainerPort == check.Port {
 				check.Port = p.HostPort
@@ -609,7 +618,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		healthRegistered = true
 	}
 
-	a.reconciler.Track(allocID, spec.HealthCheck != nil, restartPolicy)
+	a.reconciler.Track(allocID, ts.HealthCheck != nil, restartPolicy)
 	tracked = true
 
 	ready := &Allocation{
@@ -623,8 +632,8 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 
 		JobName:   jobName,
 		GroupName: groupName,
-		TaskName:  spec.Name,
-		Spec:      spec,
+		TaskName:  ts.Name,
+		Spec:      ts,
 
 		ContainerID: containerID,
 		Ports:       ports,
@@ -634,7 +643,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 		Status:      "running",
 		Health:      "unknown",
 	}
-	if spec.HealthCheck == nil {
+	if ts.HealthCheck == nil {
 		ready.Health = "healthy"
 	}
 	if err := a.persistAllocation(ready); err != nil {
@@ -643,7 +652,7 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	a.mu.Lock()
 	a.allocations[allocID] = ready
 	a.mu.Unlock()
-	if spec.HealthCheck == nil {
+	if ts.HealthCheck == nil {
 		if err := a.reconciler.ObserveHealth(allocID, true); err != nil {
 			return fmt.Errorf("mark allocation healthy: %w", err)
 		}

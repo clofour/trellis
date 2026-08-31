@@ -6,10 +6,9 @@ func TestValidateNamespaceNetworkAndGroupRuntime(t *testing.T) {
 	job := &JobSpec{
 		Namespace: "acme",
 		Name:      "web",
-		Network:   &NetworkSpec{WireGuard: true},
 		TaskGroups: []TaskGroupSpec{{
 			Name: "web", Count: 2, Runtime: "runsc",
-			Tasks: []TaskSpec{{Name: "app", Image: "image", Resources: &ResourcesSpec{CPU: 500, Memory: 512}}},
+			Tasks: []TaskSpec{{Name: "app", Image: "image", Resources: &ResourcesSpec{CPU: 500, Memory: 512}, Networking: &TaskNetworkingSpec{Mode: TaskNetworkWireGuard}}},
 		}},
 	}
 	if err := Validate(job); err != nil {
