@@ -6,6 +6,27 @@ Every project that ships software ends up rebuilding the same infrastructure: wo
 
 Every machine runs the same `trellis-node` daemon. Raft consensus elects one node to serve the control-plane API and reconcile jobs, while every node continues to run allocations and participate in the next election.
 
+## Quick start
+
+The setup script downloads the latest release binaries, configures a systemd
+service, and generates a cluster token. It supports Linux x64 and requires
+root access and a running containerd instance.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash
+```
+
+Or clone the repository and run the script directly:
+
+```sh
+git clone https://github.com/clofour/trellis-experimental.git
+sudo ./trellis-experimental/scripts/setup.sh
+```
+
+The script interactively asks whether to enable WireGuard networking, whether to install the web dashboard, and whether this node should join an existing cluster.
+
+See the [getting-started guide](docs/getting-started.md) for a walkthrough of deploying your first workloads.
+
 ## Design principles
 
 **Modular and extensible, but focused.** Trellis exposes clean primitives you can build on. The core repository stays lean — only the essentials live here. If you need something specific to your environment, you can extend Trellis yourself rather than waiting on a plugin ecosystem. No Kubernetes complexity, and no surface area you did not ask for.
@@ -50,24 +71,3 @@ Every machine runs the same `trellis-node` daemon. Raft consensus elects one nod
 | --- | --- |
 | [Vagrant demo](docs/development/vagrant.md) | Try a multi-node cluster locally with Vagrant |
 | [Contributing](docs/development/contributing.md) | Build from source and run development checks |
-
-## Quick start
-
-The setup script downloads the latest release binaries, configures a systemd
-service, and generates a cluster token. It supports Linux x64 and requires
-root access and a running containerd instance.
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash
-```
-
-Or clone the repository and run the script directly:
-
-```sh
-git clone https://github.com/clofour/trellis-experimental.git
-sudo ./trellis-experimental/scripts/setup.sh
-```
-
-The script interactively asks whether to enable WireGuard networking, whether to install the web dashboard, and whether this node should join an existing cluster.
-
-See the [getting-started guide](docs/getting-started.md) for a walkthrough of deploying your first workloads.
