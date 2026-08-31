@@ -202,33 +202,44 @@ func (c *ContainerdRuntime) Stop(ctx context.Context, containerID string) error 
 		if errdefs.IsNotFound(err) {
 			return nil
 		}
-
 		return fmt.Errorf("getting task for %s: %w", containerID, err)
 	}
 
-	exitChannel, err := task.Wait(ctx)
+	rawStatus, err := task.Status(ctx)
 	if err != nil {
-		return fmt.Errorf("waiting on task for %s: %w", containerID, err)
+		return fmt.Errorf("getting task status for %s: %w", containerID, err)
 	}
 
-	err = task.Kill(ctx, syscall.SIGTERM)
-	if err != nil && !errdefs.IsNotFound(err) {
-		return fmt.Errorf("sending SIGTERM to %s: %w", containerID, err)
-	}
+	// Only signal and wait if the process is still running. A task whose
+	// process has already exited (Stopped) must be deleted without signaling —
+	// sending SIGTERM to a dead process returns a FailedPrecondition error
+	// from containerd that is not errdefs.IsNotFound, which would cause Stop
+	// to fail and leave the exited task un-deleted, blocking future restarts.
+	if rawStatus.Status != containerd.Stopped {
+		exitChannel, err := task.Wait(ctx)
+		if err != nil {
+			return fmt.Errorf("waiting on task for %s: %w", containerID, err)
+		}
 
-	select {
-	case <-exitChannel:
-
-	case <-time.After(gracePeriod):
-		err := task.Kill(ctx, syscall.SIGKILL)
+		err = task.Kill(ctx, syscall.SIGTERM)
 		if err != nil && !errdefs.IsNotFound(err) {
-			return fmt.Errorf("sending SIGKILL to %s: %w", containerID, err)
+			return fmt.Errorf("sending SIGTERM to %s: %w", containerID, err)
 		}
 
 		select {
 		case <-exitChannel:
-		case <-time.After(5 * time.Second):
-			return fmt.Errorf("container %s did not exit after SIGKILL", containerID)
+
+		case <-time.After(gracePeriod):
+			err := task.Kill(ctx, syscall.SIGKILL)
+			if err != nil && !errdefs.IsNotFound(err) {
+				return fmt.Errorf("sending SIGKILL to %s: %w", containerID, err)
+			}
+
+			select {
+			case <-exitChannel:
+			case <-time.After(5 * time.Second):
+				return fmt.Errorf("container %s did not exit after SIGKILL", containerID)
+			}
 		}
 	}
 

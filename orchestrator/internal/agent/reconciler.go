@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ const (
 // decisions. Runtime inspection and health checks provide observations; this
 // reconciler decides how those observations affect allocation state.
 type AllocationReconciler struct {
+	log     *slog.Logger
 	runtime runtime.ContainerRuntime
 
 	mu     sync.Mutex
@@ -45,6 +47,7 @@ type allocationReconcileState struct {
 // NewAllocationReconciler creates an allocation reconciliation controller.
 func NewAllocationReconciler(runtime runtime.ContainerRuntime, subscriber AllocationReconcileSubscriber) *AllocationReconciler {
 	return &AllocationReconciler{
+		log:        slog.Default(),
 		runtime:    runtime,
 		states:     make(map[string]*allocationReconcileState),
 		Subscriber: subscriber,
@@ -123,7 +126,9 @@ func (r *AllocationReconciler) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			for _, allocID := range r.trackedAllocations() {
-				_ = r.Reconcile(ctx, allocID)
+				if err := r.Reconcile(ctx, allocID); err != nil {
+					r.log.Error("reconcile allocation", "alloc", allocID, "error", err)
+				}
 			}
 		}
 	}
