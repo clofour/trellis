@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DurationValue, JobSpec } from "@/lib/types";
+import { formatJobManifest, parseJobManifest } from "@/lib/manifest";
 import { submitJob } from "@/lib/api";
 import { useConfig } from "./config-provider";
 
@@ -30,10 +31,6 @@ function defaultSpec(namespace: string): JobSpec {
       },
     ],
   };
-}
-
-function pretty(spec: JobSpec): string {
-  return JSON.stringify(spec, null, 2);
 }
 
 function durationNanoseconds(value: DurationValue, field: string): number {
@@ -129,7 +126,7 @@ function JobFormPanel({
     spec.namespace = namespace;
     return spec;
   }, [initialSpec, namespace]);
-  const [source, setSource] = useState(() => pretty(initial));
+  const [source, setSource] = useState(() => formatJobManifest(initial));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEditing = !!initialSpec;
@@ -147,18 +144,14 @@ function JobFormPanel({
   }, [handleClose]);
 
   const parse = (): JobSpec => {
-    let parsed: unknown;
+    let spec: JobSpec;
     try {
-      parsed = JSON.parse(source);
+      spec = parseJobManifest(source);
     } catch (err) {
       throw new Error(
-        err instanceof Error ? `Invalid JSON: ${err.message}` : "Invalid JSON",
+        err instanceof Error ? `Invalid YAML: ${err.message}` : "Invalid YAML",
       );
     }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("Job spec must be a JSON object.");
-    }
-    const spec = parsed as JobSpec;
     if (!spec.name || typeof spec.name !== "string") {
       throw new Error("Job name is required.");
     }
@@ -180,10 +173,10 @@ function JobFormPanel({
   const formatSource = () => {
     try {
       const spec = parse();
-      setSource(pretty(spec));
+      setSource(formatJobManifest(spec));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid job spec");
+      setError(err instanceof Error ? err.message : "Invalid job manifest");
     }
   };
 
@@ -218,7 +211,7 @@ function JobFormPanel({
               {isEditing ? `Edit — ${initialSpec!.name}` : "New Job"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Full Trellis job spec. This JSON representation is lossless and supports every manifest field.
+              Edit the YAML job manifest used by the CLI, documentation, and examples.
             </p>
           </div>
           <button
@@ -241,24 +234,24 @@ function JobFormPanel({
                 Namespace is fixed to <span className="font-mono text-foreground">{namespace || "(unscoped)"}</span> by the dashboard.
               </p>
               <p className="mt-2">
-                Supported fields include WireGuard networking, task-group runtime and host networking, labels, restart policy, placement constraints, rolling/recreate updates, resources, ports, volumes, secrets, API access, and configurable health checks. Duration fields accept API nanoseconds or strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>.
+                YAML is Trellis&apos;s canonical human-authored job format; the dashboard converts it to the JSON API representation when applying it. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>.
               </p>
             </div>
 
             <div className="mb-2 flex items-center justify-between">
-              <label htmlFor="job-spec" className="text-sm font-medium text-foreground">
-                Job spec
+              <label htmlFor="job-manifest" className="text-sm font-medium text-foreground">
+                Job manifest (YAML)
               </label>
               <button
                 type="button"
                 onClick={formatSource}
                 className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
               >
-                Format JSON
+                Format YAML
               </button>
             </div>
             <textarea
-              id="job-spec"
+              id="job-manifest"
               value={source}
               onChange={(event) => setSource(event.target.value)}
               spellCheck={false}
@@ -286,7 +279,7 @@ function JobFormPanel({
                 disabled={submitting}
                 className="min-w-[100px] rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                {submitting ? "Saving…" : isEditing ? "Update Job" : "Create Job"}
+                {submitting ? "Applying…" : "Apply Manifest"}
               </button>
             </div>
           </div>
