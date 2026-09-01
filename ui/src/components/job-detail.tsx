@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useJob } from "@/hooks/use-api";
 import { useConfig } from "@/components/config-provider";
+import { formatJobManifest } from "@/lib/manifest";
 import { StatCard } from "./stat-card";
 import { AllocationsTable } from "./allocations-table";
 import { Skeleton } from "./skeleton";
@@ -31,7 +32,7 @@ export function JobDetail({ name }: { name: string }) {
       setDeleteOpen(false);
       router.push("/jobs");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Failed to stop job");
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete job");
       setDeleting(false);
     }
   };
@@ -41,7 +42,7 @@ export function JobDetail({ name }: { name: string }) {
     return (
       <EmptyState
         title="Job not found"
-        description={`Could not load job "${name}". It may have been deleted or the orchestrator is unreachable.`}
+        description={`Could not load job "${name}". It may have been deleted or the cluster API is unreachable.`}
       />
     );
   }
@@ -85,7 +86,7 @@ export function JobDetail({ name }: { name: string }) {
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 1.5l2.5 2.5-7 7-3 .5.5-3 7-7z" />
               </svg>
-              Edit
+              Edit Manifest
             </button>
           )}
           {allowWrites && (
@@ -97,7 +98,7 @@ export function JobDetail({ name }: { name: string }) {
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 3h9M5 3V2h3v1M4 3v7a1 1 0 001 1h3a1 1 0 001-1V3" />
               </svg>
-              Stop
+              Delete
             </button>
           )}
         </div>
@@ -117,11 +118,11 @@ export function JobDetail({ name }: { name: string }) {
       {job.spec && (
         <details className="rounded-lg border border-border bg-card" open={false}>
           <summary className="cursor-pointer select-none px-5 py-4 text-sm font-medium text-foreground">
-            Desired configuration
+            Job manifest
           </summary>
           <div className="border-t border-border p-4">
             <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-md bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100">
-              {JSON.stringify(job.spec, null, 2)}
+              {formatJobManifest(job.spec)}
             </pre>
           </div>
         </details>
@@ -143,9 +144,9 @@ export function JobDetail({ name }: { name: string }) {
         <>
           <ConfirmDialog
             open={deleteOpen}
-            title={`Stop "${job.name}"?`}
-            description="This will stop all allocations and remove the job from the scheduler. This action cannot be undone."
-            confirmLabel={deleting ? "Stopping…" : "Stop Job"}
+            title={`Delete "${job.name}"?`}
+            description="This removes the job's desired state and stops its allocations. This action cannot be undone."
+            confirmLabel={deleting ? "Deleting…" : "Delete Job"}
             onConfirm={handleDelete}
             onCancel={() => {
               if (!deleting) {

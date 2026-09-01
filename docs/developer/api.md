@@ -2,6 +2,8 @@
 
 The control-plane API defaults to port 8128. Send `Authorization: Bearer TOKEN`; namespace-scoped calls also use `X-Trellis-Namespace: NAME`. JSON request bodies use `Content-Type: application/json`. The cluster token is administrative; generated namespace tokens are limited to their namespace. Use TLS outside a local sandbox.
 
+The API uses the same resource vocabulary as the [Trellis user model](../public/user-model.md), but JSON is the transport representation. Humans author jobs as YAML manifests; job submission carries the equivalent JSON `JobSpec` inside the API request.
+
 ## Public/operator endpoints
 
 | Method | Path | Purpose |
@@ -10,7 +12,7 @@ The control-plane API defaults to port 8128. Send `Authorization: Bearer TOKEN`;
 | `GET` | `/v1/nodes` | List node capacity/status. |
 | `POST` / `DELETE` | `/v1/nodes/{id}/drain` | Drain or undrain. |
 | `GET`, `POST` | `/v1/jobs` | List jobs or submit `{"spec": JobSpec}`. |
-| `GET`, `DELETE` | `/v1/jobs/{name}` | Status/spec or destroy. |
+| `GET`, `DELETE` | `/v1/jobs/{name}` | Read job state/API representation or delete the job. |
 | `GET` | `/v1/allocations?label=key:value` | List/filter allocations. |
 | `GET` | `/v1/allocations/{id}/events` | Lifecycle event array. |
 | `GET` | `/v1/allocations/{id}/logs?tail=100&follow=true` | Plain-text logs. |

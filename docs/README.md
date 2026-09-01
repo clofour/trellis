@@ -2,14 +2,18 @@
 
 Trellis is an experimental, containerd-backed workload orchestrator. These pages describe the implementation in this repository; they do not promise production readiness.
 
+The public documentation follows one user model across the CLI, dashboard, manifests, and examples. Start with the user model if terminology is unfamiliar; developer documentation intentionally uses lower-level implementation terms where needed.
+
 ## Public documentation
 
-1. [Getting Started](public/getting-started.md)
-2. [Core concepts](public/core-concepts.md)
-3. [Operations](public/operations.md)
-4. [Dashboard](public/dashboard.md)
-5. [Cookbook](public/cookbook.md)
-6. [Job manifest reference](public/job-specification.md)
+1. [User model](public/user-model.md)
+2. [Getting started](public/getting-started.md)
+3. [Core concepts](public/core-concepts.md)
+4. [Job manifest reference](public/job-specification.md)
+5. [Operations](public/operations.md)
+6. [Cookbook](public/cookbook.md)
+7. [Dashboard](public/dashboard.md)
+8. [Examples](../examples/README.md)
 
 ## Developer documentation
 

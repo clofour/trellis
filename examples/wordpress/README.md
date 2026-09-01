@@ -44,10 +44,10 @@ Browse to `http://NODE_ADDRESS` after the allocation becomes healthy. MariaDB's 
 
 ## Operate and tear down
 
-Back up both host paths using database-aware procedures; copying a live MariaDB directory is not automatically a consistent backup. Destroying the job stops the containers but does not make host-volume data portable:
+Back up both host paths using database-aware procedures; copying a live MariaDB directory is not automatically a consistent backup. Deleting the job stops the containers but does not make host-volume data portable:
 
 ```sh
-trellis --namespace default jobs destroy wordpress
+trellis --namespace default jobs delete wordpress
 ```
 
 Before production, separate MariaDB into a managed or replicated database service, use isolated networking and TLS, place the web tier behind the reverse-proxy pattern, pin images by digest, and test password rotation and restores. Scaling only the stateless WordPress tier requires separate task groups/jobs because a Trellis task group scales every contained task together.

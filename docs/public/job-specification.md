@@ -1,6 +1,6 @@
 # Job manifest reference
 
-A manifest is YAML with one job.
+A **job manifest** is the canonical human-authored representation of one Trellis job. Manifests are YAML and use the vocabulary in the [Trellis user model](user-model.md). The HTTP API carries the same schema as JSON, but JSON is the API representation rather than a second authoring format.
 
 ```yaml
 name: web
@@ -21,6 +21,8 @@ task_groups:
       - name: app
         image: docker.io/library/nginx:1.27
 ```
+
+Apply a manifest with `trellis jobs apply --file trellis.yaml` or paste the same YAML into the dashboard job editor.
 
 ## Job fields
 
@@ -52,4 +54,4 @@ task_groups:
 - `secrets` maps a stored name to `target: env` plus `env`, or `target: file` plus a clean path under `/run/trellis-secrets/`. File mode may be `0400`/`0600` (YAML numeric values are accepted); zero selects the default.
 - `health_check` supports `http`, `tcp`, or `script`. HTTP/TCP require `port`; script requires `command`. Optional `interval`, `timeout`, and `threshold` override defaults.
 
-Identifiers accept letters, digits, `_`, `.`, and `-`, must begin alphanumerically, and are limited to 63 characters. See the validated manifests under [`examples/`](../../examples/).
+Identifiers accept letters, digits, `_`, `.`, and `-`, must begin alphanumerically, and are limited to 63 characters. See the validated manifests in the [`examples/` index](../../examples/README.md).

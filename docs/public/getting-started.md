@@ -1,6 +1,8 @@
 # Getting Started
 
-This walkthrough creates a single-node development cluster. Trellis needs Linux, root privileges, containerd, and the `ctr` client. Go 1.26.4 is required to build the orchestrator; the dashboard additionally needs Node.js and npm.
+This walkthrough creates a single-node development cluster. If Trellis terminology is new, read the [user model](user-model.md) first: you apply YAML job manifests as desired state, then inspect the allocations Trellis creates at runtime.
+
+Trellis needs Linux, root privileges, containerd, and the `ctr` client. Go 1.26.4 is required to build the orchestrator; the dashboard additionally needs Node.js and npm.
 
 ## Build
 
@@ -57,7 +59,7 @@ An apply is declarative: it creates the job or advances its revision. Inspect an
 ./bin/trellis jobs logs --follow ALLOCATION_ID
 ```
 
-Remove the workload with `./bin/trellis jobs destroy sidecar-demo`.
+Delete the job and its desired state with `./bin/trellis jobs delete sidecar-demo`. Trellis stops allocations that are no longer desired. The older `jobs destroy` spelling remains as a compatibility alias.
 
 ## Add nodes
 
@@ -65,4 +67,4 @@ Start the first node normally, then start later nodes with `--join HOST:8128`. G
 
 ## Next steps
 
-Read [Core concepts](core-concepts.md), the complete [manifest reference](job-specification.md), and the [Cookbook](cookbook.md).
+Read [Core concepts](core-concepts.md), the complete [job manifest reference](job-specification.md), and the [Cookbook](cookbook.md).
