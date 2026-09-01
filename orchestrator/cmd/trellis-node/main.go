@@ -481,7 +481,7 @@ func loadOrBootstrapTLS(ctx context.Context, log *slog.Logger, cfg *config, loca
 		}
 		caCert := []byte(resp.CACert)
 		caKey := []byte(resp.CAKey)
-		nodeCert, nodeKey, err := tlsutil.GenerateNodeCert(caCert, caKey)
+		nodeCert, nodeKey, err := tlsutil.GenerateNodeCert(caCert, caKey, cfg.ServerAdvertise, cfg.AgentAdvertise)
 		if err != nil {
 			return nil, fmt.Errorf("generate node cert: %w", err)
 		}
@@ -496,7 +496,7 @@ func loadOrBootstrapTLS(ctx context.Context, log *slog.Logger, cfg *config, loca
 	if err != nil {
 		return nil, fmt.Errorf("generate CA: %w", err)
 	}
-	nodeCert, nodeKey, err := tlsutil.GenerateNodeCert(caCert, caKey)
+	nodeCert, nodeKey, err := tlsutil.GenerateNodeCert(caCert, caKey, cfg.ServerAdvertise, cfg.AgentAdvertise)
 	if err != nil {
 		return nil, fmt.Errorf("generate node cert: %w", err)
 	}
