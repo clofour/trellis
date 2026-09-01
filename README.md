@@ -25,15 +25,33 @@ sudo ./trellis-experimental/scripts/setup.sh
 
 The script interactively asks whether to enable WireGuard networking, whether to install the web dashboard, and whether this node should join an existing cluster.
 
-See the [getting-started guide](docs/getting-started.md) for a walkthrough of deploying your first workloads.
+See the [getting-started guide](docs/public/getting-started.md) for a walkthrough of deploying your first workload.
+
+## User model
+
+All first-party interfaces use the same hierarchy and terminology:
+
+```text
+cluster
+├── nodes
+└── namespaces
+    └── jobs
+        └── task groups
+            ├── tasks
+            └── allocations (runtime instances)
+```
+
+Humans author **YAML job manifests**. Applying a manifest creates or advances a job revision; Trellis then creates runtime **allocations** to satisfy the desired task-group replicas. Allocation **lifecycle** and **health** are separate concepts.
+
+See the [Trellis user model](docs/public/user-model.md) for the canonical vocabulary shared by the CLI, dashboard, docs, examples, and API.
 
 ## Design principles
 
 **Modular and extensible, but focused.** Trellis exposes clean primitives you can build on. The core repository stays lean — only the essentials live here. If you need something specific to your environment, you can extend Trellis yourself rather than waiting on a plugin ecosystem. No Kubernetes complexity, and no surface area you did not ask for.
 
-**Non-opinionated and flexible.** Trellis provides the necessary building blocks without prescribing how you use them. Reverse proxies, for instance, are ordinary jobs rather than a special first-class service or ingress resource. Trellis does not enforce any organizational scheme; namespaces, teams, and projects are yours to arrange however makes sense. Operators can run Trellis as-is, or build their own frontends and abstractions on top for their specific use case.
+**Non-opinionated and flexible.** Trellis provides the necessary building blocks without prescribing application architecture. Reverse proxies, for instance, are ordinary jobs rather than a special first-class service or ingress resource. Namespaces provide the tenant, authorization, discovery, and workload-isolation boundary; Trellis does not add separate team or project abstractions on top. Operators can run Trellis as-is, or build their own frontends and abstractions on top for their specific use case.
 
-**Declarative, with open-ended delivery.** Jobs are defined as YAML manifests and submitted through the API or CLI. You can apply them directly from your terminal, drive them from a CI/CD pipeline, use the first-party dashboard, build a custom UI on top of the API, or integrate with any tooling that can run a command or make an HTTP request. Trellis accepts manifests; the workflow that generates and submits them is entirely yours.
+**Declarative, with open-ended delivery.** Jobs are defined by YAML manifests. You can apply them directly from your terminal, drive them from a CI/CD pipeline, use the first-party dashboard, build a custom UI on top of the JSON HTTP API, or integrate with any tooling that can run a command or make an HTTP request. Trellis accepts desired state; the workflow that generates and submits it is entirely yours.
 
 **Easy to use.** The tension between "flexible building blocks" and "easy to use" is addressed through thorough documentation and first-party examples. Trellis favors clear documentation over opinionated defaults that hide what is actually happening.
 
@@ -56,18 +74,20 @@ See the [getting-started guide](docs/getting-started.md) for a walkthrough of de
 
 | Guide | Use it to |
 | --- | --- |
-| [Getting started](docs/getting-started.md) | Install Trellis and deploy your first workloads |
-| [Core concepts](docs/concepts.md) | Understand nodes, jobs, allocations, namespaces, and leadership |
-| [Job manifest reference](docs/job-manifest.md) | Configure task groups, resources, ports, volumes, health checks, and update strategies |
-| [Operations guide](docs/operations.md) | Deploy persistently, operate nodes, and enable WireGuard |
-| [Allocation lifecycle](docs/allocation-lifecycle.md) | Understand durable execution, retries, fencing, recovery, and loss semantics |
-| [Volume semantics](docs/volumes.md) | Configure named host-volume availability and understand the storage responsibility boundary |
-| [Secrets design](docs/secrets.md) | Review the write-only secret model, encryption, delivery, and rotation semantics |
-| [Dashboard guide](ui/README.md) | Configure, develop, and deploy the web UI |
+| [User model](docs/public/user-model.md) | Learn the vocabulary shared by every Trellis interface |
+| [Getting started](docs/public/getting-started.md) | Install Trellis and deploy your first workloads |
+| [Core concepts](docs/public/core-concepts.md) | Understand how the user model maps to scheduling, networking, and persistence |
+| [Job manifest reference](docs/public/job-specification.md) | Configure task groups, resources, ports, volumes, health checks, and update strategies |
+| [Operations guide](docs/public/operations.md) | Operate jobs, nodes, backups, secrets, networking, and failure recovery |
+| [Cookbook](docs/public/cookbook.md) | Apply Trellis primitives to common deployment patterns |
+| [Dashboard guide](docs/public/dashboard.md) | Configure and operate the first-party dashboard |
 
 ### Developer documentation
 
 | Guide | Use it to |
 | --- | --- |
-| [Vagrant demo](docs/development/vagrant.md) | Try a multi-node cluster locally with Vagrant |
-| [Contributing](docs/development/contributing.md) | Build from source and run development checks |
+| [Architecture](docs/developer/architecture.md) | Understand components and major architectural boundaries |
+| [Control plane](docs/developer/control-plane.md) | Understand Raft, reconciliation, and lifecycle internals |
+| [Node internals](docs/developer/node-internals.md) | Understand runtime, networking, storage, and secrets internals |
+| [HTTP API](docs/developer/api.md) | Integrate directly with the JSON API |
+| [Development](docs/developer/development.md) | Build from source and run development checks |
