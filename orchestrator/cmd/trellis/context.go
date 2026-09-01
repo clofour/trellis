@@ -36,11 +36,15 @@ func newContextListCmd() *cobra.Command {
 				return err
 			}
 			file, err := readUserConfig(path)
-			if os.IsNotExist(err) || len(file.Contexts) == 0 {
+			if os.IsNotExist(err) {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "No saved contexts")
 				return err
 			}
 			if err != nil {
+				return err
+			}
+			if len(file.Contexts) == 0 {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "No saved contexts")
 				return err
 			}
 			names := make([]string, 0, len(file.Contexts))
