@@ -10,7 +10,7 @@ go test ./...
 go vet ./...
 golangci-lint run
 
-go build ./cmd/trellis ./cmd/trellis-node ./cmd/trellis-proxy-sync
+go build ./cmd/trellis ./cmd/trellisctl ./cmd/trellis-proxy-sync
 
 cd ../ui
 npm ci
@@ -32,7 +32,7 @@ Containerd end-to-end tests need a Linux host, containerd, permissions on its so
 
 ## Entry points
 
-- `cmd/trellis-node`: production node composition and flags.
-- `cmd/trellis`: CLI, precedence-aware config, TLS setup.
+- `cmd/trellis`: production node composition and flags.
+- `cmd/trellisctl`: CLI, precedence-aware config, TLS setup.
 - `cmd/trellis-proxy-sync`: polling service-catalog consumer for external proxies.
 - `ui/src/app/api`: dashboard's authenticated server-side forwarding layer.

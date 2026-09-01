@@ -1,117 +1,108 @@
 package main
 
 import (
+	"context"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
+	"github.com/clofour/trellis/internal/election"
 )
 
-func TestLoadConfigPreservesTLSFlags(t *testing.T) {
-	previousConfig := config
-	t.Cleanup(func() { config = previousConfig })
+type fixedElector struct{ leader *election.Leader }
 
-	t.Setenv("TRELLIS_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
-	config = CLIConfig{}
-	root := testRootCommand()
-	flags := root.PersistentFlags()
-	if err := flags.Parse([]string{
-		"--ca-cert", "cluster-ca.pem",
-		"--cert", "client.pem",
-		"--key", "client-key.pem",
-	}); err != nil {
-		t.Fatalf("parse flags: %v", err)
-	}
+func (e fixedElector) Run(context.Context, chan<- election.Event) error  { return nil }
+func (e fixedElector) Current(context.Context) (*election.Leader, error) { return e.leader, nil }
 
-	if err := loadConfig(root); err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if config.CACert != "cluster-ca.pem" {
-		t.Fatalf("CA certificate flag was not preserved: got %q", config.CACert)
-	}
-	if config.Cert != "client.pem" {
-		t.Fatalf("client certificate flag was not preserved: got %q", config.Cert)
-	}
-	if config.Key != "client-key.pem" {
-		t.Fatalf("client key flag was not preserved: got %q", config.Key)
-	}
-}
-
-func TestLoadConfigUsesNamedContextThenExplicitFlags(t *testing.T) {
-	previousConfig := config
-	t.Cleanup(func() { config = previousConfig })
-
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	content := []byte(`current_context: production
-contexts:
-  production:
-    server_addr: prod.example:8128
-    cluster_token: prod-token
-    namespace: payments
-    ca_cert: prod-ca
-`)
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("TRELLIS_CONFIG", path)
-	config = CLIConfig{}
-	root := testRootCommand()
-	if err := root.PersistentFlags().Parse([]string{"--server-addr", "override.example:8128"}); err != nil {
-		t.Fatalf("parse flags: %v", err)
-	}
-
-	if err := loadConfig(root); err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if config.Context != "production" {
-		t.Fatalf("context = %q, want production", config.Context)
-	}
-	if config.ServerAddr != "override.example:8128" {
-		t.Fatalf("server = %q", config.ServerAddr)
-	}
-	if config.ClusterToken != "prod-token" || config.Namespace != "payments" {
-		t.Fatalf("context values not loaded: %#v", config)
-	}
-	if config.CACertPEM != "prod-ca" {
-		t.Fatalf("CA = %q", config.CACertPEM)
-	}
-}
-
-func TestWriteUserConfigProtectsTokenFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "config.yaml")
-	file := fileConfig{CurrentContext: "prod", Contexts: map[string]contextFileConfig{
-		"prod": {ServerAddr: "prod:8128", ClusterToken: "secret", Namespace: "default"},
-	}}
-	if err := writeUserConfig(path, file); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(path)
+func TestAcquireNodeIDIsStable(t *testing.T) {
+	dir := t.TempDir()
+	first, err := acquireNodeID(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("config permissions = %o, want 600", got)
-	}
-	loaded, err := readUserConfig(path)
+	second, err := acquireNodeID(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Contexts["prod"].ClusterToken != "secret" {
-		t.Fatal("saved context did not round-trip")
+	if first != second {
+		t.Fatalf("node ID changed from %s to %s", first, second)
+	}
+	info, err := os.Stat(dir + "/node-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("node ID mode is %o", info.Mode().Perm())
 	}
 }
 
-func testRootCommand() *cobra.Command {
-	root := &cobra.Command{Use: "trellis"}
-	flags := root.PersistentFlags()
-	flags.StringVar(&config.Context, "context", "", "")
-	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "")
-	flags.StringVar(&config.ClusterToken, "cluster-token", "", "")
-	flags.StringVar(&config.Namespace, "namespace", "", "")
-	flags.StringVar(&config.CACert, "ca-cert", "", "")
-	flags.StringVar(&config.Cert, "cert", "", "")
-	flags.StringVar(&config.Key, "key", "", "")
-	flags.StringVarP(&config.Output, "output", "o", "table", "")
-	return root
+func TestSplitAddress(t *testing.T) {
+	host, port, err := splitAddress("node.example:8127")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if host != "node.example" || port != 8127 {
+		t.Fatalf("got %s:%d", host, port)
+	}
+}
+
+func TestControlPlaneFollowerProxiesToLeader(t *testing.T) {
+	leader := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer workload-token" {
+			t.Errorf("authorization header = %q", got)
+		}
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/jobs" {
+			t.Errorf("proxied request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("X-Executed-By", "leader")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer leader.Close()
+
+	proxy := newControlPlaneProxy(
+		fixedElector{leader: &election.Leader{Address: leader.URL}},
+		"https://follower.example:8128",
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("follower executed request locally") }),
+		http.DefaultTransport,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	req := httptest.NewRequest(http.MethodGet, "https://follower.example/v1/jobs", nil)
+	req.Header.Set("Authorization", "Bearer workload-token")
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK || recorder.Header().Get("X-Executed-By") != "leader" {
+		t.Fatalf("response = %d, headers %v", recorder.Code, recorder.Header())
+	}
+}
+
+func TestControlPlaneExecutesLocallyOnlyWhenLeaderIsActive(t *testing.T) {
+	localCalls := 0
+	proxy := newControlPlaneProxy(
+		fixedElector{leader: &election.Leader{Address: "node.example:8128"}},
+		"node.example:8128",
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { localCalls++; w.WriteHeader(http.StatusNoContent) }),
+		http.DefaultTransport,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+
+	request := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		proxy.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/jobs", strings.NewReader("{}")))
+		return recorder
+	}
+	if got := request().Code; got != http.StatusServiceUnavailable {
+		t.Fatalf("inactive leader status = %d", got)
+	}
+	proxy.SetLeaderActive(true)
+	if got := request().Code; got != http.StatusNoContent {
+		t.Fatalf("active leader status = %d", got)
+	}
+	if localCalls != 1 {
+		t.Fatalf("local handler calls = %d", localCalls)
+	}
 }

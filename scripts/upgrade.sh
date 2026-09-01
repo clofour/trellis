@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="clofour/trellis-experimental"
 INSTALL_DIR="/usr/local/bin"
-SERVICE="trellis-node"
+SERVICE="trellis"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
@@ -19,12 +19,12 @@ for cmd in curl tar systemctl; do
     command -v "$cmd" >/dev/null 2>&1 || error "Required command not found: $cmd"
 done
 
-[ -x "${INSTALL_DIR}/trellis-node" ] \
-    || error "trellis-node is not installed at ${INSTALL_DIR}/trellis-node. Run setup.sh first."
+[ -x "${INSTALL_DIR}/trellis" ] \
+    || error "trellis is not installed at ${INSTALL_DIR}/trellis. Run setup.sh first."
 
 # ── Current version ──────────────────────────────────────────────────
 
-current_version="$("${INSTALL_DIR}/trellis-node" --version 2>/dev/null | awk '{print $NF}')" \
+current_version="$("${INSTALL_DIR}/trellis" --version 2>/dev/null | awk '{print $NF}')" \
     || current_version="unknown"
 
 # ── Latest release ───────────────────────────────────────────────────
@@ -50,9 +50,9 @@ fi
 
 info "Upgrading trellis ${current_version} → ${release_tag}."
 warn "For a cluster upgrade, drain this node before continuing:"
-warn "  trellis nodes drain <id>"
+warn "  trellisctl nodes drain <id>"
 warn "Undrain it after this script finishes:"
-warn "  trellis nodes undrain <id>"
+warn "  trellisctl nodes undrain <id>"
 echo
 
 # ── Download ─────────────────────────────────────────────────────────
@@ -75,8 +75,8 @@ else
 fi
 
 info "Installing binaries to ${INSTALL_DIR}..."
-install -m 0755 "${tmp}/trellis-node" "${INSTALL_DIR}/trellis-node"
 install -m 0755 "${tmp}/trellis"      "${INSTALL_DIR}/trellis"
+install -m 0755 "${tmp}/trellisctl"   "${INSTALL_DIR}/trellisctl"
 
 if [ "$was_running" = true ]; then
     info "Starting ${SERVICE}..."

@@ -13,7 +13,7 @@ The single allocation requires two host volumes. Create them with ownership appr
 ```sh
 sudo install -d -m 0750 /srv/trellis/wordpress-db
 sudo install -d -m 0750 /srv/trellis/wordpress-content
-sudo trellis-node \
+sudo trellis \
   --cluster-token "$TRELLIS_TOKEN" \
   --host-volume wordpress-db=/srv/trellis/wordpress-db \
   --host-volume wordpress-content=/srv/trellis/wordpress-content
@@ -27,9 +27,9 @@ Use independent values for the application account and MariaDB root account:
 
 ```sh
 openssl rand -base64 32 | \
-  trellis --namespace default secrets set wordpress-db-password --stdin
+  trellisctl --namespace default secrets set wordpress-db-password --stdin
 openssl rand -base64 32 | \
-  trellis --namespace default secrets set mariadb-root-password --stdin
+  trellisctl --namespace default secrets set mariadb-root-password --stdin
 ```
 
 Trellis injects the application password into both tasks under the variable names each image expects. The secret value is not stored in the manifest.
@@ -37,9 +37,9 @@ Trellis injects the application password into both tasks under the variable name
 ## Deploy and observe
 
 ```sh
-trellis jobs apply --file examples/wordpress/trellis.yaml
-trellis --namespace default jobs status wordpress
-trellis nodes list
+trellisctl jobs apply --file examples/wordpress/trellis.yaml
+trellisctl --namespace default jobs status wordpress
+trellisctl nodes list
 ```
 
 Browse to `http://NODE_ADDRESS` after the allocation becomes healthy. MariaDB's TCP health check establishes reachability, while the WordPress HTTP check gates overall readiness. First-time database initialization may take longer than steady-state startup; adjust thresholds for your hardware rather than weakening the check indefinitely.
@@ -49,7 +49,7 @@ Browse to `http://NODE_ADDRESS` after the allocation becomes healthy. MariaDB's 
 Back up both host paths using database-aware procedures; copying a live MariaDB directory is not automatically a consistent backup. Deleting the job stops the containers but does not make host-volume data portable:
 
 ```sh
-trellis --namespace default jobs delete wordpress
+trellisctl --namespace default jobs delete wordpress
 ```
 
 Before production, separate MariaDB into a managed or replicated database service, use isolated networking and TLS, place the web tier behind the reverse-proxy pattern, pin images by digest, and test password rotation and restores. Scaling only the stateless WordPress tier requires separate task groups/jobs because a Trellis task group scales every contained task together.

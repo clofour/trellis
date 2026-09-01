@@ -24,7 +24,7 @@ Prepare at least three nodes, ideally in separate failure domains:
 
 ```sh
 sudo install -d -m 0700 /srv/trellis/patroni
-sudo trellis-node \
+sudo trellis \
   --cluster-token "$TRELLIS_TOKEN" \
   --label database=true \
   --host-volume patroni-data=/srv/trellis/patroni
@@ -42,9 +42,9 @@ The manifest's static `PATRONI_NAME=trellis-member` is a placeholder and is inva
 
 ```sh
 openssl rand -base64 32 | \
-  trellis --namespace database secrets set postgres-password --stdin
+  trellisctl --namespace database secrets set postgres-password --stdin
 openssl rand -base64 32 | \
-  trellis --namespace database secrets set replication-password --stdin
+  trellisctl --namespace database secrets set replication-password --stdin
 ```
 
 Confirm the selected Patroni image actually consumes `PGPASSWORD_SUPERUSER` and `PGPASSWORD_STANDBY`, or adapt the environment to that image's documented configuration contract. Pin the image by digest after qualification.
@@ -58,9 +58,9 @@ Open the WireGuard UDP port between nodes and ensure advertised endpoints are ro
 Only after replacing the placeholders and configuring the DCS:
 
 ```sh
-trellis jobs apply --file examples/patroni/trellis.yaml
-trellis --namespace database jobs status patroni
-trellis nodes list
+trellisctl jobs apply --file examples/patroni/trellis.yaml
+trellisctl --namespace database jobs status patroni
+trellisctl nodes list
 ```
 
 Check that all three allocations are on intended nodes, Patroni reports one leader, replicas stream successfully, and write/read routing follows the desired roles. Inspect allocation events when a health check fails; Trellis health alone does not prove replication is current or promotion is safe.
