@@ -31,7 +31,7 @@ Vagrant.configure("2") do |config|
             else
                 node.vm.provision "consul-client", type: "shell", path: "demo/consul-client.sh"
             end
-            node.vm.provision "trellis-node", type: "shell", path: "demo/trellis-node.sh"
+            node.vm.provision "trellis", type: "shell", path: "demo/trellis.sh"
         end
     end
 end

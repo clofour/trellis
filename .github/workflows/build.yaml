@@ -23,8 +23,8 @@ jobs:
 
       - name: Run build
         run: |
-          go build -o bin/trellis-node ./cmd/trellis-node
           go build -o bin/trellis ./cmd/trellis
+          go build -o bin/trellisctl ./cmd/trellisctl
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

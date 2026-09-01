@@ -4,7 +4,7 @@ Trellis is a small container scheduler built around containerd and Consul. The
 MVP provides job manifest validation, node registration and heartbeats,
 balanced task placement, allocation lifecycle management, health checks,
 restart handling, port allocation, persistent volumes, and Consul service
-registration. Every machine runs the same `trellis-node` daemon. Consul elects
+registration. Every machine runs the same `trellis` daemon. Consul elects
 one node as leader; only that node exposes the control-plane API and reconciles
 jobs. The remaining nodes continue running allocations and automatically take
 part in the next election.
@@ -23,7 +23,7 @@ cluster token to every node, and advertise addresses reachable by the other
 nodes:
 
 ```sh
-go run ./cmd/trellis-node --data-dir ./data \
+go run ./cmd/trellis --data-dir ./data \
   --agent-advertise node-1.example:8127 \
   --server-advertise node-1.example:8128 \
   --cluster-token "$TRELLIS_TOKEN"
@@ -55,9 +55,9 @@ task_groups:
 ```
 
 ```sh
-go run ./cmd/trellis --server-addr localhost:8128 \
+go run ./cmd/trellisctl --server-addr localhost:8128 \
   --cluster-token "$TRELLIS_TOKEN" jobs apply --file trellis.yaml
-go run ./cmd/trellis --server-addr localhost:8128 \
+go run ./cmd/trellisctl --server-addr localhost:8128 \
   --cluster-token "$TRELLIS_TOKEN" nodes list
 ```
 
@@ -80,14 +80,14 @@ Stream the most recent output from an allocation (and keep following it with
 `--follow`):
 
 ```sh
-go run ./cmd/trellis jobs logs --tail 100 --follow ALLOCATION_ID
+go run ./cmd/trellisctl jobs logs --tail 100 --follow ALLOCATION_ID
 ```
 
 Drain a node to reject new placements and migrate its existing allocations to
 healthy nodes with enough spare capacity:
 
 ```sh
-go run ./cmd/trellis nodes drain NODE_ID
+go run ./cmd/trellisctl nodes drain NODE_ID
 ```
 
 ## Optional tenant isolation
@@ -132,7 +132,7 @@ the cluster-wide pool and, when automatic discovery is unsuitable, the node's
 reachable endpoint:
 
 ```sh
-trellis-node --wireguard-pool 10.64.0.0/10 \
+trellis --wireguard-pool 10.64.0.0/10 \
   --wireguard-endpoint node-a.example:51820 \
   --wireguard-port 51820
 ```
