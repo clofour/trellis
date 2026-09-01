@@ -69,3 +69,16 @@ export function useSecrets() {
     refreshInterval: REFRESH_INTERVAL,
   });
 }
+
+export function useOrchestratorStatus() {
+  const { data, error } = useSWR<{ status: string }>(
+    "/api/v1/health",
+    fetcher,
+    { refreshInterval: REFRESH_INTERVAL },
+  );
+  return {
+    connected: data?.status === "ok",
+    error: !!error,
+    loading: !data && !error,
+  };
+}
