@@ -2,7 +2,7 @@
 
 This cookbook starts with an operational outcome and shows the Trellis pattern that achieves it. It is not an example index: each recipe explains the moving pieces, why they work, and the tradeoffs to preserve when adapting the pattern.
 
-All manifests use the schema in the [job specification reference](job-specification.md). Commands assume `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE` are configured as described in [Getting Started](getting-started.md).
+All manifests use the schema in the [job manifest reference](job-specification.md). Commands assume `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE` are configured as described in [Getting Started](getting-started.md).
 
 ## Put a reverse proxy in front of dynamic allocations
 
@@ -93,7 +93,7 @@ Trellis has no `blue_green` strategy keyword. Model blue and green as two indepe
 2. Deploy `storefront-green` with `route: storefront-green`.
 3. Exercise green directly, including its health, migrations, and external dependencies.
 4. Change the proxy synchronizer's label from `route:storefront-blue` to `route:storefront-green` and reload it.
-5. Keep blue temporarily for rollback; destroy it only after the observation window.
+5. Keep blue temporarily for rollback; delete it only after the observation window.
 
 The separate job names prevent one apply from replacing the other color. They also double capacity during the overlap. Database changes must be backward-compatible with both colors until blue is retired. Routing state lives in the proxy configuration, not in the Trellis scheduler, so store and review that change like application code.
 
@@ -121,7 +121,7 @@ labels:
   trellis/weight: "5"
 ```
 
-Point `trellis-proxy-sync` at `route:storefront-weighted`. It passes each positive `trellis/weight` value to the proxy template. Start with one canary replica, compare error rate/latency/business metrics by `track`, then increase its weight or replica count. Destroy the canary job to remove it from discovery; promote it by deploying the new version as stable and retiring the old stable release.
+Point `trellis-proxy-sync` at `route:storefront-weighted`. It passes each positive `trellis/weight` value to the proxy template. Start with one canary replica, compare error rate/latency/business metrics by `track`, then increase its weight or replica count. Delete the canary job to remove it from discovery; promote it by deploying the new version as stable and retiring the old stable release.
 
 Weights are per discovered allocation. Four stable allocations at weight 100 and one canary at weight 5 do **not** yield the same percentage as one stable allocation at weight 100 and one canary at weight 5. Calculate the effective pool and confirm how the chosen proxy interprets weights. Sticky sessions and long-lived connections further affect observed traffic share.
 
@@ -150,7 +150,7 @@ The [`sidecar` manifest](../../examples/sidecar/trellis.yaml) expands this patte
 
 ## Rotate a credential without placing it in a manifest
 
-**Outcome:** deliver credentials to containers while keeping plaintext out of Git and job specifications.
+**Outcome:** deliver credentials to containers while keeping plaintext out of Git and job manifests.
 
 Create the value through standard input or a protected file:
 
