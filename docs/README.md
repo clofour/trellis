@@ -8,12 +8,13 @@ The public documentation follows one user model across the CLI, dashboard, manif
 
 1. [User model](public/user-model.md)
 2. [Getting started](public/getting-started.md)
-3. [Core concepts](public/core-concepts.md)
-4. [Job manifest reference](public/job-specification.md)
-5. [Operations](public/operations.md)
-6. [Cookbook](public/cookbook.md)
-7. [Dashboard](public/dashboard.md)
-8. [Examples](../examples/README.md)
+3. [CLI workflows](public/cli.md)
+4. [Core concepts](public/core-concepts.md)
+5. [Job manifest reference](public/job-specification.md)
+6. [Operations](public/operations.md)
+7. [Cookbook](public/cookbook.md)
+8. [Dashboard](public/dashboard.md)
+9. [Examples](../examples/README.md)
 
 ## Developer documentation
 
