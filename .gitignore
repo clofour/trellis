@@ -1,4 +1,8 @@
 
+# Build output
+/bin/
+/trellisctl
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
