@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -14,6 +17,7 @@ func NewNodesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "nodes",
 		Short: "Manage cluster nodes",
+		Long:  "List and maintain cluster nodes. Node commands accept an address, host, full UUID, or unique UUID prefix so routine maintenance does not require copying long internal identifiers.",
 	}
 
 	cmd.AddCommand(NewNodesListCmd())
@@ -21,7 +25,6 @@ func NewNodesCmd() *cobra.Command {
 	cmd.AddCommand(NewNodesUndrainCmd())
 	cmd.AddCommand(NewNodesRemoveCmd())
 	cmd.AddCommand(NewNodesLeadershipTransferCmd())
-
 	return cmd
 }
 
@@ -40,53 +43,60 @@ func NewNodesLeadershipTransferCmd() *cobra.Command {
 }
 
 func NewNodesUndrainCmd() *cobra.Command {
-	return &cobra.Command{Use: "undrain ID", Args: cobra.ExactArgs(1), Short: "Allow scheduling on a drained node", RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := uuid.Parse(args[0])
-		if err != nil {
-			return fmt.Errorf("invalid node ID: %w", err)
-		}
-		tlsCfg, err := buildCLITLSConfig()
-		if err != nil {
+	return &cobra.Command{
+		Use:   "undrain NODE",
+		Args:  cobra.ExactArgs(1),
+		Short: "Allow scheduling on a drained node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serverClient, node, err := resolveNodeClient(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			if err := serverClient.UndrainNode(cmd.Context(), node.ID); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Node %s undrained.\n", nodeDisplay(node))
 			return err
-		}
-		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).UndrainNode(cmd.Context(), id); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node undrained.")
-		return err
-	}}
+		},
+	}
 }
 
 func NewNodesRemoveCmd() *cobra.Command {
-	return &cobra.Command{Use: "remove ID", Args: cobra.ExactArgs(1), Short: "Permanently remove a node from the cluster", RunE: func(cmd *cobra.Command, args []string) error {
-		tlsCfg, err := buildCLITLSConfig()
-		if err != nil {
+	return &cobra.Command{
+		Use:   "remove NODE",
+		Args:  cobra.ExactArgs(1),
+		Short: "Permanently remove a node from the cluster",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serverClient, node, err := resolveNodeClient(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			if err := serverClient.RemoveRaftMember(cmd.Context(), node.ID.String()); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Node %s removed from the cluster.\n", nodeDisplay(node))
 			return err
-		}
-		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).RemoveRaftMember(cmd.Context(), args[0]); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node removed from the cluster.")
-		return err
-	}}
+		},
+	}
 }
 
 func NewNodesDrainCmd() *cobra.Command {
-	return &cobra.Command{Use: "drain ID", Args: cobra.ExactArgs(1), Short: "Drain a node and migrate its allocations", RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := uuid.Parse(args[0])
-		if err != nil {
-			return fmt.Errorf("invalid node ID: %w", err)
-		}
-		tlsCfg, err := buildCLITLSConfig()
-		if err != nil {
+	return &cobra.Command{
+		Use:   "drain NODE",
+		Args:  cobra.ExactArgs(1),
+		Short: "Drain a node and migrate its allocations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serverClient, node, err := resolveNodeClient(cmd, args[0])
+			if err != nil {
+				return err
+			}
+			if err := serverClient.DrainNode(cmd.Context(), node.ID); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Drain started for %s.\n", nodeDisplay(node))
 			return err
-		}
-		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).DrainNode(cmd.Context(), id); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node drain started.")
-		return err
-	}}
+		},
+	}
 }
 
 func NewNodesListCmd() *cobra.Command {
@@ -99,7 +109,6 @@ func NewNodesListCmd() *cobra.Command {
 				return err
 			}
 			serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg)
-
 			nodes, err := serverClient.ListNodes(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("list nodes: %w", err)
@@ -107,32 +116,83 @@ func NewNodesListCmd() *cobra.Command {
 			if config.Output == "json" {
 				return writeJSON(cmd.OutOrStdout(), nodes)
 			}
-
 			if len(*nodes) == 0 {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "No nodes")
 				return err
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-
-			if _, err := fmt.Fprintln(w, "ID\tAddress\tStatus\tVersion\tCPU (m)\tMemory (bytes)\tHeartbeat"); err != nil {
+			if _, err := fmt.Fprintln(w, "Node\tID\tStatus\tVersion\tCPU (m)\tMemory (bytes)\tHeartbeat"); err != nil {
 				return err
 			}
-
 			for _, node := range *nodes {
-				addr := fmt.Sprintf("%s:%d", node.Host, node.Port)
 				heartbeat := node.LastHeartbeat.Format(time.RFC3339)
 				version := node.Version
 				if version == "" {
 					version = "unknown"
 				}
-
-				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", node.ID, addr, node.Status, version, node.CPU, node.Memory, heartbeat); err != nil {
+				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", nodeDisplay(node), shortID(node.ID.String()), node.Status, version, node.CPU, node.Memory, heartbeat); err != nil {
 					return err
 				}
 			}
-
 			return w.Flush()
 		},
 	}
+}
+
+func resolveNodeClient(cmd *cobra.Command, ref string) (*client.ServerClient, api.NodeResponse, error) {
+	tlsCfg, err := buildCLITLSConfig()
+	if err != nil {
+		return nil, api.NodeResponse{}, err
+	}
+	serverClient := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg)
+	nodes, err := serverClient.ListNodes(cmd.Context())
+	if err != nil {
+		return nil, api.NodeResponse{}, err
+	}
+	node, err := resolveNodeReference(*nodes, ref)
+	if err != nil {
+		return nil, api.NodeResponse{}, err
+	}
+	return serverClient, node, nil
+}
+
+func resolveNodeReference(nodes api.NodeListResponse, ref string) (api.NodeResponse, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return api.NodeResponse{}, fmt.Errorf("node reference is required")
+	}
+	if id, err := uuid.Parse(ref); err == nil {
+		for _, node := range nodes {
+			if node.ID == id {
+				return node, nil
+			}
+		}
+		return api.NodeResponse{}, fmt.Errorf("node %s is not in the cluster", ref)
+	}
+
+	var matches []api.NodeResponse
+	for _, node := range nodes {
+		address := nodeDisplay(node)
+		id := node.ID.String()
+		if node.Host == ref || address == ref || strings.HasPrefix(id, ref) {
+			matches = append(matches, node)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) == 0 {
+		return api.NodeResponse{}, fmt.Errorf("no node matches %q; use 'trellis nodes list' to see addresses and ID prefixes", ref)
+	}
+	labels := make([]string, 0, len(matches))
+	for _, node := range matches {
+		labels = append(labels, fmt.Sprintf("%s (%s)", nodeDisplay(node), shortID(node.ID.String())))
+	}
+	sort.Strings(labels)
+	return api.NodeResponse{}, fmt.Errorf("node reference %q is ambiguous: %s", ref, strings.Join(labels, ", "))
+}
+
+func nodeDisplay(node api.NodeResponse) string {
+	return fmt.Sprintf("%s:%d", node.Host, node.Port)
 }
