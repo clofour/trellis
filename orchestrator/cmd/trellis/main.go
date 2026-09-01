@@ -39,7 +39,7 @@ type fileConfig struct {
 func main() {
 	root := &cobra.Command{
 		Use:     "trellis",
-		Short:   "Trellis CLI",
+		Short:   "Operate Trellis clusters",
 		Version: version.Current(),
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return loadConfig(cmd)
@@ -47,9 +47,9 @@ func main() {
 	}
 
 	persistentFlags := root.PersistentFlags()
-	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "Server HTTP API address")
+	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "Cluster API address")
 	persistentFlags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
-	persistentFlags.StringVar(&config.Namespace, "namespace", "", "Namespace scope for job queries")
+	persistentFlags.StringVar(&config.Namespace, "namespace", "", "Namespace scope for jobs, allocations, and secrets")
 	persistentFlags.StringVar(&config.CACert, "ca-cert", "", "Path to cluster CA certificate (PEM)")
 	persistentFlags.StringVar(&config.Cert, "cert", "", "Path to client certificate (PEM)")
 	persistentFlags.StringVar(&config.Key, "key", "", "Path to client private key (PEM)")
