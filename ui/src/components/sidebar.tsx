@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useOrchestratorStatus } from "@/hooks/use-api";
 
 const navigation = [
   {
@@ -51,6 +52,7 @@ const navigation = [
 
 export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWrites: boolean }) {
   const pathname = usePathname();
+  const orchestrator = useOrchestratorStatus();
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-card">
@@ -90,10 +92,20 @@ export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWr
           <p className="mt-1 truncate font-mono text-xs text-foreground" title={namespace}>{namespace}</p>
         </div>
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
+          {orchestrator.connected ? (
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+          ) : orchestrator.loading ? (
+            <span className="relative flex h-2 w-2">
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-zinc-400" />
+            </span>
+          ) : (
+            <span className="relative flex h-2 w-2">
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+            </span>
+          )}
           Orchestrator
         </div>
         <div className="flex items-center gap-1.5 text-xs">

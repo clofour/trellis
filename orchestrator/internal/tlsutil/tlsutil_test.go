@@ -2,7 +2,10 @@ package tlsutil
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
+	"net"
 	"net/http"
 	"testing"
 )
@@ -185,6 +188,43 @@ func TestPeerTLSConfig(t *testing.T) {
 	msg := <-done
 	if msg != "hello" {
 		t.Fatalf("expected 'hello', got %q", msg)
+	}
+}
+
+func TestGenerateNodeCertExtraSANs(t *testing.T) {
+	caCert, caKey, err := GenerateCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM, _, err := GenerateNodeCert(caCert, caKey, "10.19.0.5:8128", "myhost:8127")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("failed to decode cert PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundIP := false
+	for _, ip := range cert.IPAddresses {
+		if ip.Equal(net.ParseIP("10.19.0.5")) {
+			foundIP = true
+		}
+	}
+	if !foundIP {
+		t.Errorf("cert IPAddresses %v does not contain 10.19.0.5", cert.IPAddresses)
+	}
+	foundDNS := false
+	for _, name := range cert.DNSNames {
+		if name == "myhost" {
+			foundDNS = true
+		}
+	}
+	if !foundDNS {
+		t.Errorf("cert DNSNames %v does not contain myhost", cert.DNSNames)
 	}
 }
 

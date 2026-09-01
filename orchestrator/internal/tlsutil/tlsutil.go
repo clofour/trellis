@@ -60,7 +60,9 @@ func GenerateCA() (certPEM, keyPEM []byte, err error) {
 }
 
 // GenerateNodeCert generates a node certificate signed by the cluster CA.
-func GenerateNodeCert(caCertPEM, caKeyPEM []byte) (certPEM, keyPEM []byte, err error) {
+// Extra SANs may be passed as "host:port" or bare host strings; the host
+// portion is added as an IP SAN or DNS SAN as appropriate.
+func GenerateNodeCert(caCertPEM, caKeyPEM []byte, extraSANs ...string) (certPEM, keyPEM []byte, err error) {
 	caBlock, _ := pem.Decode(caCertPEM)
 	if caBlock == nil {
 		return nil, nil, fmt.Errorf("decode CA certificate PEM")
@@ -85,6 +87,19 @@ func GenerateNodeCert(caCertPEM, caKeyPEM []byte) (certPEM, keyPEM []byte, err e
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate serial: %w", err)
 	}
+	dnsNames := []string{ServerName}
+	ips := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
+	for _, san := range extraSANs {
+		host := san
+		if h, _, err := net.SplitHostPort(san); err == nil {
+			host = h
+		}
+		if ip := net.ParseIP(host); ip != nil {
+			ips = append(ips, ip)
+		} else if host != "" {
+			dnsNames = append(dnsNames, host)
+		}
+	}
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{Organization: []string{"Trellis Node"}},
@@ -92,8 +107,8 @@ func GenerateNodeCert(caCertPEM, caKeyPEM []byte) (certPEM, keyPEM []byte, err e
 		NotAfter:     time.Now().Add(5 * 365 * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-		DNSNames:     []string{ServerName},
-		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		DNSNames:     dnsNames,
+		IPAddresses:  ips,
 	}
 	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert, &nodeKey.PublicKey, caKey)
 	if err != nil {
