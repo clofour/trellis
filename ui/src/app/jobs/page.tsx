@@ -16,7 +16,7 @@ export default function JobsPage() {
         <div>
           <h1 className="text-xl font-semibold text-foreground">Jobs</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            All registered jobs and their scheduling status
+            Desired jobs and their observed runtime state
           </p>
         </div>
         {allowWrites && (
@@ -27,7 +27,7 @@ export default function JobsPage() {
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M7 1v12M1 7h12" />
             </svg>
-            New Job
+            Apply Manifest
           </button>
         )}
       </div>

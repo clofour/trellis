@@ -31,7 +31,7 @@ Configure the external proxy/controller for `route:shop-blue`, validate green di
 
 ```sh
 # After the release is accepted:
-trellis --namespace default jobs destroy shop-blue
+trellis --namespace default jobs delete shop-blue
 ```
 
 This pattern requires roughly double workload capacity during overlap. Schema and data migrations must remain compatible with both releases until blue is retired. The traffic switch is external state and should be reviewed, versioned, and observable.
@@ -45,7 +45,7 @@ trellis jobs apply --file examples/deployment-strategies/stable.yaml
 trellis jobs apply --file examples/deployment-strategies/canary.yaml
 ```
 
-Run `trellis-proxy-sync -label route:shop-weighted ...` with a template that consumes each upstream's weight. Observe errors, latency, saturation, and application-specific success metrics by release track. Increase canary exposure by changing its weight or replica count; remove it immediately with `trellis jobs destroy shop-canary`.
+Run `trellis-proxy-sync -label route:shop-weighted ...` with a template that consumes each upstream's weight. Observe errors, latency, saturation, and application-specific success metrics by release track. Increase canary exposure by changing its weight or replica count; remove it immediately with `trellis jobs delete shop-canary`.
 
 Weights apply to individual discovered allocations. Four stable replicas at weight 100 plus one canary at weight 5 produce an aggregate stable weight of 400 and canary weight of 5. Confirm the resulting percentage and load-balancer semantics, especially with sticky sessions or long-lived connections.
 
