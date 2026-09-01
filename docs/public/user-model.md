@@ -8,7 +8,7 @@ A Trellis deployment is a **cluster**. A cluster contains one or more **nodes** 
 
 A namespace is the tenant and security boundary for workload-facing resources. Inside a namespace, users define **jobs**. A job is desired state: it says what should be running, not what happens to be running at this instant.
 
-A job contains one or more **task groups**. A task group is the unit Trellis places, scales, networks, restarts, and updates together. A task group contains one or more **tasks**, where each task describes a container.
+A job contains one or more **task groups**. A task group is the unit Trellis places, scales, restarts, and updates together. A task group contains one or more **tasks**, where each task describes a container and selects its own network attachment.
 
 Trellis turns desired task-group replicas into **allocations**. Allocations are runtime instances managed by the scheduler. Users normally reason about jobs and task groups first and drill into allocations when observing or diagnosing execution.
 
@@ -34,8 +34,8 @@ cluster
 | **Job** | Named desired workload in a namespace. |
 | **Job manifest** | The YAML document humans author and apply to create or update a job. |
 | **Revision** | The version of a job produced by an apply. |
-| **Task group** | Placement, scaling, networking, restart, and update unit inside a job. |
-| **Task** | One container definition inside a task group. |
+| **Task group** | Placement, scaling, restart, and update unit inside a job. |
+| **Task** | One container definition, including its network attachment, inside a task group. |
 | **Allocation** | Runtime instance created by Trellis to satisfy desired task-group capacity. |
 | **Lifecycle** | Execution phase of an allocation: placed, starting, running, stopping, stopped, failed, or lost. |
 | **Health** | Readiness/health of a running allocation: unknown, healthy, or unhealthy. |
@@ -102,3 +102,5 @@ The first-party interfaces should follow these rules:
 7. **Keep destructive verbs consistent.** A job is applied or deleted; a node is drained, undrained, or removed from the cluster.
 
 This is a UX contract, not a request to make the scheduler more opinionated. Trellis can keep its small primitive resource model while presenting those primitives consistently.
+
+[Documentation index](../README.md) · [Previous: Learning path](learning-path.md) · [Next: Core concepts](core-concepts.md)

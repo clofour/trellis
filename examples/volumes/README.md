@@ -1,6 +1,8 @@
 # Volume patterns
 
-This example contrasts Trellis-managed allocation storage with an operator-provisioned host volume. It is intended for operators deciding what should survive allocation replacement and where a stateful task may run.
+**Level:** Intermediate · **Prerequisites:** complete `hello` and prepare a node path, label, and advertised host-volume name
+
+This example mounts both Trellis-managed allocation storage and an operator-provisioned host volume into a long-running nginx task. It is intended for operators deciding what should survive allocation replacement and where a stateful task may run; nginx merely keeps the demonstration allocation alive and does not use the mounted paths as application data.
 
 ## Storage in the manifest
 
@@ -28,7 +30,8 @@ Repeat `--label` and `--host-volume` for additional values. The name in `--host-
 ## Deploy and verify placement
 
 ```sh
-trellis jobs apply --file examples/volumes/trellis.yaml
+trellis jobs validate --file examples/volumes/trellis.yaml
+trellis jobs apply --file examples/volumes/trellis.yaml --wait
 trellis --namespace default jobs status volumes-demo
 trellis nodes list --output json
 ```
@@ -40,3 +43,5 @@ The allocation should land on a node reporting `app-data`. If it remains unplace
 A host-volume name is a capability, not a globally shared volume. If two nodes advertise `app-data=/srv/trellis/app-data`, those directories may contain completely different bytes. Constrain a single-writer workload deliberately, or use application-level replication/shared storage. Back up `/srv/trellis/app-data` independently and test restoration before relying on it.
 
 Scaling this manifest above one replica is unsafe unless the application supports multiple writers and every eligible volume path has the required data semantics. Draining the only compatible node cannot make its local bytes appear elsewhere.
+
+[Examples index](../README.md) · [Next: Sidecars](../sidecar/)

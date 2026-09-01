@@ -59,3 +59,5 @@ Ports `8127`, `8128`, and `8129` must be reachable between appropriate cluster m
 ## Failure recovery
 
 A missed-heartbeat node becomes unhealthy; allocations may become lost after leader recovery grace and an availability timeout. Reconciliation replaces missing desired capacity. Persistent workloads using host volumes can only land on nodes advertising the required names, so loss of all compatible nodes leaves them pending.
+
+[Documentation index](../README.md) · [Previous: CLI workflows](cli.md) · [Next: Cookbook](cookbook.md)

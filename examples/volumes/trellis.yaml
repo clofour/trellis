@@ -8,7 +8,7 @@ task_groups:
         value: fast
     tasks:
       - name: app
-        image: docker.io/library/alpine:3.21
+        image: docker.io/library/nginx:1.27-alpine
         volumes:
           - name: scratch
             path: /var/cache/app

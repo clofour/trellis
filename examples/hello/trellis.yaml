@@ -1,12 +1,13 @@
-name: api-client
+name: hello
 namespace: default
 task_groups:
-  - name: observer
+  - name: web
     count: 1
-    api_access: true
     tasks:
-      - name: dashboard
+      - name: nginx
         image: docker.io/library/nginx:1.27-alpine
+        env:
+          TUTORIAL_STEP: first
         resources:
           cpu: 100
-          memory: 134217728
+          memory: 67108864

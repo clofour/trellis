@@ -41,3 +41,5 @@ npm start
 ```
 
 Place the dashboard behind HTTPS and your own identity-aware proxy. Keep read-write mode disabled unless the deployment is intended to be an administrative surface.
+
+[Documentation index](../README.md) · [Previous: Cookbook](cookbook.md)

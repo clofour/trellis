@@ -1,57 +1,178 @@
 # Job manifest reference
 
-A **job manifest** is the canonical human-authored representation of one Trellis job. Manifests are YAML and use the vocabulary in the [Trellis user model](user-model.md). The HTTP API carries the same schema as JSON, but JSON is the API representation rather than a second authoring format.
+A **job manifest** is the canonical human-authored representation of one Trellis job. Manifests are YAML and use the vocabulary in the [Trellis user model](user-model.md). The HTTP API carries the same schema as JSON; JSON is an API representation, not a separate authoring model.
 
 ```yaml
 name: web
 namespace: default
-network:
-  wireguard: true
 task_groups:
   - name: frontend
     count: 2
     runtime: runc
-    network_mode: ""
     api_access: false
-    labels: {route: web}
-    constraints: [{attribute: arch, value: amd64}]
-    restart: {max_restarts: 3, window: 5m}
-    update: {strategy: rolling, max_parallel: 1}
+    labels:
+      route: web
+    constraints:
+      - attribute: arch
+        value: amd64
+    restart:
+      max_restarts: 3
+      window: 5m
+    update:
+      strategy: rolling
+      max_parallel: 1
     tasks:
-      - name: app
-        image: docker.io/library/nginx:1.27
+      - name: nginx
+        image: docker.io/library/nginx:1.27-alpine
+        env:
+          APP_ENV: production
+        networking:
+          mode: host
+          ports:
+            - host_port: 0
+              container_port: 80
+        resources:
+          cpu: 100
+          memory: 67108864
+        health_check:
+          type: http
+          port: 80
+          path: /
+          interval: 5s
+          timeout: 2s
+          threshold: 2
 ```
 
-Apply a manifest with `trellis jobs apply --file trellis.yaml` or paste the same YAML into the dashboard job editor.
+Validate locally with `trellis jobs validate --file trellis.yaml`, preview with `trellis jobs diff --file trellis.yaml`, and apply with `trellis jobs apply --file trellis.yaml`. The dashboard's **Apply Manifest** editor accepts the same YAML.
 
 ## Job fields
 
-| Field | Meaning |
-|---|---|
-| `name`, `namespace` | Required safe identifiers, each at most 63 characters. |
-| `network.wireguard` | Build a namespace overlay for isolated groups. |
-| `task_groups` | One or more placement/scaling units. |
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `name` | Yes | Job identifier, unique within its namespace. |
+| `namespace` | Yes | Namespace containing the job and its runtime allocations. |
+| `task_groups` | Yes | One or more placement and scaling units. |
+
+There is no job-level networking block. Network attachment belongs to each task because different tasks in one group may require different isolation.
 
 ## Task-group fields
 
-- `name`: unique group identifier; `count`: at least one.
-- `runtime`: empty/default, `runc`, or `runsc`.
-- `network_mode`: empty for isolation or `host`.
-- `api_access`: injects `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE` for in-cluster API access. Grant it only to trusted images.
-- `labels`: discovery/routing metadata. Keys start with a letter; values are at most 256 characters.
-- `constraints`: exact matches against `os`, `arch`, or node labels.
-- `restart`: `max_restarts` (zero or greater) during a positive duration `window`.
-- `update`: `strategy` is `recreate` (the default) or `rolling`; positive `max_parallel` defaults effectively to one during rolling updates.
-- `tasks`: one or more containers colocated in every allocation.
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `name` | Yes | Group identifier, unique within the job. |
+| `count` | Yes | Desired allocation count; must be at least one. |
+| `tasks` | Yes | One or more containers placed in every allocation. |
+| `runtime` | No | Default runtime (`""`), `runc`, or `runsc`. |
+| `labels` | No | Discovery and routing metadata. Keys begin with a letter; values are at most 256 characters. |
+| `api_access` | No | Inject a namespace-scoped API address, token, namespace, and CA certificate into every task in the group. |
+| `constraints` | No | Exact matches against `os`, `arch`, or node labels. Duplicate attributes are invalid. |
+| `restart` | No | Retry policy for failed tasks. |
+| `update` | No | Replacement strategy when execution-affecting desired state changes. |
+
+`restart.max_restarts` is zero or greater and `restart.window` is a positive Go-style duration such as `5m`. Once the allowed failures in that window are exhausted, the allocation remains failed for operator diagnosis.
+
+`update.strategy` is `recreate` (the default) or `rolling`. For rolling updates, `max_parallel` limits how many not-yet-healthy replacements may be in flight; zero uses the effective default of one.
+
+Task groups are the unit of placement, scaling, updates, restart behavior, and draining. Every task in a group is coupled to that lifecycle.
 
 ## Task fields
 
-- `name` and `image` are required.
-- `env` maps literal environment variables.
-- `resources.cpu` is millicores; `resources.memory` is bytes.
-- `ports` contains `host_port` (0 requests dynamic assignment) and required `container_port`.
-- `volumes` contains a unique `name`, absolute container `path`, optional advertised `host_volume`, and `read_only`.
-- `secrets` maps a stored name to `target: env` plus `env`, or `target: file` plus a clean path under `/run/trellis-secrets/`. File mode may be `0400`/`0600` (YAML numeric values are accepted); zero selects the default.
-- `health_check` supports `http`, `tcp`, or `script`. HTTP/TCP require `port`; script requires `command`. Optional `interval`, `timeout`, and `threshold` override defaults.
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `name` | Yes | Task identifier, unique within the group. |
+| `image` | Yes | Pullable OCI image reference. Pin a version or digest for reproducible deployment. |
+| `env` | No | Literal environment-variable map. Do not place credentials here. |
+| `networking` | No | Network mode and, for host mode, optional host-port mappings. |
+| `resources` | No | CPU in millicores and memory in bytes; values cannot be negative. |
+| `volumes` | No | Allocation-local or advertised host-volume mounts. |
+| `secrets` | No | References to namespace secrets delivered as environment variables or files. |
+| `health_check` | No | HTTP, TCP, or script readiness/health observation. |
 
-Identifiers accept letters, digits, `_`, `.`, and `-`, must begin alphanumerically, and are limited to 63 characters. See the validated manifests in the [`examples/` index](../../examples/README.md).
+### Networking and ports
+
+```yaml
+networking:
+  mode: host
+  ports:
+    - host_port: 0
+      container_port: 8080
+```
+
+`networking.mode` is:
+
+- omitted or `""`: isolated container networking with no external routes;
+- `host`: join the node network namespace directly;
+- `wireguard`: join the namespace WireGuard mesh in a private container network namespace.
+
+Port mappings are valid only with `mode: host`. `container_port` must be 1–65535. `host_port: 0` requests a free port; a nonzero host port reserves that exact node port. WireGuard must be enabled on the nodes before a task requests `wireguard` mode.
+
+### Resources
+
+```yaml
+resources:
+  cpu: 250
+  memory: 268435456
+```
+
+CPU is expressed in millicores and memory in bytes. The scheduler multiplies each task request by its group count when considering desired capacity.
+
+### Volumes
+
+```yaml
+volumes:
+  - name: cache
+    path: /var/cache/app
+  - name: data
+    path: /var/lib/app
+    host_volume: app-data
+    read_only: false
+```
+
+Every container path must be absolute. Without `host_volume`, Trellis creates allocation-local storage below its node data directory. With `host_volume`, the name must be advertised by the selected node; Trellis does not create, replicate, snapshot, or back up that host data.
+
+### Secrets
+
+```yaml
+secrets:
+  - name: api-token
+    target: env
+    env: API_TOKEN
+  - name: tls-key
+    target: file
+    path: /run/trellis-secrets/tls.key
+    mode: 256 # decimal form of 0400
+```
+
+An environment target requires only a valid `env` name and may not collide with `env`. A file target requires a clean path below `/run/trellis-secrets/`; mode may be `0400` or `0600` (or their YAML numeric values), and zero selects the default. Names, environment targets, and file paths must be unique within a task.
+
+### Health checks
+
+HTTP and TCP checks require a port:
+
+```yaml
+health_check:
+  type: http
+  port: 8080
+  path: /ready
+  interval: 5s
+  timeout: 2s
+  threshold: 2
+```
+
+A script check instead requires a nonempty command:
+
+```yaml
+health_check:
+  type: script
+  command: ["/usr/local/bin/check-ready"]
+```
+
+`interval` and `timeout` are positive Go-style durations when set; `threshold` is at least one. A running task without an explicit health check is treated as healthy, which is useful for the first tutorial but weaker than application-aware readiness for a service.
+
+## Identifiers and authoritative examples
+
+Job, namespace, group, task, secret, and volume identifiers accept letters, digits, `_`, `.`, and `-`, must begin with a letter or digit, and are limited to 63 characters. Unknown or inconsistent manifest fields are rejected by local validation.
+
+All checked-in example YAML manifests are parsed and validated in the test suite. Follow them in learning order from the [examples index](../../examples/README.md), rather than copying an advanced architecture as a first workload.
+
+[Documentation index](../README.md) · [Previous: Core concepts](core-concepts.md) · [Next: CLI workflows](cli.md)

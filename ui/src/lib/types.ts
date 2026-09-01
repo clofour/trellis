@@ -92,16 +92,11 @@ export type DurationValue = number | string;
 export interface JobSpec {
   name: string;
   namespace: string;
-  network?: NetworkSpec;
   task_groups: TaskGroupSpec[];
 }
 
-export interface NetworkSpec {
-  wireguard: boolean;
-}
-
 export type Runtime = "" | "runc" | "runsc";
-export type NetworkMode = "" | "host";
+export type TaskNetworkMode = "" | "host" | "wireguard";
 export type UpdateStrategy = "" | "recreate" | "rolling";
 
 export interface TaskGroupSpec {
@@ -110,7 +105,6 @@ export interface TaskGroupSpec {
   runtime?: Runtime;
   tasks: TaskSpec[];
   labels?: Record<string, string>;
-  network_mode?: NetworkMode;
   api_access?: boolean;
   restart?: RestartPolicySpec;
   constraints?: ConstraintSpec[];
@@ -136,11 +130,16 @@ export interface TaskSpec {
   name: string;
   image: string;
   env?: Record<string, string>;
-  ports?: PortSpec[];
+  networking?: TaskNetworkingSpec;
   volumes?: VolumeSpec[];
   resources?: ResourcesSpec;
   health_check?: HealthCheckSpec;
   secrets?: SecretRefSpec[];
+}
+
+export interface TaskNetworkingSpec {
+  mode?: TaskNetworkMode;
+  ports?: PortSpec[];
 }
 
 export interface PortSpec {

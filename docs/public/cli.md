@@ -94,7 +94,7 @@ The command prints only meaningful state changes while the revision converges. T
 trellis jobs watch web --timeout 5m
 ```
 
-A job is reported as `ready` when at least its desired allocation count is running and healthy. `converging` means Trellis is still placing/starting/replacing work. `degraded` means an allocation explicitly reports an unhealthy, failed, or lost state.
+A job is reported as `ready` when at least its desired allocation count from the current revision is running and healthy. Old or draining allocations cannot make a new revision look complete. `converging` means Trellis is still placing, starting, or replacing work. `degraded` means a current allocation explicitly reports an unhealthy, failed, or lost state.
 
 ## Inspect and diagnose
 
@@ -174,3 +174,5 @@ Ambiguous prefixes are rejected and the CLI shows the matching nodes rather than
 ## Automation and compatibility
 
 `--output json` continues to expose complete API-shaped data for scripts. Explicit `--server-addr`, `--cluster-token`, `--namespace`, TLS flags, and `TRELLIS_*` environment variables remain supported and override saved context values. Named contexts are therefore an interactive convenience, not a hidden requirement for automation.
+
+[Documentation index](../README.md) · [Previous: Job manifest reference](job-specification.md) · [Next: Operations](operations.md)

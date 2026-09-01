@@ -1,96 +1,130 @@
 # Getting Started
 
-This walkthrough creates a single-node development cluster. If Trellis terminology is new, read the [user model](user-model.md) first: you apply YAML job manifests as desired state, then inspect the allocations Trellis creates at runtime.
+This is the shortest complete Trellis journey: install one node, connect the CLI, deploy a deliberately small workload, inspect and update it, read its logs, and remove it again. You do not need to clone or build the repository.
 
-Trellis needs Linux, root privileges, containerd, and the `ctr` client. Go 1.26.4 is required to build the orchestrator; the dashboard additionally needs Node.js and npm.
+## 1. Install one node
 
-## Build
-
-```sh
-cd orchestrator
-go build -o bin/trellis ./cmd/trellis
-go build -o bin/trellis-node ./cmd/trellis-node
-```
-
-## Start a node
-
-Choose a long random cluster token. The injected runtime is test-only; a useful cluster uses containerd.
+You need a Debian or Ubuntu x86-64 machine with `sudo`. The installer can install containerd when it is missing.
 
 ```sh
-sudo ./bin/trellis-node \
-  --data-dir /var/lib/trellis/data \
-  --cluster demo \
-  --cluster-token "$TRELLIS_TOKEN" \
-  --containerd-sock /run/containerd/containerd.sock
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash
 ```
 
-The defaults expose the agent API on `8127`, control-plane API on `8128`, Raft on `8129`, Trellis DNS on UDP `8053`, and WireGuard on UDP `51820`. For anything beyond local experimentation, set advertised addresses explicitly and configure `--ca-cert`, `--ca-key`, `--cert`, and `--key`.
+For this first cluster, accept the detected address, do not join another cluster, and start `trellis-node` when prompted. WireGuard and the dashboard are optional and are not needed for the first workload.
 
-## Configure the CLI
-
-For interactive use, save the cluster connection as a named context:
+Verify the service and cluster:
 
 ```sh
-export TRELLIS_TOKEN='replace-me'
-./bin/trellis \
-  --server-addr 127.0.0.1:8128 \
-  --namespace default \
-  context save local --use
-
-./bin/trellis context current
-./bin/trellis nodes list
+sudo systemctl status trellis-node --no-pager
+sudo trellis nodes list
 ```
 
-Contexts store the address, namespace, token, and TLS settings in the user config, which Trellis protects with mode `0600`. Explicit flags and environment variables remain available for scripts and override context values:
+The installer puts `trellis` and `trellis-node` in `/usr/local/bin`, creates the systemd service, and writes a root-readable local connection file containing the node API address, token, and CA certificate.
+
+## 2. Save the local connection
+
+Save that effective connection as a named context so the cluster and namespace are visible and reusable:
 
 ```sh
-export TRELLIS_ADDR=127.0.0.1:8128
-export TRELLIS_TOKEN='replace-me'
-export TRELLIS_NAMESPACE=default
-./bin/trellis nodes list
+sudo trellis --namespace default context save local --use
+sudo trellis context current
 ```
 
-Existing flat `~/.config/trellis/config.yaml` files also remain supported. See [CLI workflows](cli.md) for context precedence and management commands.
+These commands use `sudo` because the installer's local connection file and cluster credential are root-readable. For a remote workstation or a non-root context, configure an endpoint and credential explicitly as described in [CLI workflows](cli.md).
 
-## Run a workload
+## 3. Create the first manifest
 
-Validate and preview the manifest before applying it:
+Create an empty working directory and save this as `trellis.yaml`:
+
+```yaml
+name: hello
+namespace: default
+task_groups:
+  - name: web
+    count: 1
+    tasks:
+      - name: nginx
+        image: docker.io/library/nginx:1.27-alpine
+        env:
+          TUTORIAL_STEP: first
+        resources:
+          cpu: 100
+          memory: 67108864
+```
+
+This is one job containing one task group, one desired allocation, and one nginx task. It intentionally has no networking, explicit health check, volume, secret, or update policy yet. A running task without an explicit health check is considered healthy.
+
+The same file is maintained at [`examples/hello/trellis.yaml`](../../examples/hello/trellis.yaml).
+
+## 4. Validate, preview, and deploy
+
+Validation is local. Diff compares the manifest with current cluster state without changing it. Apply creates the job and waits for its current revision to become healthy.
 
 ```sh
-./bin/trellis jobs validate --file ../examples/sidecar/trellis.yaml
-./bin/trellis jobs diff --file ../examples/sidecar/trellis.yaml
+sudo trellis jobs validate --file trellis.yaml
+sudo trellis jobs diff --file trellis.yaml
+sudo trellis jobs apply --file trellis.yaml --wait
 ```
 
-Apply desired state and wait for healthy capacity:
+## 5. Inspect the job
+
+Start with the job, then use its allocations only when you need runtime detail:
 
 ```sh
-./bin/trellis jobs apply --file ../examples/sidecar/trellis.yaml --wait
-./bin/trellis jobs list
-./bin/trellis jobs status sidecar-demo
+sudo trellis jobs list
+sudo trellis jobs status hello
 ```
 
-An apply is declarative: it creates the job or advances its revision. Read the current logs without first copying an allocation UUID:
+The output separates desired capacity from allocation lifecycle and health. If the job is not ready, ask Trellis for the failure-oriented view:
 
 ```sh
-./bin/trellis jobs logs sidecar-demo --tail 100
+sudo trellis jobs diagnose hello
 ```
 
-For a live stream from one replica, use the short allocation prefix shown by `jobs status`:
+## 6. Update it
+
+Change `TUTORIAL_STEP: first` to `TUTORIAL_STEP: second` in `trellis.yaml`, then preview and apply the new revision:
 
 ```sh
-./bin/trellis jobs logs sidecar-demo --allocation ALLOC_PREFIX --follow
+sudo trellis jobs diff --file trellis.yaml
+sudo trellis jobs apply --file trellis.yaml --wait
+sudo trellis jobs status hello
 ```
 
-If the job does not become healthy, run `./bin/trellis jobs diagnose sidecar-demo` to surface lifecycle, health, failure reason, retry timing, and the next useful log command.
+The environment value is only a visible tutorial change; Trellis still replaces the old allocation because the desired task configuration changed.
 
-Delete the job and its desired state with `./bin/trellis jobs delete sidecar-demo`. Trellis stops allocations that are no longer desired. The older `jobs destroy` spelling remains as a compatibility alias.
+## 7. Read logs
 
-## Add nodes
+Read the job's current task output without copying an allocation UUID:
 
-Start the first node normally, then start later nodes with `--join HOST:8128`. Give every node the same cluster name/token and routable agent, server, and Raft advertised addresses. Confirm membership with `trellis nodes list`.
+```sh
+sudo trellis jobs logs hello --tail 100
+```
 
-Node maintenance commands accept the host/address shown in `nodes list` as well as UUIDs, so `trellis nodes drain worker-2` is sufficient when the hostname is unique.
+When a job has several allocations or tasks, use `--group`, `--task`, or the short `--allocation` reference shown by `jobs status`.
 
-## Next steps
+## 8. Remove it
 
-Read [CLI workflows](cli.md), [Core concepts](core-concepts.md), the complete [job manifest reference](job-specification.md), and the [Cookbook](cookbook.md).
+Delete the desired state and wait until the job has disappeared:
+
+```sh
+sudo trellis jobs delete hello --wait
+sudo trellis jobs list
+```
+
+You have now completed the full workload lifecycle.
+
+## Optional: follow the same job in the dashboard
+
+If you installed the read-write dashboard, open `http://NODE_ADDRESS:3000`. Confirm that the active namespace is `default`, use **Apply Manifest** to paste the same YAML, and open the job to inspect its revision, allocations, events, and logs. Editing and deleting use the same manifest vocabulary and lifecycle as the CLI. A read-only dashboard intentionally hides those write actions.
+
+## Troubleshooting
+
+- `sudo journalctl -u trellis-node -n 200` shows node and control-plane service logs.
+- `sudo trellis jobs diagnose hello` summarizes placement, start, retry, and health failures.
+- Image-pull failures usually mean the node cannot reach the registry or the image/tag is unavailable.
+- A context or authentication error can be checked with `sudo trellis context current` and `sudo trellis nodes list`.
+
+Continue with the [deliberate learning path](learning-path.md). It introduces replicated services and health checks first, then secrets, volumes, sidecars, networking, in-cluster API access, release patterns, and finally stateful architectures such as WordPress and Patroni. To build Trellis itself, use the separate [developer setup](../developer/development.md).
+
+[Documentation index](../README.md) · [Next: Learning path](learning-path.md)
