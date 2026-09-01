@@ -155,11 +155,11 @@ func walkManifestDiff(path string, before, after any, changes *[]manifestChange)
 				return
 			}
 		}
-		max := len(leftSlice)
-		if len(rightSlice) > max {
-			max = len(rightSlice)
+		limit := len(leftSlice)
+		if len(rightSlice) > limit {
+			limit = len(rightSlice)
 		}
-		for i := 0; i < max; i++ {
+		for i := 0; i < limit; i++ {
 			child := fmt.Sprintf("%s[%d]", path, i)
 			switch {
 			case i >= len(leftSlice):
