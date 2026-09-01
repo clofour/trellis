@@ -1,24 +1,25 @@
 # Operations
 
-Operational commands use the vocabulary in the [Trellis user model](user-model.md): apply/delete jobs, inspect allocations, and drain/undrain nodes. Raft and leadership controls are advanced control-plane operations rather than part of the normal workload model.
+Operational commands use the vocabulary in the [Trellis user model](user-model.md): apply/delete jobs, inspect allocations, and drain/undrain nodes. Raft and leadership controls are advanced control-plane operations rather than part of the normal workload model. The [CLI workflows guide](cli.md) covers contexts, planning, rollout watching, diagnosis, and log selection in detail.
 
-## Routine commands
+## Routine workflow
 
 ```sh
-trellis nodes list
-trellis jobs list
+trellis context current
+trellis jobs validate --file trellis.yaml
+trellis jobs diff --file trellis.yaml
+trellis jobs apply --file trellis.yaml --wait
 trellis jobs status NAME
-trellis jobs logs --tail 200 ALLOCATION
-trellis jobs logs --follow ALLOCATION
+trellis jobs diagnose NAME
+trellis jobs logs NAME --tail 200
 trellis jobs delete NAME
-trellis secrets list --namespace default
 ```
 
 Add `--output json` to list/status/secret commands for automation. JSON is the API/automation representation; human-authored jobs remain YAML manifests.
 
 ## Drain and maintenance
 
-`trellis nodes drain ID` prevents new placement and migrates allocations. Wait until workloads have healthy replacements before maintenance. `trellis nodes undrain ID` re-enables scheduling. `nodes remove ID` permanently removes a node from the cluster and is different from draining.
+`trellis nodes drain NODE` prevents new placement and migrates allocations. `NODE` may be the host/address displayed by `nodes list`, a unique UUID prefix, or a complete UUID. Wait until workloads have healthy replacements before maintenance. `trellis nodes undrain NODE` re-enables scheduling. `nodes remove NODE` permanently removes a node from the cluster and is different from draining.
 
 ## Advanced control-plane maintenance
 
@@ -49,7 +50,7 @@ Use `--expected-version N` for compare-and-swap (`0` means create only). Values 
 
 The control plane exposes Prometheus metrics at `/metrics`. Job status and allocation events explain lifecycle transitions; logs proxy the node's allocation logs. Monitor leader availability, unhealthy/draining nodes, desired-versus-running/healthy counts, reconciliation latency, retries, and disk capacity for Raft, containerd, and volumes.
 
-For normal workload diagnosis, start with the job's desired/running/healthy counts, then inspect individual allocations for their separate lifecycle and health states, diagnostic reason/message, events, and logs.
+For normal workload diagnosis, start with `jobs status`. `ready`, `converging`, and `degraded` summarize desired-versus-observed state without collapsing allocation lifecycle and health. `jobs diagnose` then surfaces only the allocations that need attention, including reason/message, retry timing, and attempt count. `jobs logs NAME` reads matching allocation logs without requiring a full allocation ID.
 
 ## Networking and TLS
 

@@ -8,15 +8,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/clofour/trellis/internal/localconfig"
 	"github.com/clofour/trellis/internal/version"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 type CLIConfig struct {
+	Context      string
 	ServerAddr   string
 	ClusterToken string
 	Namespace    string
@@ -29,14 +28,33 @@ type CLIConfig struct {
 
 var config CLIConfig
 
+type contextFileConfig struct {
+	ServerAddr   string `yaml:"server_addr,omitempty"`
+	ClusterToken string `yaml:"cluster_token,omitempty"`
+	Namespace    string `yaml:"namespace,omitempty"`
+	CACert       string `yaml:"ca_cert,omitempty"`
+	Cert         string `yaml:"cert,omitempty"`
+	Key          string `yaml:"key,omitempty"`
+}
+
 type fileConfig struct {
-	ServerAddr   *string `yaml:"server_addr"`
-	ClusterToken *string `yaml:"cluster_token"`
-	Namespace    *string `yaml:"namespace"`
-	CACert       *string `yaml:"ca_cert"`
+	CurrentContext string                       `yaml:"current_context,omitempty"`
+	Contexts       map[string]contextFileConfig `yaml:"contexts,omitempty"`
+
+	// Legacy flat fields remain supported as defaults beneath a selected context.
+	ServerAddr   *string `yaml:"server_addr,omitempty"`
+	ClusterToken *string `yaml:"cluster_token,omitempty"`
+	Namespace    *string `yaml:"namespace,omitempty"`
+	CACert       *string `yaml:"ca_cert,omitempty"`
 }
 
 func main() {
+	if err := newRootCmd().Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:     "trellis",
 		Short:   "Operate Trellis clusters",
@@ -47,6 +65,7 @@ func main() {
 	}
 
 	persistentFlags := root.PersistentFlags()
+	persistentFlags.StringVar(&config.Context, "context", "", "Named cluster context to use for this command")
 	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "Cluster API address")
 	persistentFlags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
 	persistentFlags.StringVar(&config.Namespace, "namespace", "", "Namespace scope for jobs, allocations, and secrets")
@@ -55,16 +74,13 @@ func main() {
 	persistentFlags.StringVar(&config.Key, "key", "", "Path to client private key (PEM)")
 	persistentFlags.StringVarP(&config.Output, "output", "o", "table", "Output format (table or json)")
 
+	root.AddCommand(NewContextCmd())
 	root.AddCommand(NewJobsCmd())
 	root.AddCommand(NewNodesCmd())
 	root.AddCommand(NewSecretsCmd())
 	root.AddCommand(NewBackupCmd())
 	root.AddCommand(NewVersionCmd())
-
-	err := root.Execute()
-	if err != nil {
-		os.Exit(1)
-	}
+	return root
 }
 
 func buildCLITLSConfig() (*tls.Config, error) {
@@ -118,21 +134,14 @@ func loadConfig(cmd *cobra.Command) error {
 		fmt.Fprintf(os.Stderr, "warning: could not read %s: %v\n", localconfig.DefaultPath, err)
 	}
 
-	// 2. User config file.
-	cfgPath := os.Getenv("TRELLIS_CONFIG")
-	if cfgPath == "" {
-		configDir, err := os.UserConfigDir()
-		if err != nil {
-			return fmt.Errorf("determine config directory: %w", err)
-		}
-		cfgPath = filepath.Join(configDir, "trellis", "config.yaml")
+	// 2. User config file. Legacy flat values are defaults; a selected named
+	// context overlays them before environment variables and explicit flags.
+	cfgPath, err := userConfigPath()
+	if err != nil {
+		return err
 	}
-	content, err := os.ReadFile(cfgPath)
+	file, err := readUserConfig(cfgPath)
 	if err == nil {
-		var file fileConfig
-		if err := yaml.Unmarshal(content, &file); err != nil {
-			return fmt.Errorf("parse config file %s: %w", cfgPath, err)
-		}
 		if file.ServerAddr != nil {
 			merged.ServerAddr = *file.ServerAddr
 		}
@@ -145,8 +154,43 @@ func loadConfig(cmd *cobra.Command) error {
 		if file.CACert != nil {
 			merged.CACertPEM = *file.CACert
 		}
+
+		selected := file.CurrentContext
+		if value, ok := os.LookupEnv("TRELLIS_CONTEXT"); ok {
+			selected = value
+		}
+		flags := cmd.Root().PersistentFlags()
+		if flags.Changed("context") {
+			selected = flagConfig.Context
+		}
+		if selected != "" {
+			ctx, ok := file.Contexts[selected]
+			if !ok {
+				return fmt.Errorf("context %q is not defined in %s", selected, cfgPath)
+			}
+			merged.Context = selected
+			merged.ServerAddr = ctx.ServerAddr
+			merged.ClusterToken = ctx.ClusterToken
+			merged.Namespace = ctx.Namespace
+			merged.CACert = ""
+			merged.CACertPEM = ctx.CACert
+			merged.Cert = ctx.Cert
+			merged.Key = ctx.Key
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read config file %s: %w", cfgPath, err)
+	} else {
+		// A requested context cannot be resolved without a config file.
+		selected := ""
+		if value, ok := os.LookupEnv("TRELLIS_CONTEXT"); ok {
+			selected = value
+		}
+		if cmd.Root().PersistentFlags().Changed("context") {
+			selected = flagConfig.Context
+		}
+		if selected != "" {
+			return fmt.Errorf("context %q is not defined: %s does not exist", selected, cfgPath)
+		}
 	}
 
 	// 3. Environment variables.

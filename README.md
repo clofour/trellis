@@ -59,9 +59,10 @@ See the [Trellis user model](docs/public/user-model.md) for the canonical vocabu
 
 ## Capabilities
 
-- YAML job validation and revisioned job submission
+- YAML job validation, semantic planning, revisioned apply, and rollout watching
+- Named CLI cluster contexts with explicit flag/environment overrides for automation
 - Node registration, heartbeats, draining, and balanced placement
-- Allocation lifecycle management, health checks, restart handling, and filterable runtime queries
+- Allocation lifecycle management, health checks, restart handling, diagnostics, and filterable runtime queries
 - Rolling and recreate update strategies
 - Container resource limits, dynamic host ports, and persistent local volumes
 - Built-in DNS discovery for healthy job allocations and optional WireGuard namespace networking
@@ -76,6 +77,7 @@ See the [Trellis user model](docs/public/user-model.md) for the canonical vocabu
 | --- | --- |
 | [User model](docs/public/user-model.md) | Learn the vocabulary shared by every Trellis interface |
 | [Getting started](docs/public/getting-started.md) | Install Trellis and deploy your first workloads |
+| [CLI workflows](docs/public/cli.md) | Configure contexts, validate/plan/apply jobs, watch rollouts, diagnose failures, and inspect logs |
 | [Core concepts](docs/public/core-concepts.md) | Understand how the user model maps to scheduling, networking, and persistence |
 | [Job manifest reference](docs/public/job-specification.md) | Configure task groups, resources, ports, volumes, health checks, and update strategies |
 | [Operations guide](docs/public/operations.md) | Operate jobs, nodes, backups, secrets, networking, and failure recovery |
