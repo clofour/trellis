@@ -7,6 +7,7 @@ import type {
   Node,
   SecretMetadata,
 } from "@/lib/types";
+import { useConfig } from "@/components/config-provider";
 
 const REFRESH_INTERVAL = 5000;
 
@@ -19,8 +20,22 @@ async function fetcher<T>(url: string): Promise<T> {
   return res.json();
 }
 
-async function textFetcher(url: string): Promise<string> {
-  const res = await fetch(url, { cache: "no-store" });
+async function namespacedFetcher<T>([url, namespace]: [string, string]): Promise<T> {
+  const res = await fetch(url, {
+    headers: { "X-Trellis-Namespace": namespace },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error || `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+async function namespacedTextFetcher([url, namespace]: [string, string]): Promise<string> {
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { "X-Trellis-Namespace": namespace },
+  });
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     throw new Error(data?.error || `${res.status} ${res.statusText}`);
@@ -35,39 +50,57 @@ export function useNodes() {
 }
 
 export function useJobs() {
-  return useSWR<Job[]>("/api/v1/jobs", fetcher, {
+  const { namespace } = useConfig();
+  return useSWR<Job[]>(["/api/v1/jobs", namespace], namespacedFetcher, {
     refreshInterval: REFRESH_INTERVAL,
   });
 }
 
 export function useJob(name: string) {
-  return useSWR<Job>(`/api/v1/jobs/${encodeURIComponent(name)}`, fetcher, {
+  const { namespace } = useConfig();
+  return useSWR<Job>(
+    [`/api/v1/jobs/${encodeURIComponent(name)}`, namespace],
+    namespacedFetcher,
+    {
     refreshInterval: REFRESH_INTERVAL,
-  });
+    },
+  );
 }
 
 export function useAllocationEvents(id: string | null) {
+  const { namespace } = useConfig();
   return useSWR<AllocationEvent[]>(
-    id ? `/api/v1/allocations/${encodeURIComponent(id)}/events` : null,
-    fetcher,
+    id
+      ? [`/api/v1/allocations/${encodeURIComponent(id)}/events`, namespace]
+      : null,
+    namespacedFetcher,
     { refreshInterval: REFRESH_INTERVAL },
   );
 }
 
 export function useAllocationLogs(id: string | null, tail = 200) {
+  const { namespace } = useConfig();
   return useSWR<string>(
     id
-      ? `/api/v1/allocations/${encodeURIComponent(id)}/logs?tail=${tail}`
+      ? [
+          `/api/v1/allocations/${encodeURIComponent(id)}/logs?tail=${tail}`,
+          namespace,
+        ]
       : null,
-    textFetcher,
+    namespacedTextFetcher,
     { refreshInterval: REFRESH_INTERVAL },
   );
 }
 
 export function useSecrets() {
-  return useSWR<SecretMetadata[]>("/api/v1/secrets", fetcher, {
+  const { namespace } = useConfig();
+  return useSWR<SecretMetadata[]>(
+    ["/api/v1/secrets", namespace],
+    namespacedFetcher,
+    {
     refreshInterval: REFRESH_INTERVAL,
-  });
+    },
+  );
 }
 
 export function useOrchestratorStatus() {

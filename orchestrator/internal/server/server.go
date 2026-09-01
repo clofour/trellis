@@ -869,10 +869,15 @@ func (s *Server) ListJobs(namespace string) api.JobListResponse {
 				continue
 			}
 			a.normalize(time.Now().UTC())
-			if a.Phase == lifecycle.PhaseRunning {
+			ar := api.AllocationResponse{ID: a.AllocationID(), Group: a.TaskGroupName, Status: string(a.Status), Phase: a.Phase, Health: a.Health, Draining: a.Draining, Generation: a.Generation, JobRevision: a.JobRevision, CreatedAt: a.CreatedAt, LastTransitionAt: a.TransitionedAt, Reason: a.Reason, Message: a.Message, Attempt: a.Attempt, NextRetryAt: a.NextRetryAt}
+			if a.Node != nil {
+				ar.NodeID = a.Node.ID
+			}
+			r.Allocations = append(r.Allocations, ar)
+			if a.JobRevision == job.Revision && !a.Draining && a.Phase == lifecycle.PhaseRunning {
 				r.Running++
 			}
-			if a.Health == lifecycle.HealthHealthy {
+			if a.JobRevision == job.Revision && !a.Draining && a.Phase == lifecycle.PhaseRunning && a.Health == lifecycle.HealthHealthy {
 				r.Healthy++
 			}
 			a.mu.Unlock()
@@ -907,10 +912,10 @@ func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 			ar.NodeID = a.Node.ID
 		}
 		r.Allocations = append(r.Allocations, ar)
-		if a.Phase == lifecycle.PhaseRunning {
+		if a.JobRevision == job.Revision && !a.Draining && a.Phase == lifecycle.PhaseRunning {
 			r.Running++
 		}
-		if a.Health == lifecycle.HealthHealthy {
+		if a.JobRevision == job.Revision && !a.Draining && a.Phase == lifecycle.PhaseRunning && a.Health == lifecycle.HealthHealthy {
 			r.Healthy++
 		}
 		a.mu.Unlock()

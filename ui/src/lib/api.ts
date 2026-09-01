@@ -20,8 +20,11 @@ async function apiFetch<T>(path: string): Promise<T> {
 async function apiMutation(
   path: string,
   init: RequestInit,
+  namespace?: string,
 ): Promise<Response> {
-  const res = await fetch(`${API_BASE}${path}`, init);
+  const headers = new Headers(init.headers);
+  if (namespace !== undefined) headers.set("X-Trellis-Namespace", namespace);
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     throw new Error(data?.error || `API error: ${res.status} ${res.statusText}`);
@@ -69,18 +72,24 @@ export async function submitJob(spec: JobSpec): Promise<void> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ spec }),
-  });
+  }, spec.namespace);
 }
 
-export async function deleteJob(name: string): Promise<void> {
+export async function deleteJob(name: string, namespace: string): Promise<void> {
   await apiMutation(`/api/v1/jobs/${encodeURIComponent(name)}`, {
     method: "DELETE",
-  });
+  }, namespace);
 }
 
 export async function drainNode(id: string): Promise<void> {
   await apiMutation(`/api/v1/nodes/${encodeURIComponent(id)}/drain`, {
     method: "POST",
+  });
+}
+
+export async function undrainNode(id: string): Promise<void> {
+  await apiMutation(`/api/v1/nodes/${encodeURIComponent(id)}/drain`, {
+    method: "DELETE",
   });
 }
 
@@ -98,6 +107,7 @@ function encodeUTF8Base64(value: string): string {
 export async function setSecret(
   name: string,
   value: string,
+  namespace: string,
   expectedVersion?: number,
 ): Promise<SecretMetadata> {
   const body = {
@@ -111,12 +121,12 @@ export async function setSecret(
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, namespace);
   return res.json();
 }
 
-export async function deleteSecret(name: string): Promise<void> {
+export async function deleteSecret(name: string, namespace: string): Promise<void> {
   await apiMutation(`/api/v1/secrets/${encodeURIComponent(name)}`, {
     method: "DELETE",
-  });
+  }, namespace);
 }

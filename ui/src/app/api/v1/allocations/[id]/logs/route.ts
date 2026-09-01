@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { orchestratorHeaders, TRELLIS_URL } from "@/lib/orchestrator";
+import {
+  orchestratorHeaders,
+  TRELLIS_URL,
+  resolveDashboardNamespace,
+} from "@/lib/orchestrator";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
   const { id } = await params;
   const tail = request.nextUrl.searchParams.get("tail") || "200";
   try {
     const res = await fetch(
       `${TRELLIS_URL}/v1/allocations/${encodeURIComponent(id)}/logs?tail=${encodeURIComponent(tail)}`,
-      { headers: orchestratorHeaders(), cache: "no-store" },
+      { headers: orchestratorHeaders(selected.namespace), cache: "no-store" },
     );
     if (!res.ok) {
       return NextResponse.json(

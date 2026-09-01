@@ -4,7 +4,12 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import { ConfigProvider } from "@/components/config-provider";
-import { getAllowWrites } from "@/lib/orchestrator";
+import {
+  getAllowWrites,
+  getClusterName,
+  getConfiguredNamespaces,
+  getDefaultNamespace,
+} from "@/lib/orchestrator";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,18 +33,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const allowWrites = getAllowWrites();
-  const namespace = process.env.TRELLIS_NAMESPACE || "";
+  const clusterName = getClusterName();
+  const namespaces = getConfiguredNamespaces();
+  const defaultNamespace = getDefaultNamespace();
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex h-full bg-background text-foreground">
-        <ConfigProvider allowWrites={allowWrites} namespace={namespace}>
-          <Sidebar
-            namespace={namespace || "unscoped"}
-            allowWrites={allowWrites}
-          />
+        <ConfigProvider
+          allowWrites={allowWrites}
+          clusterName={clusterName}
+          defaultNamespace={defaultNamespace}
+          namespaces={namespaces}
+        >
+          <Sidebar />
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto max-w-5xl px-6 py-8">{children}</div>
           </main>

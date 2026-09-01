@@ -1,16 +1,25 @@
 import { NextResponse } from "next/server";
-import { orchestratorHeaders, TRELLIS_URL, getAllowWrites } from "@/lib/orchestrator";
+import {
+  orchestratorHeaders,
+  TRELLIS_URL,
+  getAllowWrites,
+  resolveDashboardNamespace,
+} from "@/lib/orchestrator";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ name: string }> }
 ) {
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
   const { name } = await params;
   try {
     const res = await fetch(
       `${TRELLIS_URL}/v1/jobs/${encodeURIComponent(name)}`,
       {
-        headers: orchestratorHeaders(),
+        headers: orchestratorHeaders(selected.namespace),
       }
     );
 
@@ -32,11 +41,15 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ name: string }> }
 ) {
   if (!getAllowWrites()) {
     return NextResponse.json({ error: "Dashboard is read-only" }, { status: 403 });
+  }
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
   }
   const { name } = await params;
   try {
@@ -44,7 +57,7 @@ export async function DELETE(
       `${TRELLIS_URL}/v1/jobs/${encodeURIComponent(name)}`,
       {
         method: "DELETE",
-        headers: orchestratorHeaders(),
+        headers: orchestratorHeaders(selected.namespace),
       }
     );
 

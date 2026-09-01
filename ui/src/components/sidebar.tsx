@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOrchestratorStatus } from "@/hooks/use-api";
+import { useConfig } from "./config-provider";
 
 const navigation = [
   {
-    name: "Overview",
+    name: "Operations",
     href: "/",
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -50,9 +51,11 @@ const navigation = [
   },
 ];
 
-export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWrites: boolean }) {
+export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const cluster = useOrchestratorStatus();
+  const { allowWrites, clusterName, namespace, namespaces, setNamespace } = useConfig();
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-card">
@@ -87,26 +90,49 @@ export function Sidebar({ namespace, allowWrites }: { namespace: string; allowWr
       </nav>
 
       <div className="border-t border-border p-4">
-        <div className="mb-3">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Namespace</p>
-          <p className="mt-1 truncate font-mono text-xs text-foreground" title={namespace}>{namespace}</p>
-        </div>
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          {cluster.connected ? (
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-          ) : cluster.loading ? (
-            <span className="relative flex h-2 w-2">
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-zinc-400" />
-            </span>
+        <div className="mb-3 rounded-md border border-border bg-background/60 p-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Context</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                cluster.connected
+                  ? "bg-emerald-500"
+                  : cluster.loading
+                    ? "bg-zinc-400"
+                    : "bg-red-500"
+              }`}
+            />
+            <p className="truncate text-xs font-medium text-foreground" title={clusterName}>
+              {clusterName}
+            </p>
+          </div>
+          <label
+            htmlFor="namespace-context"
+            className="mt-3 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Namespace
+          </label>
+          {namespaces.length > 1 ? (
+            <select
+              id="namespace-context"
+              value={namespace}
+              onChange={(event) => {
+                setNamespace(event.target.value);
+                router.push("/");
+              }}
+              className="mt-1.5 w-full rounded-md border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-emerald-500/40"
+            >
+              {namespaces.map((item) => (
+                <option key={item} value={item}>
+                  {item || "unscoped"}
+                </option>
+              ))}
+            </select>
           ) : (
-            <span className="relative flex h-2 w-2">
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
+            <p className="mt-1.5 truncate font-mono text-xs text-foreground" title={namespace || "unscoped"}>
+              {namespace || "unscoped"}
+            </p>
           )}
-          Cluster
         </div>
         <div className="flex items-center gap-1.5 text-xs">
           {allowWrites ? (

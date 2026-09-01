@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useJobs } from "@/hooks/use-api";
 import { EmptyState } from "./empty-state";
 import { Skeleton } from "./skeleton";
+import { jobState, jobStateLabel, type JobState } from "@/lib/operations";
 
 export function JobsTable() {
   const { data: jobs, isLoading, error } = useJobs();
@@ -53,8 +54,7 @@ export function JobsTable() {
         </thead>
         <tbody className="divide-y divide-border">
           {jobs.map((job) => {
-            const allHealthy = job.healthy === job.desired && job.desired > 0;
-            const degraded = job.healthy < job.running;
+            const state = jobState(job);
 
             return (
               <tr
@@ -83,10 +83,7 @@ export function JobsTable() {
                 </td>
                 <td className="px-4 py-3">
                   <HealthIndicator
-                    allHealthy={allHealthy}
-                    degraded={degraded}
-                    running={job.running}
-                    desired={job.desired}
+                    state={state}
                   />
                 </td>
               </tr>
@@ -99,44 +96,24 @@ export function JobsTable() {
 }
 
 function HealthIndicator({
-  allHealthy,
-  degraded,
-  running,
-  desired,
+  state,
 }: {
-  allHealthy: boolean;
-  degraded: boolean;
-  running: number;
-  desired: number;
+  state: JobState;
 }) {
-  if (allHealthy) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        Healthy
-      </span>
-    );
-  }
-  if (running < desired) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-        Converging
-      </span>
-    );
-  }
-  if (degraded) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-        Degraded
-      </span>
-    );
-  }
+  const style = {
+    ready: "text-emerald-600 dark:text-emerald-400",
+    converging: "text-amber-600 dark:text-amber-400",
+    degraded: "text-red-600 dark:text-red-400",
+  }[state];
+  const dot = {
+    ready: "bg-emerald-500",
+    converging: "bg-amber-500",
+    degraded: "bg-red-500",
+  }[state];
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
-      Unknown
+    <span className={`inline-flex items-center gap-1.5 text-xs ${style}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      {jobStateLabel(state)}
     </span>
   );
 }
