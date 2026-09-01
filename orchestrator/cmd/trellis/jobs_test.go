@@ -69,4 +69,18 @@ func TestJobStateSeparatesConvergingAndDegraded(t *testing.T) {
 	if got := jobState(ready); got != "ready" {
 		t.Fatalf("state = %q", got)
 	}
+	overlap := &api.JobStatusResponse{
+		Revision: 2,
+		Desired:  2,
+		Running:  3,
+		Healthy:  3,
+		Allocations: []api.AllocationResponse{
+			{JobRevision: 1, Draining: true, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy},
+			{JobRevision: 2, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy},
+			{JobRevision: 2, Phase: lifecycle.PhaseStarting, Health: lifecycle.HealthUnknown},
+		},
+	}
+	if got := jobState(overlap); got != "converging" {
+		t.Fatalf("rolling overlap state = %q, want converging", got)
+	}
 }

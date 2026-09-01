@@ -1,7 +1,7 @@
-# Trellis dashboard
+# Trellis operations dashboard
 
-The dashboard is a Next.js operations view of cluster health, nodes, jobs,
-allocations, and namespace-scoped secret metadata. It uses the same
+The dashboard is a Next.js operational interface for deployments, failures,
+cluster maintenance, and namespace-scoped configuration. It uses the same
 [user-facing vocabulary](../docs/public/user-model.md) and YAML job manifests as
 the CLI, documentation, and examples. Runtime data refreshes every five seconds.
 
@@ -11,12 +11,16 @@ draining, and secret create/rotate/delete operations.
 
 ## Operator surface
 
-The dashboard intentionally exposes operator workflows rather than every
-internal API endpoint:
+The operations page starts with the questions an operator normally has: what
+needs attention, which deployments are still converging, why a rollout is
+blocked, and where to look next. Resource inventories remain available as
+secondary views. The dashboard intentionally exposes operator workflows rather
+than every internal API endpoint:
 
-- cluster health and requested-vs-capacity resource pressure
+- cluster readiness, explicit failures, blocked progress, and maintenance activity
+- deployment state using the same ready/converging/degraded semantics as the CLI
 - node health, labels, available host volumes, and optional drain actions
-- job status, YAML job manifests, revision changes, and delete actions
+- job rollout summaries, YAML manifests, revision changes, and delete actions
 - allocation lifecycle and health as separate states, plus diagnostics, retries, placement, ports, events, and log tails
 - write-only secret metadata plus optional create/rotate/delete actions
 
@@ -31,9 +35,10 @@ route handlers forward requests to the Trellis control-plane API and add the
 cluster bearer token. Keep all connection values server-side; do not expose the
 token through a `NEXT_PUBLIC_` environment variable.
 
-The dashboard is scoped to one namespace. Job writes are forced to that
-configured namespace server-side, even if a browser request supplies a
-different value.
+The dashboard connects to one cluster and exposes only the namespaces listed in
+its server-side configuration. The selected namespace is attached to every
+scoped request, and job writes are forced to that selection server-side. A
+browser cannot select an unconfigured namespace.
 
 ## Configuration
 
@@ -46,7 +51,9 @@ cp .env.example .env.local
 ```dotenv
 TRELLIS_API_URL=http://localhost:8128
 TRELLIS_API_TOKEN=replace-with-the-cluster-token
+TRELLIS_CLUSTER_NAME=production
 TRELLIS_NAMESPACE=default
+TRELLIS_NAMESPACES=default,staging
 TRELLIS_ALLOW_WRITES=false
 ```
 
@@ -54,13 +61,16 @@ TRELLIS_ALLOW_WRITES=false
 | --- | --- | --- |
 | `TRELLIS_API_URL` | Recommended | Base URL for the cluster control-plane API; defaults to `http://localhost:8128`. |
 | `TRELLIS_API_TOKEN` | Yes | Token sent as a bearer token. Cluster authorization is required for secret management. |
-| `TRELLIS_NAMESPACE` | Recommended | Namespace used to scope jobs, allocations, and secrets; defaults to the API's empty namespace when omitted. |
+| `TRELLIS_CLUSTER_NAME` | No | Human-readable cluster name shown in the dashboard; defaults to `Trellis cluster`. |
+| `TRELLIS_NAMESPACE` | Recommended | Default namespace used to scope jobs, allocations, and secrets. |
+| `TRELLIS_NAMESPACES` | No | Comma-separated allowlist shown in the namespace selector. Defaults to only `TRELLIS_NAMESPACE`. |
 | `TRELLIS_ALLOW_WRITES` | No | Set to `true` to enable dashboard mutations. Defaults to `false`. |
 
-The configured namespace is shown in the sidebar. The dashboard sends it as
-`X-Trellis-Namespace` for API requests. When using a namespace-scoped token, set
-this value to the token's namespace; the control plane enforces the scope carried
-by the token. Secret management requires cluster authorization by design.
+The active `cluster / namespace` context is shown in the sidebar. If several
+namespaces are configured, changing the selector refreshes jobs, allocations,
+logs, and secrets in that scope. When using a namespace-scoped token, configure
+only that token's namespace; the control plane independently enforces the scope
+carried by the token. Secret management requires cluster authorization by design.
 
 ### Job manifests
 
@@ -75,14 +85,12 @@ restart policies, constraints, update strategy, volumes, secrets, and health
 checks. Duration values are shown in manifest form such as `10s` and `1m30s`
 rather than raw API nanoseconds.
 
-### Current control-plane connectivity limitation
+### Cluster connection
 
-The current dashboard configuration still points at one control-plane API
-address. If leadership moves somewhere that address no longer reaches, the
-dashboard must be reconfigured/restarted. This is a transport limitation, not a
-user-facing resource concept; ordinary workload documentation should continue
-to describe the target as a Trellis cluster rather than teaching Raft leadership
-as part of the job model.
+`TRELLIS_API_URL` can point at any reachable control-plane node. Followers proxy
+requests to the active leader, so normal dashboard operation does not require
+leader discovery or dashboard restarts when leadership changes. Use a stable
+node address or load balancer if the configured node itself may be unavailable.
 
 ## Local development
 

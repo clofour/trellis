@@ -49,6 +49,62 @@ func TestListAllocationsWithFilters(t *testing.T) {
 	}
 }
 
+func TestListJobsIncludesAllocationDiagnostics(t *testing.T) {
+	nodeID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	s := &Server{
+		jobs: map[string]*Job{
+			jobKey("default", "web"): {
+				Spec: &spec.JobSpec{
+					Namespace: "default",
+					Name:      "web",
+					TaskGroups: []spec.TaskGroupSpec{{Name: "frontend", Count: 1}},
+				},
+				Revision: 2,
+			},
+		},
+		allocations: []*Allocation{
+			{
+				Namespace:     "default",
+				JobName:       "web",
+				TaskGroupName: "frontend",
+				Name:          "default-web-frontend-deadbeef",
+				Node:          &Node{ID: nodeID},
+				Generation:    3,
+				JobRevision:   2,
+				Phase:         lifecycle.PhaseFailed,
+				Health:        lifecycle.HealthUnhealthy,
+				Diagnostic: lifecycle.Diagnostic{
+					Reason:  "start_failed",
+					Message: "container exited",
+					Attempt: 2,
+				},
+			},
+			{
+				Namespace:     "default",
+				JobName:       "web",
+				TaskGroupName: "frontend",
+				Name:          "default-web-frontend-old",
+				JobRevision:   1,
+				Phase:         lifecycle.PhaseRunning,
+				Health:        lifecycle.HealthHealthy,
+				Draining:      true,
+			},
+		},
+	}
+
+	jobs := s.ListJobs("default")
+	if len(jobs) != 1 || len(jobs[0].Allocations) != 2 {
+		t.Fatalf("expected two job allocations, got %#v", jobs)
+	}
+	if jobs[0].Running != 0 || jobs[0].Healthy != 0 {
+		t.Fatalf("old draining allocation counted toward revision: %#v", jobs[0])
+	}
+	allocation := jobs[0].Allocations[0]
+	if allocation.JobRevision != 2 || allocation.NodeID != nodeID || allocation.Reason != "start_failed" || allocation.Message != "container exited" {
+		t.Fatalf("allocation diagnostics missing from job list: %#v", allocation)
+	}
+}
+
 func TestAllocationEvents(t *testing.T) {
 	now := time.Now().UTC()
 	alloc := &Allocation{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", Name: "acme-web-1", Phase: lifecycle.PhasePlaced}

@@ -13,10 +13,23 @@ import { EmptyState } from "./empty-state";
 import { JobForm } from "./job-form";
 import { ConfirmDialog } from "./confirm-dialog";
 import { deleteJob } from "@/lib/api";
+import {
+  attentionAllocations,
+  humanizeReason,
+  jobState,
+  jobStateDescription,
+  jobStateLabel,
+} from "@/lib/operations";
 
-export function JobDetail({ name }: { name: string }) {
+export function JobDetail({
+  name,
+  initialAllocationId,
+}: {
+  name: string;
+  initialAllocationId?: string;
+}) {
   const { data: job, isLoading, error, mutate } = useJob(name);
-  const { allowWrites } = useConfig();
+  const { allowWrites, namespace } = useConfig();
   const router = useRouter();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -28,7 +41,7 @@ export function JobDetail({ name }: { name: string }) {
     setDeleting(true);
     setDeleteError(null);
     try {
-      await deleteJob(name);
+      await deleteJob(name, namespace);
       setDeleteOpen(false);
       router.push("/jobs");
     } catch (err) {
@@ -48,7 +61,8 @@ export function JobDetail({ name }: { name: string }) {
   }
   if (!job) return null;
 
-  const allHealthy = job.healthy === job.desired && job.desired > 0;
+  const state = jobState(job);
+  const problems = attentionAllocations(job);
 
   return (
     <div className="space-y-6">
@@ -66,17 +80,7 @@ export function JobDetail({ name }: { name: string }) {
           <p className="mt-1 text-sm text-muted-foreground">Revision {job.revision}</p>
         </div>
         <div className="flex items-center gap-2">
-          {allHealthy ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              All healthy
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              {job.healthy} of {job.desired} healthy
-            </span>
-          )}
+          <JobStatePill state={state} />
           {allowWrites && job.spec && (
             <button
               type="button"
@@ -104,15 +108,74 @@ export function JobDetail({ name }: { name: string }) {
         </div>
       </div>
 
+      <section className={`rounded-lg border p-5 ${
+        state === "ready"
+          ? "border-emerald-500/30 bg-emerald-500/5"
+          : state === "degraded"
+            ? "border-red-500/30 bg-red-500/5"
+            : "border-amber-500/30 bg-amber-500/5"
+      }`}>
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Revision {job.revision}</p>
+            <h2 className="mt-1 text-base font-semibold text-foreground">
+              {state === "ready"
+                ? "Deployment is ready"
+                : state === "degraded"
+                  ? "Deployment needs attention"
+                  : "Deployment is converging"}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">{jobStateDescription(job)}</p>
+          </div>
+          <p className="shrink-0 text-xs text-muted-foreground">
+            {state === "ready"
+              ? "No runtime problems detected"
+              : state === "degraded"
+                ? "Start with the diagnostic below"
+                : "This view refreshes every five seconds"}
+          </p>
+        </div>
+      </section>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Desired" value={job.desired} />
         <StatCard label="Running" value={job.running} />
         <StatCard label="Healthy" value={job.healthy} />
       </div>
 
+      {problems.length > 0 && state !== "ready" && (
+        <section>
+          <div className="mb-3">
+            <h2 className="text-sm font-medium text-foreground">Diagnostics</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Allocations that do not match healthy running state for the current rollout.</p>
+          </div>
+          <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+            {problems.map((allocation) => (
+              <Link
+                key={allocation.id}
+                href={`/jobs/${encodeURIComponent(job.name)}?allocation=${encodeURIComponent(allocation.id)}`}
+                className="flex flex-col justify-between gap-2 px-4 py-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">{allocation.group}/{allocation.task || "*"}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {allocation.message || (allocation.reason ? humanizeReason(allocation.reason) : `${allocation.phase} · ${allocation.health}`)}
+                    {allocation.next_retry_at ? ` · retry ${new Date(allocation.next_retry_at).toLocaleString()}` : ""}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">Events and logs →</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div>
         <h2 className="mb-3 text-sm font-medium text-foreground">Allocations</h2>
-        <AllocationsTable allocations={job.allocations} />
+        <AllocationsTable
+          allocations={job.allocations}
+          initialAllocationId={initialAllocationId}
+        />
       </div>
 
       {job.spec && (
@@ -162,6 +225,21 @@ export function JobDetail({ name }: { name: string }) {
         </>
       )}
     </div>
+  );
+}
+
+function JobStatePill({ state }: { state: ReturnType<typeof jobState> }) {
+  const styles = {
+    ready: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20",
+    converging: "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20",
+    degraded: "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/20",
+  };
+  const dots = { ready: "bg-emerald-500", converging: "bg-amber-500", degraded: "bg-red-500" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${styles[state]}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dots[state]}`} />
+      {jobStateLabel(state)}
+    </span>
   );
 }
 

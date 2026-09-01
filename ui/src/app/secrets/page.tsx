@@ -23,7 +23,7 @@ export default function SecretsPage() {
     setDeleting(true);
     setActionError(null);
     try {
-      await deleteSecret(deleteTarget.name);
+      await deleteSecret(deleteTarget.name, namespace);
       setDeleteTarget(null);
       await mutate();
     } catch (err) {
@@ -69,7 +69,7 @@ export default function SecretsPage() {
       {!namespace ? (
         <EmptyState
           title="Namespace required"
-          description="Set TRELLIS_NAMESPACE to manage namespace-scoped secrets from the dashboard."
+          description="Select a non-empty configured namespace to manage secrets from the dashboard."
         />
       ) : isLoading ? (
         <SecretsSkeleton />
@@ -137,6 +137,7 @@ export default function SecretsPage() {
 
       {editor && (
         <SecretEditor
+          namespace={namespace}
           existing={editor === "new" ? undefined : editor}
           onClose={() => setEditor(null)}
           onSaved={async () => {
@@ -163,10 +164,12 @@ export default function SecretsPage() {
 }
 
 function SecretEditor({
+  namespace,
   existing,
   onClose,
   onSaved,
 }: {
+  namespace: string;
   existing?: SecretMetadata;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -185,7 +188,7 @@ function SecretEditor({
     setSaving(true);
     setError(null);
     try {
-      await setSecret(name.trim(), value, existing?.version);
+      await setSecret(name.trim(), value, namespace, existing?.version);
       await onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to store secret");

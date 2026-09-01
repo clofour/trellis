@@ -6,7 +6,7 @@ import { useConfig } from "./config-provider";
 import { StatusBadge } from "./status-badge";
 import { ConfirmDialog } from "./confirm-dialog";
 import { formatCPU, formatBytes, timeAgo } from "@/lib/utils";
-import { drainNode } from "@/lib/api";
+import { drainNode, undrainNode } from "@/lib/api";
 import { EmptyState } from "./empty-state";
 import { Skeleton } from "./skeleton";
 import type { Node } from "@/lib/types";
@@ -15,6 +15,7 @@ export function NodesTable() {
   const { data: nodes, isLoading, error, mutate } = useNodes();
   const { allowWrites } = useConfig();
   const [drainTarget, setDrainTarget] = useState<Node | null>(null);
+  const [undrainingID, setUndrainingID] = useState<string | null>(null);
   const [draining, setDraining] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -30,6 +31,19 @@ export function NodesTable() {
       setActionError(err instanceof Error ? err.message : "Failed to drain node");
     } finally {
       setDraining(false);
+    }
+  };
+
+  const handleUndrain = async (node: Node) => {
+    setUndrainingID(node.id);
+    setActionError(null);
+    try {
+      await undrainNode(node.id);
+      await mutate();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to undrain node");
+    } finally {
+      setUndrainingID(null);
     }
   };
 
@@ -119,7 +133,14 @@ export function NodesTable() {
                   {allowWrites && (
                     <td className="px-4 py-3 text-right">
                       {node.status === "draining" ? (
-                        <span className="text-xs text-muted-foreground">Draining</span>
+                        <button
+                          type="button"
+                          disabled={undrainingID === node.id}
+                          onClick={() => handleUndrain(node)}
+                          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+                        >
+                          {undrainingID === node.id ? "Undraining…" : "Undrain"}
+                        </button>
                       ) : (
                         <button
                           type="button"

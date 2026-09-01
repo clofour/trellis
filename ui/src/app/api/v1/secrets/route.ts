@@ -1,18 +1,26 @@
-import { NextResponse } from "next/server";
-import { orchestratorHeaders, TRELLIS_URL } from "@/lib/orchestrator";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  orchestratorHeaders,
+  TRELLIS_URL,
+  resolveDashboardNamespace,
+} from "@/lib/orchestrator";
 
-export async function GET() {
-  const namespace = process.env.TRELLIS_NAMESPACE || "";
+export async function GET(request: NextRequest) {
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
+  const namespace = selected.namespace;
   if (!namespace) {
     return NextResponse.json(
-      { error: "TRELLIS_NAMESPACE is required for secret management" },
+      { error: "A non-empty dashboard namespace is required for secret management" },
       { status: 400 },
     );
   }
   try {
     const res = await fetch(
       `${TRELLIS_URL}/v1/namespaces/${encodeURIComponent(namespace)}/secrets`,
-      { headers: orchestratorHeaders(), cache: "no-store" },
+      { headers: orchestratorHeaders(namespace), cache: "no-store" },
     );
     if (!res.ok) {
       const text = await res.text();

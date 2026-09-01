@@ -8,10 +8,17 @@ import { AllocationDetail } from "./allocation-detail";
 
 export function AllocationsTable({
   allocations,
+  initialAllocationId,
 }: {
   allocations: Allocation[] | null;
+  initialAllocationId?: string;
 }) {
-  const [selected, setSelected] = useState<Allocation | null>(null);
+  const [selectedID, setSelectedID] = useState<string | null>(null);
+  const [initialDismissed, setInitialDismissed] = useState(false);
+  const effectiveID = selectedID ?? (initialDismissed ? undefined : initialAllocationId);
+  const selected = (allocations ?? []).find(
+    (allocation) => allocation.id === effectiveID,
+  );
 
   if (!allocations || allocations.length === 0) {
     return (
@@ -41,7 +48,7 @@ export function AllocationsTable({
             {allocations.map((alloc) => (
               <tr
                 key={alloc.id}
-                onClick={() => setSelected(alloc)}
+                onClick={() => setSelectedID(alloc.id)}
                 className="cursor-pointer transition-colors hover:bg-muted/30"
                 title="Open allocation diagnostics"
               >
@@ -70,7 +77,10 @@ export function AllocationsTable({
       {selected && (
         <AllocationDetail
           allocation={selected}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            setSelectedID(null);
+            setInitialDismissed(true);
+          }}
         />
       )}
     </>

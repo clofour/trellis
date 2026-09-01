@@ -9,6 +9,7 @@ import (
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
+	"github.com/clofour/trellis/internal/lifecycle"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/spf13/cobra"
 )
@@ -473,7 +474,25 @@ func shortID(id string) string {
 }
 
 func jobReady(status *api.JobStatusResponse) bool {
-	return status.Desired > 0 && status.Running >= status.Desired && status.Healthy >= status.Desired
+	if status.Desired <= 0 {
+		return false
+	}
+	if len(status.Allocations) == 0 {
+		return status.Running >= status.Desired && status.Healthy >= status.Desired
+	}
+	currentRunning, currentHealthy := 0, 0
+	for _, a := range status.Allocations {
+		if a.JobRevision != status.Revision || a.Draining {
+			continue
+		}
+		if a.Phase == lifecycle.PhaseRunning {
+			currentRunning++
+		}
+		if a.Phase == lifecycle.PhaseRunning && a.Health == lifecycle.HealthHealthy {
+			currentHealthy++
+		}
+	}
+	return currentRunning >= status.Desired && currentHealthy >= status.Desired
 }
 
 func jobState(status *api.JobStatusResponse) string {
@@ -481,6 +500,9 @@ func jobState(status *api.JobStatusResponse) string {
 		return "ready"
 	}
 	for _, a := range status.Allocations {
+		if a.Draining && a.JobRevision < status.Revision {
+			continue
+		}
 		if a.Health == "unhealthy" || a.Phase == "failed" || a.Phase == "lost" {
 			return "degraded"
 		}

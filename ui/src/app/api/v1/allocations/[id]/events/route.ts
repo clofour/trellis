@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
-import { orchestratorHeaders, TRELLIS_URL } from "@/lib/orchestrator";
+import {
+  orchestratorHeaders,
+  TRELLIS_URL,
+  resolveDashboardNamespace,
+} from "@/lib/orchestrator";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
   const { id } = await params;
   try {
     const res = await fetch(
       `${TRELLIS_URL}/v1/allocations/${encodeURIComponent(id)}/events`,
-      { headers: orchestratorHeaders() },
+      { headers: orchestratorHeaders(selected.namespace) },
     );
     if (!res.ok) {
       return NextResponse.json(

@@ -3,11 +3,10 @@ import {
   orchestratorHeaders,
   TRELLIS_URL,
   getAllowWrites,
+  resolveDashboardNamespace,
 } from "@/lib/orchestrator";
 
-function namespacePath(name: string) {
-  const namespace = process.env.TRELLIS_NAMESPACE || "";
-  if (!namespace) return null;
+function namespacePath(namespace: string, name: string) {
   return `${TRELLIS_URL}/v1/namespaces/${encodeURIComponent(namespace)}/secrets/${encodeURIComponent(name)}`;
 }
 
@@ -22,19 +21,23 @@ export async function PUT(
     );
   }
   const { name } = await params;
-  const url = namespacePath(name);
-  if (!url) {
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
+  if (!selected.namespace) {
     return NextResponse.json(
-      { error: "TRELLIS_NAMESPACE is required for secret management" },
+      { error: "A non-empty dashboard namespace is required for secret management" },
       { status: 400 },
     );
   }
+  const url = namespacePath(selected.namespace, name);
   try {
     const body = await request.json();
     const res = await fetch(url, {
       method: "PUT",
       headers: {
-        ...orchestratorHeaders(),
+        ...orchestratorHeaders(selected.namespace),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
@@ -58,7 +61,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ name: string }> },
 ) {
   if (!getAllowWrites()) {
@@ -68,17 +71,21 @@ export async function DELETE(
     );
   }
   const { name } = await params;
-  const url = namespacePath(name);
-  if (!url) {
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
+  if (!selected.namespace) {
     return NextResponse.json(
-      { error: "TRELLIS_NAMESPACE is required for secret management" },
+      { error: "A non-empty dashboard namespace is required for secret management" },
       { status: 400 },
     );
   }
+  const url = namespacePath(selected.namespace, name);
   try {
     const res = await fetch(url, {
       method: "DELETE",
-      headers: orchestratorHeaders(),
+      headers: orchestratorHeaders(selected.namespace),
     });
     if (!res.ok) {
       const text = await res.text();

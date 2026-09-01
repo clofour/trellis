@@ -3,12 +3,17 @@ import {
   orchestratorHeaders,
   TRELLIS_URL,
   getAllowWrites,
+  resolveDashboardNamespace,
 } from "@/lib/orchestrator";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
   try {
     const res = await fetch(`${TRELLIS_URL}/v1/jobs`, {
-      headers: orchestratorHeaders(),
+      headers: orchestratorHeaders(selected.namespace),
     });
 
     if (!res.ok) {
@@ -35,21 +40,24 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   }
+  const selected = resolveDashboardNamespace(request);
+  if (selected.error) {
+    return NextResponse.json({ error: selected.error }, { status: 403 });
+  }
   try {
     const body = await request.json();
     if (!body?.spec || typeof body.spec !== "object") {
       return NextResponse.json({ error: "Missing job spec" }, { status: 400 });
     }
 
-    // The dashboard is deliberately scoped to one configured namespace. Never
-    // trust a client-supplied namespace to escape that scope, and always fill it
-    // in so dashboard writes satisfy the orchestrator's namespace invariant.
-    body.spec.namespace = process.env.TRELLIS_NAMESPACE || "";
+    // The browser can select only namespaces explicitly allowed by the
+    // dashboard configuration. Force the manifest to that selected scope.
+    body.spec.namespace = selected.namespace;
 
     const res = await fetch(`${TRELLIS_URL}/v1/jobs`, {
       method: "POST",
       headers: {
-        ...orchestratorHeaders(),
+        ...orchestratorHeaders(selected.namespace),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
