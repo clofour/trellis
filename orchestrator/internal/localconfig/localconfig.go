@@ -1,5 +1,5 @@
 // Package localconfig manages the runtime connection file that a local
-// trellis-node writes on startup. The CLI reads it for zero-config local
+// trellis writes on startup. The CLI reads it for zero-config local
 // access; machines without a node fall back to the user config file or flags.
 package localconfig
 
@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DefaultPath is where trellis-node writes its connection file. /run is
+// DefaultPath is where trellis writes its connection file. /run is
 // tmpfs on modern Linux, so the file is automatically absent when no node
 // is running and cleaned up on reboot.
 const DefaultPath = "/run/trellis/local.yaml"

@@ -6,7 +6,7 @@ INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/trellis/data"
 CONFIG_DIR="/etc/trellis"
 ENV_FILE="${CONFIG_DIR}/trellis.env"
-SERVICE_FILE="/etc/systemd/system/trellis-node.service"
+SERVICE_FILE="/etc/systemd/system/trellis.service"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
@@ -165,8 +165,8 @@ for cmd in curl tar systemctl; do
     command -v "$cmd" >/dev/null 2>&1 || error "Required command not found: $cmd"
 done
 
-if [ -x "${INSTALL_DIR}/trellis-node" ]; then
-    installed_version="$("${INSTALL_DIR}/trellis-node" --version 2>/dev/null | awk '{print $NF}')" \
+if [ -x "${INSTALL_DIR}/trellis" ]; then
+    installed_version="$("${INSTALL_DIR}/trellis" --version 2>/dev/null | awk '{print $NF}')" \
         || installed_version="unknown"
     error "Trellis is already installed (${installed_version}). To upgrade, run scripts/upgrade.sh instead."
 fi
@@ -205,8 +205,8 @@ curl -fSL -o "${tmp}/trellis_linux_x64.tar.gz" "$bin_url"
 
 info "Installing binaries to ${INSTALL_DIR}..."
 tar -xzf "${tmp}/trellis_linux_x64.tar.gz" -C "$tmp"
-install -m 0755 "${tmp}/trellis-node" "${INSTALL_DIR}/trellis-node"
 install -m 0755 "${tmp}/trellis"      "${INSTALL_DIR}/trellis"
+install -m 0755 "${tmp}/trellisctl"   "${INSTALL_DIR}/trellisctl"
 
 # ── WireGuard ────────────────────────────────────────────────────────
 
@@ -287,7 +287,7 @@ Wants=containerd.service network-online.target
 
 [Service]
 EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/trellis-node \\
+ExecStart=${INSTALL_DIR}/trellis \\
   --data-dir ${DATA_DIR} \\
   --agent-advertise ${advertise_host}:8127 \\
   --server-advertise ${advertise_host}:8128 \\
@@ -302,15 +302,15 @@ EOF
 
 systemctl daemon-reload
 
-if confirm "Start trellis-node now?" "y"; then
-    systemctl enable --now trellis-node
-    info "trellis-node is running."
+if confirm "Start trellis now?" "y"; then
+    systemctl enable --now trellis
+    info "trellis is running."
     echo
-    info "Check status with: sudo journalctl -u trellis-node -f"
+    info "Check status with: sudo journalctl -u trellis -f"
 else
-    systemctl enable trellis-node
-    info "trellis-node is enabled but not started."
-    info "Start it with: sudo systemctl start trellis-node"
+    systemctl enable trellis
+    info "trellis is enabled but not started."
+    info "Start it with: sudo systemctl start trellis"
 fi
 
 # ── Dashboard (optional) ─────────────────────────────────────────────
@@ -340,8 +340,8 @@ if confirm "Install the web dashboard?" "n"; then
         *) warn "Unrecognised value '${_mode_input}'; defaulting to read-only." ; dashboard_mode="r" ;;
     esac
 
-    if ! systemctl is-active --quiet trellis-node 2>/dev/null && [ -z "$join_addr" ]; then
-        error "Cannot deploy the dashboard before trellis-node is running. Start trellis-node and re-run setup."
+    if ! systemctl is-active --quiet trellis 2>/dev/null && [ -z "$join_addr" ]; then
+        error "Cannot deploy the dashboard before trellis is running. Start trellis and re-run setup."
     fi
 
     allow_writes_env=""
@@ -381,7 +381,7 @@ EOF
     info "Deploying dashboard as Trellis job ${ui_namespace}/trellis-dashboard..."
     dashboard_applied=false
     for attempt in $(seq 1 30); do
-        if "${INSTALL_DIR}/trellis" \
+        if "${INSTALL_DIR}/trellisctl" \
             --server-addr "$dashboard_server_addr" \
             --cluster-token "$cluster_token" \
             jobs apply --file "$dashboard_manifest" >/dev/null 2>&1; then
@@ -402,9 +402,9 @@ fi
 
 echo
 info "Setup complete!"
-info "Save the local CLI connection: sudo trellis --namespace default context save local --use"
-info "Verify the cluster: sudo trellis nodes list"
+info "Save the local CLI connection: sudo trellisctl --namespace default context save local --use"
+info "Verify the cluster: sudo trellisctl nodes list"
 if [ "$install_ui" = true ]; then
-    info "Dashboard status: trellis --server-addr ${dashboard_server_addr} --cluster-token \"\$(. ${ENV_FILE} && echo \$TRELLIS_TOKEN)\" --namespace ${ui_namespace} jobs status trellis-dashboard"
+    info "Dashboard status: trellisctl --server-addr ${dashboard_server_addr} --cluster-token \"\$(. ${ENV_FILE} && echo \$TRELLIS_TOKEN)\" --namespace ${ui_namespace} jobs status trellis-dashboard"
     info "Dashboard listens on port 3000 of the node where Trellis places its allocation."
 fi

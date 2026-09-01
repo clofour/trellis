@@ -29,7 +29,7 @@ cluster
 | Term | User-facing meaning |
 | --- | --- |
 | **Cluster** | One Trellis deployment operated as a unit. |
-| **Node** | A machine running `trellis-node` and participating in the cluster. |
+| **Node** | A machine running `trellis` and participating in the cluster. |
 | **Namespace** | Tenant, authorization, discovery, and workload-isolation boundary. |
 | **Job** | Named desired workload in a namespace. |
 | **Job manifest** | The YAML document humans author and apply to create or update a job. |

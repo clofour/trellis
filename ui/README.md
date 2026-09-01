@@ -132,7 +132,7 @@ For systemd, store the application at `/opt/trellis/ui`, place the variables in
 ```ini
 [Unit]
 Description=Trellis dashboard
-After=network-online.target trellis-node.service
+After=network-online.target trellis.service
 Wants=network-online.target
 
 [Service]

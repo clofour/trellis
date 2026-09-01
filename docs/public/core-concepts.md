@@ -4,7 +4,7 @@ Start with the [Trellis user model](user-model.md) for the vocabulary shared by 
 
 ## Cluster and nodes
 
-A **cluster** is one Trellis deployment operated as a unit. Each machine in the cluster is a **node** running `trellis-node`. Nodes report capacity, labels, advertised host volumes, runtime state, and health. From an operator's perspective a node is healthy, unhealthy, or draining.
+A **cluster** is one Trellis deployment operated as a unit. Each machine in the cluster is a **node** running `trellis`. Nodes report capacity, labels, advertised host volumes, runtime state, and health. From an operator's perspective a node is healthy, unhealthy, or draining.
 
 Trellis uses Raft internally to replicate desired state and elect a control-plane leader. Leadership is an implementation detail for normal workload workflows; see the developer documentation when operating or debugging the consensus layer itself.
 
