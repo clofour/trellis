@@ -13,7 +13,7 @@ import (
 func NewNodesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "nodes",
-		Short: "Manage nodes in a cluster",
+		Short: "Manage cluster nodes",
 	}
 
 	cmd.AddCommand(NewNodesListCmd())
@@ -26,7 +26,7 @@ func NewNodesCmd() *cobra.Command {
 }
 
 func NewNodesLeadershipTransferCmd() *cobra.Command {
-	return &cobra.Command{Use: "transfer-leadership", Args: cobra.NoArgs, Short: "Transfer Raft leadership to another voter", RunE: func(cmd *cobra.Command, _ []string) error {
+	return &cobra.Command{Use: "transfer-leadership", Args: cobra.NoArgs, Hidden: true, Short: "Transfer control-plane leadership to another voter", RunE: func(cmd *cobra.Command, _ []string) error {
 		tlsCfg, err := buildCLITLSConfig()
 		if err != nil {
 			return err
@@ -34,7 +34,7 @@ func NewNodesLeadershipTransferCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).TransferLeadership(cmd.Context()); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Raft leadership transfer started.")
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Control-plane leadership transfer started.")
 		return err
 	}}
 }
@@ -52,13 +52,13 @@ func NewNodesUndrainCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).UndrainNode(cmd.Context(), id); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node un-drained.")
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node undrained.")
 		return err
 	}}
 }
 
 func NewNodesRemoveCmd() *cobra.Command {
-	return &cobra.Command{Use: "remove ID", Args: cobra.ExactArgs(1), Short: "Permanently remove a node from the Raft cluster", RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "remove ID", Args: cobra.ExactArgs(1), Short: "Permanently remove a node from the cluster", RunE: func(cmd *cobra.Command, args []string) error {
 		tlsCfg, err := buildCLITLSConfig()
 		if err != nil {
 			return err
@@ -66,13 +66,13 @@ func NewNodesRemoveCmd() *cobra.Command {
 		if err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).RemoveRaftMember(cmd.Context(), args[0]); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node permanently removed.")
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Node removed from the cluster.")
 		return err
 	}}
 }
 
 func NewNodesDrainCmd() *cobra.Command {
-	return &cobra.Command{Use: "drain ID", Args: cobra.ExactArgs(1), Short: "Stop scheduling on a node and migrate its allocations", RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "drain ID", Args: cobra.ExactArgs(1), Short: "Drain a node and migrate its allocations", RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := uuid.Parse(args[0])
 		if err != nil {
 			return fmt.Errorf("invalid node ID: %w", err)
@@ -92,7 +92,7 @@ func NewNodesDrainCmd() *cobra.Command {
 func NewNodesListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List nodes in a cluster",
+		Short: "List nodes in the cluster",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			tlsCfg, err := buildCLITLSConfig()
 			if err != nil {

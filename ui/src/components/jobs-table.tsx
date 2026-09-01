@@ -13,7 +13,7 @@ export function JobsTable() {
     return (
       <EmptyState
         title="Unable to load jobs"
-        description="Could not connect to the orchestrator. Ensure it is running and the UI is configured."
+        description="Could not connect to the cluster. Ensure the dashboard connection is configured and reachable."
       />
     );
   }
@@ -21,7 +21,7 @@ export function JobsTable() {
     return (
       <EmptyState
         title="No jobs"
-        description="No jobs have been submitted to the orchestrator yet."
+        description="No job manifests have been applied in this namespace yet."
       />
     );
   }
@@ -47,7 +47,7 @@ export function JobsTable() {
               Revision
             </th>
             <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-              Health
+              Summary
             </th>
           </tr>
         </thead>
@@ -121,7 +121,7 @@ function HealthIndicator({
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
         <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-        Deploying
+        Converging
       </span>
     );
   }
