@@ -148,7 +148,7 @@ func (s *Server) AllocationLogsForNamespace(ctx context.Context, namespace, id s
 	s.mu.RLock()
 	var found *Allocation
 	for _, alloc := range s.allocations {
-		if alloc.Name == id && alloc.Namespace == namespace {
+		if alloc.AllocationID() == id && alloc.Namespace == namespace {
 			found = alloc
 			break
 		}
