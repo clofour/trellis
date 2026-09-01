@@ -1,4 +1,10 @@
 declare module "js-yaml" {
+  export interface Schema {}
+
+  export interface LoadOptions {
+    schema?: Schema;
+  }
+
   export interface DumpOptions {
     indent?: number;
     lineWidth?: number;
@@ -6,6 +12,7 @@ declare module "js-yaml" {
     sortKeys?: boolean;
   }
 
-  export function load(input: string): unknown;
+  export const CORE_SCHEMA: Schema;
+  export function load(input: string, options?: LoadOptions): unknown;
   export function dump(input: unknown, options?: DumpOptions): string;
 }

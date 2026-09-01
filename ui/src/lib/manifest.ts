@@ -1,8 +1,8 @@
-import { dump, load } from "js-yaml";
+import { CORE_SCHEMA, dump, load } from "js-yaml";
 import type { DurationValue, JobSpec } from "./types";
 
 export function parseJobManifest(source: string): JobSpec {
-  const parsed = load(source);
+  const parsed = load(source, { schema: CORE_SCHEMA });
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Job manifest must be a YAML mapping.");
   }
