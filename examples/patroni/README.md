@@ -1,13 +1,15 @@
 # Patroni architecture skeleton
 
+**Level:** Advanced architecture · **Prerequisites:** complete the earlier learning path, prepare at least three failure-separated nodes, and design an external Patroni DCS and backup system
+
 This directory demonstrates how Trellis can place and monitor three Patroni/PostgreSQL containers. It is intentionally **not a turnkey HA database**. Trellis supplies container scheduling, health observations, namespace networking, secret delivery, and local-volume placement; Patroni and a supported distributed configuration store (DCS) must supply database membership, leader election, replication, and promotion safety.
 
 ## What the manifest provides
 
 - Three `postgres` group allocations with a normal scheduler preference to spread replicas.
 - A `database=true` node constraint and required `patroni-data` host volume.
-- Automatic namespace WireGuard networking.
-- PostgreSQL and Patroni REST ports plus an HTTP `/health` probe.
+- Task-level namespace WireGuard networking with the `runsc` runtime.
+- PostgreSQL and Patroni REST listeners inside the WireGuard-attached task, plus a script `/health` probe.
 - Namespace-scoped Trellis API access for optional endpoint discovery.
 - Environment-delivered superuser and replication credentials.
 - Rolling replacement with one in-flight replacement.
@@ -77,3 +79,5 @@ Before storing production data, demonstrate all of the following in a disposable
 8. restoration when Trellis desired state and database data are recovered separately.
 
 Trellis backups contain the job and encrypted secret records, not PostgreSQL data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities.
+
+[Examples index](../README.md) · [Learning path](../../docs/public/learning-path.md)

@@ -1,5 +1,7 @@
 # Deployment strategy examples
 
+**Level:** Advanced · **Prerequisites:** run the `web-service` rolling update and operate an external proxy/controller for traffic-switching patterns
+
 This directory compares three release patterns. Trellis implements `recreate` and `rolling` as task-group update strategies. Blue/green and canary releases are compositions of independent jobs plus an external, label-driven proxy; `blue_green` and `canary` are not valid strategy values.
 
 ## Rolling update
@@ -58,3 +60,5 @@ Weights apply to individual discovered allocations. Four stable replicas at weig
 - Make database and message-format changes compatible across every version that may run simultaneously.
 
 The public [Cookbook](../../docs/public/cookbook.md) explains the reasoning and tradeoffs in more detail; these files provide concrete manifest shapes.
+
+[Examples index](../README.md) · [Learning path](../../docs/public/learning-path.md)

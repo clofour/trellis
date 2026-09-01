@@ -23,9 +23,9 @@ function defaultSpec(namespace: string): JobSpec {
         count: 1,
         tasks: [
           {
-            name: "web",
-            image: "nginx:latest",
-            resources: { cpu: 250, memory: 268435456 },
+            name: "nginx",
+            image: "docker.io/library/nginx:1.27-alpine",
+            resources: { cpu: 100, memory: 67108864 },
           },
         ],
       },
@@ -208,7 +208,7 @@ function JobFormPanel({
         <div className="flex items-start justify-between border-b border-border px-6 py-4">
           <div>
             <h2 className="text-base font-semibold text-foreground">
-              {isEditing ? `Edit — ${initialSpec!.name}` : "New Job"}
+              {isEditing ? `Edit Manifest — ${initialSpec!.name}` : "Apply Manifest"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
               Edit the YAML job manifest used by the CLI, documentation, and examples.

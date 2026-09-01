@@ -20,6 +20,13 @@ func TestParseYAML(t *testing.T) {
 	}
 }
 
+func TestParseYAMLRejectsUnknownFields(t *testing.T) {
+	raw := []byte("namespace: default\nname: web\nnetwork:\n  wireguard: true\ntask_groups:\n  - name: api\n    count: 1\n    network_mode: host\n    tasks:\n      - name: server\n        image: example/server:1\n        ports:\n          - host_port: 8080\n            container_port: 80\n")
+	if _, err := ParseYAML(raw); err == nil {
+		t.Fatal("expected unknown manifest fields to be rejected")
+	}
+}
+
 func TestValidate(t *testing.T) {
 	valid := &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "example/server:1"}}}}}
 	if err := Validate(valid); err != nil {

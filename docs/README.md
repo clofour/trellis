@@ -1,27 +1,52 @@
 # Trellis documentation
 
-Trellis is an experimental, containerd-backed workload orchestrator. These pages describe the implementation in this repository; they do not promise production readiness.
+This is the authoritative documentation index for Trellis. The root README is the project front door; this page owns the learning order and documentation structure. Public guides describe user and operator workflows. Developer guides explain implementation internals.
 
-The public documentation follows one user model across the CLI, dashboard, manifests, and examples. Start with the user model if terminology is unfamiliar; developer documentation intentionally uses lower-level implementation terms where needed.
+Trellis is experimental. These pages describe the current repository and do not promise production readiness.
 
-## Public documentation
+## Start here
 
-1. [User model](public/user-model.md)
-2. [Getting started](public/getting-started.md)
-3. [CLI workflows](public/cli.md)
-4. [Core concepts](public/core-concepts.md)
-5. [Job manifest reference](public/job-specification.md)
-6. [Operations](public/operations.md)
-7. [Cookbook](public/cookbook.md)
-8. [Dashboard](public/dashboard.md)
-9. [Examples](../examples/README.md)
+Read these in order if this is your first time using Trellis:
+
+1. **[Getting Started](public/getting-started.md)** — install a single-node cluster, connect the CLI, and complete the apply/inspect/update/log/delete lifecycle.
+2. **[Learning path](public/learning-path.md)** — add health checks, networking, rolling updates, secrets, volumes, sidecars, API access, and advanced patterns in a deliberate sequence.
+3. **[User model](public/user-model.md)** — learn the precise vocabulary shared by manifests, the CLI, dashboard, examples, and API.
+4. **[Core concepts](public/core-concepts.md)** — understand scheduling, reconciliation, networking, persistence, and updates.
+
+Getting Started is the only installation walkthrough and [`examples/hello`](../examples/hello/) is the only first-workload example. Other pages link back to them rather than maintaining competing quick starts.
+
+## Workload guides and reference
+
+| Guide | Use it to |
+|---|---|
+| [CLI workflows](public/cli.md) | Manage contexts; validate, plan, apply, watch, diagnose, log, and delete jobs |
+| [Job manifest reference](public/job-specification.md) | Look up the complete current YAML schema and validation rules |
+| [Examples](../examples/README.md) | Run beginner, intermediate, and advanced manifests in learning order |
+| [Cookbook](public/cookbook.md) | Adapt Trellis primitives to deployment outcomes and architecture patterns |
+
+## Operating Trellis
+
+| Guide | Use it to |
+|---|---|
+| [Operations](public/operations.md) | Maintain jobs and nodes, manage backups/secrets, observe failures, and configure TLS |
+| [Operations dashboard](public/dashboard.md) | Configure the first-party dashboard and use its operational views |
 
 ## Developer documentation
 
-- [Architecture and major concepts](developer/architecture.md)
+Read these after the public model unless you are working on Trellis itself:
+
+- [Architecture and major boundaries](developer/architecture.md)
 - [Control plane, reconciliation, and lifecycle](developer/control-plane.md)
 - [Runtime, networking, storage, and secrets](developer/node-internals.md)
-- [HTTP API](developer/api.md)
+- [JSON HTTP API](developer/api.md)
 - [Development and testing](developer/development.md)
 
-> Security note: use TLS, protect the cluster token, bind administrative endpoints to a trusted network, and keep the secrets encryption key outside the data directory.
+## Documentation contract
+
+- YAML is the only human-authored job-manifest format.
+- The manifest schema in [Job manifest reference](public/job-specification.md) must match `orchestrator/internal/spec/types.go`.
+- Commands use the canonical `apply`, `status`, `diagnose`, `logs`, and `delete` workflow from the CLI guide.
+- Example READMEs state their level and prerequisites; advanced patterns must not masquerade as turnkey beginner workloads.
+- Internal Raft, RPC, and storage mechanics belong in developer documentation or explicitly advanced operator sections.
+
+> Security note: use TLS, protect cluster and namespace tokens, bind administrative endpoints to a trusted network, and keep the secrets encryption key outside the data directory.

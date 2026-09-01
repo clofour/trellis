@@ -7,5 +7,7 @@ task_groups:
     tasks:
       - name: web
         image: docker.io/library/nginx:1.27-alpine
-        ports: [{host_port: 0, container_port: 80}]
+        networking:
+          mode: host
+          ports: [{host_port: 0, container_port: 80}]
         health_check: {type: http, port: 80, path: /}

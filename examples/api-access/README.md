@@ -1,5 +1,7 @@
 # Namespace-scoped API access
 
+**Level:** Advanced · **Prerequisites:** complete the intermediate examples and use a reviewed controller image
+
 This example shows how a trusted workload can discover and automate resources in its own namespace without embedding the cluster administrator token in an image.
 
 ## What `api_access` does
@@ -41,3 +43,5 @@ Use allocation logs to inspect the controller's non-sensitive result. Never prin
 API clients should set request deadlines, retry transient transport/5xx failures with backoff, and tolerate resources changing between reads. Prefer read-only discovery loops unless mutation is essential. A namespace token must not be treated as a cluster-administration credential; secret management, backups, Raft membership, and other administrator operations require cluster authorization.
 
 For a long-running process, poll only as often as needed and preserve the last known-good generated configuration through temporary API outages. The reverse-proxy recipe in the public cookbook applies this exact controller pattern.
+
+[Examples index](../README.md) · [Learning path](../../docs/public/learning-path.md)

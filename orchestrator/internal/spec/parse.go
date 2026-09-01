@@ -15,6 +15,7 @@ func ParseYAML(raw []byte) (*JobSpec, error) {
 
 	var job *JobSpec
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		ErrorUnused:      true,
 		WeaklyTypedInput: true,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeDurationHookFunc(),

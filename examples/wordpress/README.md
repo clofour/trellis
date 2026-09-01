@@ -1,5 +1,7 @@
 # WordPress development stack
 
+**Level:** Advanced composition · **Prerequisites:** understand task groups, task-level host networking, secrets, health checks, and advertised host volumes
+
 This example colocates WordPress and MariaDB in one allocation for a compact demonstration. It exercises sidecars, environment and secret injection, host volumes, health checks, restart policy, and service routing in one manifest.
 
 It is **not** a recommended production topology: the database and web tier share placement and lifecycle, and the group cannot be scaled safely by increasing `count`.
@@ -51,3 +53,5 @@ trellis --namespace default jobs delete wordpress
 ```
 
 Before production, separate MariaDB into a managed or replicated database service, use isolated networking and TLS, place the web tier behind the reverse-proxy pattern, pin images by digest, and test password rotation and restores. Scaling only the stateless WordPress tier requires separate task groups/jobs because a Trellis task group scales every contained task together.
+
+[Examples index](../README.md) · [Next: Patroni architecture](../patroni/)

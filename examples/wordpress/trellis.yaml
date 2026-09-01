@@ -3,7 +3,6 @@ namespace: default
 task_groups:
   - name: stack
     count: 1
-    network_mode: host
     labels:
       route: wordpress
     restart:
@@ -22,9 +21,11 @@ task_groups:
           - name: mariadb-root-password
             target: env
             env: MARIADB_ROOT_PASSWORD
-        ports:
-          - host_port: 3306
-            container_port: 3306
+        networking:
+          mode: host
+          ports:
+            - host_port: 3306
+              container_port: 3306
         volumes:
           - name: db-data
             path: /var/lib/mysql
@@ -45,9 +46,11 @@ task_groups:
           - name: wordpress-db-password
             target: env
             env: WORDPRESS_DB_PASSWORD
-        ports:
-          - host_port: 80
-            container_port: 80
+        networking:
+          mode: host
+          ports:
+            - host_port: 80
+              container_port: 80
         volumes:
           - name: wp-content
             path: /var/www/html/wp-content

@@ -323,13 +323,13 @@ if confirm "Install the web dashboard?" "n"; then
         || error "Dashboard namespace must be a safe identifier (1-63 letters, numbers, '_', '.', or '-')."
 
     dashboard_server_addr="${join_addr:-${advertise_host}:8128}"
-    prompt dashboard_server_addr "Trellis leader API address (host:port)" "$dashboard_server_addr"
+    prompt dashboard_server_addr "Trellis cluster API address (host:port)" "$dashboard_server_addr"
 
     dashboard_mode="r"
     echo
     echo "  Dashboard access mode:"
     echo "    r  — read-only  (view jobs, nodes, allocations; no changes)"
-    echo "    rw — read-write (also create, edit, and stop jobs via the UI)"
+    echo "    rw — read-write (also apply, edit, and delete jobs via the UI)"
     echo
     printf 'Dashboard mode [r/rw] (default: r): '
     read -r _mode_input </dev/tty
@@ -402,7 +402,8 @@ fi
 
 echo
 info "Setup complete!"
-info "CLI usage: trellis --server-addr ${advertise_host}:8128 --cluster-token \"\$(. ${ENV_FILE} && echo \$TRELLIS_TOKEN)\" nodes list"
+info "Save the local CLI connection: sudo trellis --namespace default context save local --use"
+info "Verify the cluster: sudo trellis nodes list"
 if [ "$install_ui" = true ]; then
     info "Dashboard status: trellis --server-addr ${dashboard_server_addr} --cluster-token \"\$(. ${ENV_FILE} && echo \$TRELLIS_TOKEN)\" --namespace ${ui_namespace} jobs status trellis-dashboard"
     info "Dashboard listens on port 3000 of the node where Trellis places its allocation."

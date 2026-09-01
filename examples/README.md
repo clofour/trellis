@@ -1,32 +1,52 @@
 # Trellis examples
 
-Every example in this directory uses the same user model as the CLI, dashboard, and public documentation. The `trellis.yaml` files are **YAML job manifests**: human-authored desired state that you apply with `trellis jobs apply --file ...`.
+The examples form a learning path, not a flat catalog. Start with one conceptually small workload and add operational concerns only after the preceding behavior is familiar. Every `trellis.yaml` uses the same YAML job-manifest schema accepted by the CLI and dashboard, and every manifest is parsed and validated by the test suite.
 
-Use the terms from the [Trellis user model](../docs/public/user-model.md): jobs contain task groups and tasks; Trellis creates allocations at runtime to satisfy desired task-group capacity.
+Complete [Getting Started](../docs/public/getting-started.md) first, or follow the expanded [learning path](../docs/public/learning-path.md). Commands below assume the CLI is connected to the manifest's namespace.
 
-## Examples by concept
+## Beginner
 
-| Example | Demonstrates | Start here when... |
+| Order | Example | Adds |
 | --- | --- | --- |
-| [`sidecar/`](sidecar/) | Multiple tasks in one task group | Two containers must share placement and lifecycle |
-| [`secrets/`](secrets/) | Namespace-scoped secret references | A workload needs credentials outside the manifest |
-| [`volumes/`](volumes/) | Advertised host volumes | A workload needs operator-provisioned local persistence |
-| [`api-access/`](api-access/) | In-cluster Trellis API access | A trusted controller needs namespace-scoped runtime discovery |
-| [`deployment-strategies/`](deployment-strategies/) | Rolling, blue/green, and canary patterns | You are designing release workflows |
-| [`wordpress/`](wordpress/) | Small multi-container application composition | You want a compact application-stack example |
-| [`patroni/`](patroni/) | External HA software on Trellis primitives | You are evaluating a stateful replicated system |
+| 1 | [`hello/`](hello/) | One job, task group, allocation, and task; the complete validate → diff → apply → inspect → update → logs → delete lifecycle. |
 
-These examples are patterns, not additional resource types. Blue/green, canary, sidecars, and Patroni do not add special Trellis objects; they compose jobs, task groups, labels, health checks, discovery, and volumes.
+The first workload deliberately omits ports, health-check settings, secrets, volumes, and rollout configuration. Those are important, but none is required to see Trellis reconcile desired state.
 
-## Applying an example
+## Intermediate building blocks
 
-Examples assume the CLI is already connected to a cluster and namespace as described in [Getting started](../docs/public/getting-started.md).
+| Order | Example | Adds | Prerequisites |
+| --- | --- | --- | --- |
+| 2 | [`web-service/`](web-service/) | Two replicas, task-level host networking, a dynamic port, HTTP health check, and rolling replacement. | Spare capacity for old/new overlap. |
+| 3 | [`secrets/`](secrets/) | Namespace-scoped secrets delivered as an environment variable and a file. | Shared node secrets-encryption key. |
+| 4 | [`volumes/`](volumes/) | Allocation-local scratch storage, advertised host volumes, and placement constraints. | Prepared node path, label, and volume advertisement. |
+| 5 | [`sidecar/`](sidecar/) | Two tasks deliberately coupled in one placement/scaling/lifecycle unit. | Two schedulable nodes for two fixed host ports; a custom nginx image for useful metrics. |
+
+These examples teach reusable primitives. Apply one only after reading its README, because host networking, secret key management, and node-local storage all carry operator responsibilities outside the manifest.
+
+## Advanced patterns
+
+| Example | Composes | Why it is advanced |
+| --- | --- | --- |
+| [`api-access/`](api-access/) | Namespace-scoped API access and a controller loop. | The whole task group receives a credential and must be trusted. |
+| [`deployment-strategies/`](deployment-strategies/) | Rolling, blue/green, and weighted canary releases. | Blue/green and canary routing require an external proxy/controller and release observability. |
+| [`wordpress/`](wordpress/) | Multiple tasks, host networking, secrets, host volumes, health checks, and restart policy. | It is a coupled development stack, not a production topology. |
+| [`patroni/`](patroni/) | WireGuard, runsc, discovery, secrets, local volumes, and rolling replacement. | It is an architecture skeleton that still requires a real DCS, routing, fencing, backups, and failure testing. |
+
+These are compositions of ordinary Trellis primitives, not new resource types. Treat them as design references and risk checklists rather than turnkey production deployments.
+
+## Apply any example
+
+From the repository root:
 
 ```sh
-trellis jobs apply --file examples/sidecar/trellis.yaml
-trellis jobs status sidecar-demo
+trellis jobs validate --file examples/hello/trellis.yaml
+trellis jobs diff --file examples/hello/trellis.yaml
+trellis jobs apply --file examples/hello/trellis.yaml --wait
+trellis jobs status hello
+trellis jobs logs hello --tail 100
+trellis jobs delete hello --wait
 ```
 
-The first command applies desired state. The second inspects the job and its allocations. Use allocation-level events and logs only when you need runtime diagnostics.
+For a manifest in another namespace, select or create a context for that namespace, or pass `--namespace`. The CLI rejects a mismatch between the effective namespace and the manifest instead of silently applying to a different scope.
 
-Read each example's README before deploying it. Some examples intentionally require multiple nodes, host networking, pre-provisioned volumes, custom images, or external components.
+[Documentation index](../docs/README.md) · [Job manifest reference](../docs/public/job-specification.md)

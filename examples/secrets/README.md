@@ -1,6 +1,8 @@
 # Secret delivery and rotation
 
-This example injects one secret as an environment variable and one as a read-only file. It demonstrates delivery mechanics; it deliberately does not print either value.
+**Level:** Intermediate · **Prerequisites:** complete `hello` and configure the same separately managed secrets-encryption key on every server
+
+This example injects one secret as an environment variable and one as a read-only file into a long-running nginx task. It demonstrates delivery mechanics; the container deliberately does not read or print either value.
 
 ## Prerequisites
 
@@ -12,7 +14,8 @@ Create the namespace-scoped values before applying the job:
 printf %s 'token-value' | \
   trellis --namespace default secrets set api-token --stdin
 trellis --namespace default secrets set tls-key --file ./server.key
-trellis jobs apply --file examples/secrets/trellis.yaml
+trellis jobs validate --file examples/secrets/trellis.yaml
+trellis jobs apply --file examples/secrets/trellis.yaml --wait
 ```
 
 `API_TOKEN` receives the first value. The second appears at `/run/trellis-secrets/tls.key`; decimal mode `256` is octal `0400`. File targets must use a clean path below `/run/trellis-secrets/` and may use mode `0400` or `0600`.
@@ -39,3 +42,5 @@ printf %s 'replacement' | trellis --namespace default secrets set api-token \
 A successful write increments the version. Running allocations retain bytes already delivered, so coordinate any upstream credential change and replace consumers by applying an execution-affecting job revision. During a compatibility window, applications may need to accept both old and new credentials. Deleting a secret prevents future delivery but does not erase it from already-running containers.
 
 Secret values are capped at 65,536 bytes. Use Trellis secrets for runtime credentials, not large configuration bundles or a general-purpose PKI lifecycle.
+
+[Examples index](../README.md) · [Next: Volumes](../volumes/)

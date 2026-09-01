@@ -1,10 +1,9 @@
 name: patroni
 namespace: database
-network:
-  wireguard: true
 task_groups:
   - name: postgres
     count: 3
+    runtime: runsc
     api_access: true
     labels:
       service: patroni
@@ -26,6 +25,8 @@ task_groups:
           PATRONI_NAME: trellis-member
           PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
           PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+        networking:
+          mode: wireguard
         secrets:
           - name: postgres-password
             target: env
@@ -33,11 +34,6 @@ task_groups:
           - name: replication-password
             target: env
             env: PGPASSWORD_STANDBY
-        ports:
-          - host_port: 0
-            container_port: 5432
-          - host_port: 0
-            container_port: 8008
         volumes:
           - name: postgres-data
             path: /home/postgres/pgroot
@@ -46,9 +42,8 @@ task_groups:
           cpu: 1000
           memory: 2147483648
         health_check:
-          type: http
-          port: 8008
-          path: /health
+          type: script
+          command: [curl, --fail, --silent, http://127.0.0.1:8008/health]
           interval: 10s
           timeout: 3s
           threshold: 3

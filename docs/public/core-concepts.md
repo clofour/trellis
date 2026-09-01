@@ -16,7 +16,7 @@ A **job** is named desired state inside a namespace. Humans define a job with a 
 
 ## Task groups, tasks, and allocations
 
-A **task group** is the unit of placement, scaling, networking, restart policy, and update strategy. `count` is the desired number of group replicas. A task group contains one or more **tasks**, each describing a container.
+A **task group** is the unit of placement, scaling, restart policy, and update strategy. `count` is the desired number of group replicas. A task group contains one or more **tasks**, each describing a container and its own network attachment.
 
 Trellis creates runtime **allocations** to satisfy desired task-group capacity. Users normally inspect the job first and drill into allocations when they need placement, lifecycle, health, retry, port, event, or log details.
 
@@ -42,7 +42,7 @@ Those generation/fencing details are useful diagnostics, but they are not separa
 
 ## Networking and discovery
 
-The default is isolated container networking; `network_mode: host` opts a task group into the host network. A job can request automatic namespace WireGuard networking. Healthy allocation endpoints enter the service catalog. Discovery supports namespace and label filtering, and Trellis DNS resolves names shaped like `group.job.namespace.trellis`.
+Each task selects its attachment through `networking.mode`. The default is an isolated container network with no external routes; `host` joins the node network directly, and `wireguard` joins the namespace WireGuard mesh. Host-port reservations belong under that task's `networking` block and are valid only in host mode. Healthy allocation endpoints enter the service catalog. Discovery supports namespace and label filtering, and Trellis DNS resolves names shaped like `group.job.namespace.trellis`.
 
 ## Persistence and secrets
 
@@ -55,3 +55,5 @@ Unnamed volumes are allocation-local directories beneath the node data directory
 `recreate` stops outdated allocations before replacements. `rolling` starts bounded replacements and removes draining old allocations after replacements are healthy.
 
 Blue/green and canary releases are deployment patterns composed from ordinary jobs, task groups, labels, health checks, and routing. They are not additional Trellis resource types. See the [Cookbook](cookbook.md) and [examples](../../examples/README.md).
+
+[Documentation index](../README.md) · [Previous: User model](user-model.md) · [Next: Job manifest reference](job-specification.md)

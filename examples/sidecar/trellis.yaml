@@ -3,7 +3,6 @@ namespace: default
 task_groups:
   - name: web
     count: 2
-    network_mode: host
     labels:
       route: sidecar-demo
     update:
@@ -12,9 +11,11 @@ task_groups:
     tasks:
       - name: app
         image: docker.io/library/nginx:1.27-alpine
-        ports:
-          - host_port: 80
-            container_port: 80
+        networking:
+          mode: host
+          ports:
+            - host_port: 80
+              container_port: 80
         health_check:
           type: http
           port: 80
@@ -24,6 +25,8 @@ task_groups:
           threshold: 3
       - name: metrics-sidecar
         image: docker.io/nginx/nginx-prometheus-exporter:1.4.2
+        networking:
+          mode: host
         env:
           SCRAPE_URI: http://127.0.0.1:80/stub_status
         resources:

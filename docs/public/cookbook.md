@@ -2,7 +2,7 @@
 
 This cookbook starts with an operational outcome and shows the Trellis pattern that achieves it. It is not an example index: each recipe explains the moving pieces, why they work, and the tradeoffs to preserve when adapting the pattern.
 
-All manifests use the schema in the [job manifest reference](job-specification.md). Commands assume `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE` are configured as described in [Getting Started](getting-started.md).
+All manifests use the schema in the [job manifest reference](job-specification.md). Commands assume a selected context or explicit connection variables as described in [Getting Started](getting-started.md) and [CLI workflows](cli.md).
 
 ## Put a reverse proxy in front of dynamic allocations
 
@@ -16,9 +16,11 @@ All manifests use the schema in the [job manifest reference](job-specification.m
    tasks:
      - name: web
        image: registry.example.com/storefront:2026-08-31
-       ports:
-         - host_port: 0
-           container_port: 8080
+       networking:
+         mode: host
+         ports:
+           - host_port: 0
+             container_port: 8080
        health_check:
          type: http
          port: 8080
@@ -215,7 +217,7 @@ Treat all tasks in that group as holders of the credential. Do not print the env
 
 **Outcome:** colocate a web application and its database for a compact development or demonstration deployment.
 
-Place both tasks in one group, connect them over the allocation-local network, inject database passwords from Trellis secrets, attach separate host volumes, and put the public route label only on the group. The [`WordPress manifest`](../../examples/wordpress/trellis.yaml) demonstrates that composition.
+Place both tasks in one group, explicitly give both tasks host networking so they can communicate over node loopback, inject database passwords from Trellis secrets, attach separate host volumes, and put the public route label only on the group. The [`WordPress manifest`](../../examples/wordpress/trellis.yaml) demonstrates that composition.
 
 This trades simplicity for coupled placement, scaling, updates, and failure. Scaling the group also creates another database, which is usually incorrect. For production, separate the database behind its own replication/failover design or use a managed service; then scale only stateless web replicas.
 
@@ -240,3 +242,5 @@ The [`Patroni example`](../../examples/patroni/) deliberately documents the rema
 | Node-local persistence | Advertised host volume | No built-in replication or backup |
 | In-cluster automation | Namespace-scoped API access | Workload becomes a credential holder |
 | Replicated database | Scheduler plus database-native HA | Trellis does not replace database consensus |
+
+[Documentation index](../README.md) · [Previous: Operations](operations.md) · [Next: Dashboard](dashboard.md)

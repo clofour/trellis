@@ -71,25 +71,10 @@ See the [Trellis user model](docs/public/user-model.md) for the canonical vocabu
 
 ## Documentation
 
-### User documentation
+There is one authoritative [documentation index](docs/README.md). New users should follow this order:
 
-| Guide | Use it to |
-| --- | --- |
-| [User model](docs/public/user-model.md) | Learn the vocabulary shared by every Trellis interface |
-| [Getting started](docs/public/getting-started.md) | Install Trellis and deploy your first workloads |
-| [CLI workflows](docs/public/cli.md) | Configure contexts, validate/plan/apply jobs, watch rollouts, diagnose failures, and inspect logs |
-| [Core concepts](docs/public/core-concepts.md) | Understand how the user model maps to scheduling, networking, and persistence |
-| [Job manifest reference](docs/public/job-specification.md) | Configure task groups, resources, ports, volumes, health checks, and update strategies |
-| [Operations guide](docs/public/operations.md) | Operate jobs, nodes, backups, secrets, networking, and failure recovery |
-| [Cookbook](docs/public/cookbook.md) | Apply Trellis primitives to common deployment patterns |
-| [Dashboard guide](docs/public/dashboard.md) | Configure and operate the first-party dashboard |
+1. [Getting Started](docs/public/getting-started.md) — install, connect, deploy, inspect, update, read logs, and remove one trivial workload.
+2. [Learning path](docs/public/learning-path.md) — add health checks, networking, secrets, volumes, rolling updates, sidecars, API access, and advanced architectures progressively.
+3. [User model](docs/public/user-model.md) and [job manifest reference](docs/public/job-specification.md) — use the canonical vocabulary and complete schema.
 
-### Developer documentation
-
-| Guide | Use it to |
-| --- | --- |
-| [Architecture](docs/developer/architecture.md) | Understand components and major architectural boundaries |
-| [Control plane](docs/developer/control-plane.md) | Understand Raft, reconciliation, and lifecycle internals |
-| [Node internals](docs/developer/node-internals.md) | Understand runtime, networking, storage, and secrets internals |
-| [HTTP API](docs/developer/api.md) | Integrate directly with the JSON API |
-| [Development](docs/developer/development.md) | Build from source and run development checks |
+The [examples index](examples/README.md) separates beginner, intermediate, and advanced patterns. Contributor and internals guides are linked from the documentation index rather than duplicated here.
