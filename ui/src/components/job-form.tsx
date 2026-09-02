@@ -252,7 +252,14 @@ function JobFormPanel({
     setSubmitting(true);
     setError(null);
     try {
-      if (plan && plannedSpec) {
+      if (plan) {
+        if (plan.action === "none") {
+          onClose();
+          return;
+        }
+        if (!plannedSpec) {
+          throw new Error("The reviewed manifest is no longer available; review the plan again.");
+        }
         await submitJob(plannedSpec);
         onSuccess();
         onClose();
@@ -391,12 +398,16 @@ function JobFormPanel({
                 className="min-w-[120px] rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {submitting
-                  ? plan
-                    ? "Applying…"
-                    : "Planning…"
-                  : plan
-                    ? "Apply Manifest"
-                    : "Review Plan"}
+                  ? plan?.action === "none"
+                    ? "Closing…"
+                    : plan
+                      ? "Applying…"
+                      : "Planning…"
+                  : plan?.action === "none"
+                    ? "Close"
+                    : plan
+                      ? "Apply Manifest"
+                      : "Review Plan"}
               </button>
             </div>
           </div>
