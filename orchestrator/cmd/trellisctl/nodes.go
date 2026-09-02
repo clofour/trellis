@@ -164,7 +164,11 @@ func printNodeStatus(w interface{ Write([]byte) (int, error) }, node api.NodeRes
 	if version == "" {
 		version = "unknown"
 	}
-	if _, err := fmt.Fprintf(w, "Node: %s\nID: %s\nStatus: %s\nVersion: %s\nCPU: %dm\nMemory: %s (%d bytes)\nHeartbeat: %s\n", nodeDisplay(node), node.ID, node.Status, version, node.CPU, formatByteCount(node.Memory), node.Memory, node.LastHeartbeat.Format(time.RFC3339)); err != nil {
+	platform := "unknown"
+	if node.OS != "" || node.Arch != "" {
+		platform = fmt.Sprintf("%s/%s", valueOrUnknown(node.OS), valueOrUnknown(node.Arch))
+	}
+	if _, err := fmt.Fprintf(w, "Node: %s\nID: %s\nStatus: %s\nVersion: %s\nPlatform: %s\nCPU: %dm\nMemory: %s (%d bytes)\nHeartbeat: %s\n", nodeDisplay(node), node.ID, node.Status, version, platform, node.CPU, formatByteCount(node.Memory), node.Memory, node.LastHeartbeat.Format(time.RFC3339)); err != nil {
 		return err
 	}
 
@@ -203,6 +207,13 @@ func printNodeStatus(w interface{ Write([]byte) (int, error) }, node api.NodeRes
 		}
 	}
 	return nil
+}
+
+func valueOrUnknown(value string) string {
+	if value == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func formatByteCount(bytes int64) string {
