@@ -16,10 +16,12 @@ The first workload deliberately omits ports, health-check settings, secrets, vol
 
 | Order | Example | Adds | Prerequisites |
 | --- | --- | --- | --- |
-| 2 | [`web-service/`](web-service/) | Two replicas, task-level host networking, a fixed host port, HTTP health check, and rolling replacement. | At least two nodes; another compatible node for old/new overlap during a rolling update. |
-| 3 | [`secrets/`](secrets/) | Namespace-scoped secrets delivered as an environment variable and a file. | Shared node secrets-encryption key. |
-| 4 | [`volumes/`](volumes/) | Allocation-local scratch storage, advertised host volumes, and placement constraints. | Prepared node path, label, and volume advertisement. |
-| 5 | [`sidecar/`](sidecar/) | Two tasks deliberately coupled in one placement/scaling/lifecycle unit. | Two schedulable nodes for two fixed host ports; a custom nginx image for useful metrics. |
+| 2 | [`web-service/`](web-service/) | One reachable service, task-level host networking, one fixed port reservation, and HTTP health. | One healthy node. |
+| 3 | [`replicated-service/`](replicated-service/) | A second replica and the placement consequences of a shared fixed host port. | At least two schedulable nodes. |
+| 4 | [`rolling-update/`](rolling-update/) | Rolling replacement and explicit overlap/capacity requirements. | Two running replicas plus a third compatible node for old/new overlap. |
+| 5 | [`secrets/`](secrets/) | Namespace-scoped secrets delivered as an environment variable and a file. | Shared node secrets-encryption key. |
+| 6 | [`volumes/`](volumes/) | Allocation-local scratch storage, advertised host volumes, and placement constraints. | Prepared node path, label, and volume advertisement. |
+| 7 | [`sidecar/`](sidecar/) | Two tasks deliberately coupled in one placement/scaling/lifecycle unit. | Two schedulable nodes for two fixed host ports; a custom nginx image for useful metrics. |
 
 These examples teach reusable primitives. Apply one only after reading its README, because host networking, secret key management, and node-local storage all carry operator responsibilities outside the manifest.
 
@@ -30,11 +32,11 @@ These examples teach reusable primitives. Apply one only after reading its READM
 | [`api-access/`](api-access/) | Namespace-scoped API access and a controller loop. | The whole task group receives a credential and must be trusted. |
 | [`deployment-strategies/`](deployment-strategies/) | Rolling, blue/green, and weighted canary releases. | Blue/green and canary routing require an external proxy/controller, enough nodes for fixed listeners, and release observability. |
 | [`wordpress/`](wordpress/) | Multiple tasks, host networking, secrets, host volumes, health checks, and restart policy. | It is a coupled development stack, not a production topology. |
-| [`patroni/`](patroni/) | WireGuard, runsc, discovery, secrets, local volumes, and rolling replacement. | It is an architecture skeleton that still requires a real DCS, routing, fencing, backups, and failure testing. |
+| [`patroni/`](patroni/) | Namespace networking, runsc, discovery, secrets, local volumes, and rolling replacement. | It is an architecture skeleton that still requires a real DCS, routing, fencing, backups, and failure testing. |
 
 These are compositions of ordinary Trellis primitives, not new resource types. Treat them as design references and risk checklists rather than turnkey production deployments.
 
-## Apply any example
+## Apply the first example
 
 From the repository root:
 
