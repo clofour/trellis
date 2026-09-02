@@ -1,6 +1,6 @@
 # Trellis user model
 
-Trellis has several interfaces — YAML manifests, the `trellis` CLI, the dashboard, and the HTTP API — but they describe the same model. This page defines the user-facing vocabulary those interfaces should share.
+Trellis has several interfaces — YAML manifests, the `trellisctl` CLI, the dashboard, and the HTTP API — but they describe the same model. This page defines the user-facing vocabulary those interfaces should share.
 
 ## The hierarchy
 
@@ -72,10 +72,10 @@ Use the same verbs across interfaces:
 - **Delete** a job to remove its desired state and stop its allocations.
 - **Drain** / **undrain** a node for maintenance.
 - **Inspect** a job for desired-versus-observed state.
-- **Inspect an allocation** for placement, lifecycle, health, events, and logs.
+- **Inspect an allocation** for placement, lifecycle, health, events, and task logs.
 - **Set**, **describe**, and **delete** secrets.
 
-Documentation and UI copy use these canonical terms; any deliberate CLI aliases are convenience spellings rather than a compatibility layer.
+Documentation and UI copy use these canonical terms; CLI aliases are convenience spellings rather than a second vocabulary.
 
 ## What is not part of the basic model
 
