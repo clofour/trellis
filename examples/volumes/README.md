@@ -33,10 +33,11 @@ Repeat `--label` and `--host-volume` for additional values. The name in `--host-
 trellisctl jobs validate --file examples/volumes/trellis.yaml
 trellisctl jobs apply --file examples/volumes/trellis.yaml --wait
 trellisctl --namespace default jobs status volumes-demo
-trellisctl nodes list --output json
+trellisctl nodes list
+trellisctl nodes status NODE
 ```
 
-The allocation should land on a node reporting `app-data`. If it remains unplaced, check node health, the `storage` label, directory existence, and free CPU/memory.
+`nodes status` shows the node's labels and advertised host-volume names without requiring raw JSON. The allocation should land on a node reporting `storage=fast` and `app-data`. If it remains unplaced, check node health, the `storage` label, volume advertisement, directory existence, and free CPU/memory.
 
 ## Recovery and scaling
 
