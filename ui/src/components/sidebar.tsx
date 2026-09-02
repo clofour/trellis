@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOrchestratorStatus } from "@/hooks/use-api";
 import { useConfig } from "./config-provider";
+
+const namespacePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
 
 const navigation = [
   {
@@ -62,11 +65,33 @@ export function Sidebar() {
     clusterName,
     namespace,
     namespaces,
+    allowAnyNamespace,
     setNamespace,
   } = useConfig();
+  const [namespaceInput, setNamespaceInput] = useState(namespace);
+
+  useEffect(() => {
+    setNamespaceInput(namespace);
+  }, [namespace]);
+
   const visibleNavigation = navigation.filter(
     (item) => !item.clusterOnly || apiAccess === "cluster",
   );
+
+  const commitNamespace = () => {
+    const candidate = namespaceInput.trim();
+    if (!namespacePattern.test(candidate)) {
+      setNamespaceInput(namespace);
+      return;
+    }
+    if (!allowAnyNamespace && !namespaces.includes(candidate)) {
+      setNamespaceInput(namespace);
+      return;
+    }
+    if (candidate === namespace) return;
+    setNamespace(candidate);
+    router.push("/");
+  };
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-card">
@@ -123,7 +148,30 @@ export function Sidebar() {
           >
             Namespace
           </label>
-          {apiAccess === "cluster" ? (
+          {apiAccess === "cluster" && allowAnyNamespace ? (
+            <>
+              <input
+                id="namespace-context"
+                list="namespace-context-options"
+                value={namespaceInput}
+                onChange={(event) => setNamespaceInput(event.target.value)}
+                onBlur={commitNamespace}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitNamespace();
+                  }
+                }}
+                className="mt-1.5 w-full rounded-md border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-emerald-500/40"
+                aria-label="Namespace"
+              />
+              <datalist id="namespace-context-options">
+                {namespaces.filter(Boolean).map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </>
+          ) : apiAccess === "cluster" ? (
             <select
               id="namespace-context"
               value={namespace}
