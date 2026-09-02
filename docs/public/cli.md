@@ -104,7 +104,7 @@ trellisctl jobs list
 trellisctl jobs status web
 ```
 
-Table output shows short allocation references and node addresses instead of requiring full internal UUIDs. Full IDs and API fields remain available through `--output json`.
+Table output shows short allocation references and node addresses instead of requiring full internal UUIDs. Full IDs and API fields remain available through `--output json` on commands that expose structured output.
 
 When a job is not healthy, ask for the failure-oriented view:
 
@@ -175,8 +175,28 @@ trellisctl nodes remove 9cf13a2b
 
 Ambiguous prefixes are rejected and the CLI shows the matching nodes rather than guessing.
 
-## Automation
+## Structured output and automation
 
-`--output json` exposes complete API-shaped data for scripts. Explicit `--server-addr`, `--cluster-token`, `--namespace`, TLS flags, and `TRELLIS_*` environment variables override saved context values. Named contexts are therefore an interactive convenience, not a hidden requirement for automation.
+`--output` / `-o` is deliberately **command-local**, not a global promise. Commands that can return one coherent structured result expose `--output table|json`; streaming or action-oriented commands do not expose the flag and therefore cannot silently ignore `--output json` while printing prose.
+
+Current structured-output commands are:
+
+```text
+jobs validate, diff/plan, list, status, diagnose
+nodes list, status
+secrets set, list, describe
+credentials create
+```
+
+For example:
+
+```sh
+trellisctl jobs status web --output json
+trellisctl nodes status worker-2 -o json
+```
+
+`jobs logs` remains a log byte stream, while `jobs apply`, `jobs watch`, `jobs delete`, node mutation commands, backup operations, and context mutation commands remain human/action workflows rather than pretending to produce a stable JSON document.
+
+Explicit `--server-addr`, `--token`, `--namespace`, TLS flags, and `TRELLIS_*` environment variables override saved context values. Named contexts are therefore an interactive convenience, not a hidden requirement for automation.
 
 [Documentation index](../README.md) · [Previous: Job manifest reference](job-specification.md) · [Next: Operations](operations.md)
