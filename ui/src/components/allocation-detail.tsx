@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Allocation } from "@/lib/types";
 import { useAllocationEvents, useAllocationLogs } from "@/hooks/use-api";
 import { StatusBadge } from "./status-badge";
@@ -8,11 +9,14 @@ import { timeAgo } from "@/lib/utils";
 
 export function AllocationDetail({
   allocation,
+  tasks,
   onClose,
 }: {
   allocation: Allocation;
+  tasks: string[];
   onClose: () => void;
 }) {
+  const [selectedTask, setSelectedTask] = useState<string | null>(tasks[0] ?? null);
   const {
     data: events,
     error: eventsError,
@@ -23,7 +27,7 @@ export function AllocationDetail({
     error: logsError,
     isLoading: logsLoading,
     mutate: refreshLogs,
-  } = useAllocationLogs(allocation.id);
+  } = useAllocationLogs(allocation.id, selectedTask);
 
   const labels = Object.entries(allocation.labels ?? {});
 
@@ -115,14 +119,14 @@ export function AllocationDetail({
 
             {(allocation.ports?.length ?? 0) > 0 && (
               <div className="mt-4">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Ports</p>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Reserved host ports</p>
                 <div className="flex flex-wrap gap-2">
                   {allocation.ports!.map((port, index) => (
                     <span
                       key={`${port.host_port}-${port.container_port}-${index}`}
                       className="rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground"
                     >
-                      {port.host_port} → {port.container_port}
+                      {port.host_port}
                     </span>
                   ))}
                 </div>
@@ -187,18 +191,35 @@ export function AllocationDetail({
           </section>
 
           <section>
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-end justify-between gap-4">
               <div>
                 <h3 className="text-sm font-medium text-foreground">Logs</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">Last 200 lines, refreshed every five seconds.</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Last 200 lines for one task, refreshed every five seconds.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => refreshLogs()}
-                className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
-              >
-                Refresh
-              </button>
+              <div className="flex items-center gap-2">
+                {tasks.length > 1 && (
+                  <select
+                    value={selectedTask ?? ""}
+                    onChange={(event) => setSelectedTask(event.target.value)}
+                    className="rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                    aria-label="Task log stream"
+                  >
+                    {tasks.map((task) => (
+                      <option key={task} value={task}>{task}</option>
+                    ))}
+                  </select>
+                )}
+                {tasks.length === 1 && (
+                  <span className="font-mono text-xs text-muted-foreground">{tasks[0]}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => refreshLogs()}
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
             {logsLoading ? (
               <Skeleton className="h-48 w-full" />
