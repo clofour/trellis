@@ -33,7 +33,16 @@ prompt() {
     printf '%s [%s] ' "$prompt_text" "$default"
     read -r value </dev/tty
     value="${value:-$default}"
-    eval "$var_name=\$value"
+    printf -v "$var_name" '%s' "$value"
+}
+
+prompt_secret() {
+    local var_name="$1" prompt_text="$2" value
+    printf '%s: ' "$prompt_text"
+    read -r -s value </dev/tty
+    printf '\n'
+    [ -n "$value" ] || error "$prompt_text is required."
+    printf -v "$var_name" '%s' "$value"
 }
 
 is_ipv4() {
@@ -225,24 +234,11 @@ if confirm "Enable WireGuard namespace networking?" "n"; then
     fi
 fi
 
-# ── Data directory and token ─────────────────────────────────────────
+# ── Data directory and advertised address ────────────────────────────
 
 info "Creating data directory at ${DATA_DIR}..."
 install -d -m 0750 "$DATA_DIR"
 install -d -m 0750 "$CONFIG_DIR"
-
-if [ -f "$ENV_FILE" ]; then
-    info "Existing token found at ${ENV_FILE}, keeping it."
-else
-    info "Generating cluster token..."
-    token="$(head -c 32 /dev/urandom | base64)"
-    printf 'TRELLIS_TOKEN=%s\n' "$token" > "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
-    info "Token written to ${ENV_FILE}."
-    info "Copy this token to every node in the cluster."
-fi
-
-# ── Advertise addresses ──────────────────────────────────────────────
 
 default_hostname="$(hostname)"
 prompt advertise_host "Advertise hostname or IP (reachable by other nodes; public/private to auto-detect)" "$default_hostname"
@@ -260,15 +256,32 @@ case "$advertise_host" in
         ;;
 esac
 
-# ── Join an existing cluster? ────────────────────────────────────────
+# ── Cluster membership and token ─────────────────────────────────────
 
 join_flag=""
 join_addr=""
 if confirm "Join an existing cluster?" "n"; then
     prompt join_addr "Address of an existing cluster node (host:8128)" ""
-    if [ -n "$join_addr" ]; then
-        join_flag="--join ${join_addr}"
-    fi
+    [ -n "$join_addr" ] || error "An existing cluster node address is required when joining a cluster."
+    join_flag="--join ${join_addr}"
+fi
+
+if [ -f "$ENV_FILE" ]; then
+    info "Existing cluster token found at ${ENV_FILE}, keeping it."
+elif [ -n "$join_addr" ]; then
+    prompt_secret token "Cluster token for the existing cluster"
+    printf 'TRELLIS_TOKEN=%s\n' "$token" > "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    unset token
+    info "Existing cluster token stored at ${ENV_FILE}."
+else
+    info "Generating cluster token..."
+    token="$(head -c 32 /dev/urandom | base64)"
+    printf 'TRELLIS_TOKEN=%s\n' "$token" > "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    unset token
+    info "Token written to ${ENV_FILE}."
+    info "Keep this token available when adding another node; the joining installer will ask for it."
 fi
 
 # ── systemd unit ─────────────────────────────────────────────────────
