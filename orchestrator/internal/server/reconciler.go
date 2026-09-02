@@ -268,7 +268,7 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 			return fmt.Errorf("job %s was deleted before allocation start", alloc.JobName)
 		}
 		var groupRuntime string
-		var groupAPIAccess bool
+		var groupAPIAccess spec.APIAccessMode
 		var groupRestart *spec.RestartPolicySpec
 		var groupUsesWireGuard bool
 		for _, group := range job.Spec.TaskGroups {
@@ -316,10 +316,10 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		raw, _ := json.Marshal(hashInput)
 		hash := sha256.Sum256(raw)
 		request.ExecutionHash = hex.EncodeToString(hash[:])
-		if groupAPIAccess && s.tokenManager != nil {
-			token, err := s.tokenManager.GetOrCreateNamespaceToken(ctx, alloc.Namespace)
+		if groupAPIAccess != spec.APIAccessNone {
+			token, err := s.apiAccessToken(ctx, groupAPIAccess, alloc.Namespace)
 			if err != nil {
-				return fmt.Errorf("create namespace token: %w", err)
+				return err
 			}
 			request.EnvOverrides = map[string]string{
 				"TRELLIS_TOKEN":     token,
