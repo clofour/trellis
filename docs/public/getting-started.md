@@ -49,7 +49,7 @@ task_groups:
           TUTORIAL_STEP: first
         resources:
           cpu: 100
-          memory: 67108864
+          memory: 64MiB
 ```
 
 This is one job containing one task group, one desired allocation, and one nginx task. It intentionally has no networking, explicit health check, volume, secret, or update policy yet. A running task without an explicit health check is considered healthy.
@@ -116,7 +116,7 @@ You have now completed the full workload lifecycle.
 
 ## Optional: follow the same job in the dashboard
 
-If you installed the read-write dashboard, open `http://NODE_ADDRESS:3000`. Confirm that the active namespace is `default`, use **Apply Manifest** to paste the same YAML, and open the job to inspect its revision, allocations, events, and logs. Editing and deleting use the same manifest vocabulary and lifecycle as the CLI. A read-only dashboard intentionally hides those write actions.
+If you installed the read-write dashboard, open `http://NODE_ADDRESS:3000`. Confirm that the active namespace is `default`, use **Apply Manifest** to paste the same YAML, review the semantic plan, then apply it. Open the job to inspect its revision, allocations, events, and task logs. Editing and deleting use the same manifest vocabulary and lifecycle as `trellisctl`. A read-only dashboard intentionally hides write actions.
 
 ## Troubleshooting
 
