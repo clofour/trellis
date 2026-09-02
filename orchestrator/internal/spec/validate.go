@@ -32,7 +32,8 @@ func Validate(spec *JobSpec) error {
 	if !identifierPattern.MatchString(spec.Namespace) {
 		return errors.New("job namespace must be a safe identifier")
 	}
-	var totalCPU, totalMemory int
+	var totalCPU int
+	var totalMemory ByteSize
 	if len(spec.TaskGroups) == 0 {
 		return errors.New("at least one task group is required")
 	}
@@ -154,7 +155,7 @@ func Validate(spec *JobSpec) error {
 			}
 			if task.Resources != nil {
 				totalCPU += task.Resources.CPU * group.Count
-				totalMemory += task.Resources.Memory * group.Count
+				totalMemory += task.Resources.Memory * ByteSize(group.Count)
 			}
 			volumes := make(map[string]struct{})
 			for _, volume := range task.Volumes {
@@ -177,8 +178,11 @@ func Validate(spec *JobSpec) error {
 					return fmt.Errorf("task group %q task %q: ports require networking mode host", group.Name, task.Name)
 				}
 				for _, port := range task.Networking.Ports {
-					if port.HostPort < 0 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
-						return fmt.Errorf("task group %q task %q: invalid port mapping %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)
+					if port.HostPort < 1 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
+						return fmt.Errorf("task group %q task %q: invalid host port declaration %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)
+					}
+					if port.HostPort != port.ContainerPort {
+						return fmt.Errorf("task group %q task %q: host networking does not translate ports; host_port must equal container_port", group.Name, task.Name)
 					}
 				}
 			}

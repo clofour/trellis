@@ -1,6 +1,6 @@
 # Hello Trellis
 
-**Level:** Beginner · **Prerequisites:** one healthy node and a CLI context in the `default` namespace
+**Level:** Beginner · **Prerequisites:** one healthy node and a `trellisctl` context in the `default` namespace
 
 This is the deliberately small first workload used by [Getting Started](../../docs/public/getting-started.md). It contains one job, one task group, one replica, and one nginx task. There are no ports, health-check settings, volumes, secrets, or update-strategy settings to understand yet.
 
@@ -11,25 +11,25 @@ Trellis treats a running task without an explicit health check as healthy. Later
 From the repository root:
 
 ```sh
-trellis jobs validate --file examples/hello/trellis.yaml
-trellis jobs diff --file examples/hello/trellis.yaml
-trellis jobs apply --file examples/hello/trellis.yaml --wait
-trellis jobs status hello
-trellis jobs logs hello --tail 100
+trellisctl jobs validate --file examples/hello/trellis.yaml
+trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --file examples/hello/trellis.yaml --wait
+trellisctl jobs status hello
+trellisctl jobs logs hello --tail 100
 ```
 
 To create a visible second revision, change `TUTORIAL_STEP: first` to `TUTORIAL_STEP: second`, then preview and apply it:
 
 ```sh
-trellis jobs diff --file examples/hello/trellis.yaml
-trellis jobs apply --file examples/hello/trellis.yaml --wait
-trellis jobs status hello
+trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --file examples/hello/trellis.yaml --wait
+trellisctl jobs status hello
 ```
 
 Remove the desired state and wait for the job to disappear:
 
 ```sh
-trellis jobs delete hello --wait
+trellisctl jobs delete hello --wait
 ```
 
-Next, continue to the [`web-service` example](../web-service/) to add host networking, a dynamic port, an HTTP health check, multiple replicas, and rolling replacement.
+Next, continue to the [`web-service` example](../web-service/) to add host networking, a fixed host port, an HTTP health check, multiple replicas, and rolling replacement.

@@ -12,10 +12,10 @@ Create the namespace-scoped values before applying the job:
 
 ```sh
 printf %s 'token-value' | \
-  trellis --namespace default secrets set api-token --stdin
-trellis --namespace default secrets set tls-key --file ./server.key
-trellis jobs validate --file examples/secrets/trellis.yaml
-trellis jobs apply --file examples/secrets/trellis.yaml --wait
+  trellisctl --namespace default secrets set api-token --stdin
+trellisctl --namespace default secrets set tls-key --file ./server.key
+trellisctl jobs validate --file examples/secrets/trellis.yaml
+trellisctl jobs apply --file examples/secrets/trellis.yaml --wait
 ```
 
 `API_TOKEN` receives the first value. The second appears at `/run/trellis-secrets/tls.key`; decimal mode `256` is octal `0400`. File targets must use a clean path below `/run/trellis-secrets/` and may use mode `0400` or `0600`.
@@ -23,9 +23,9 @@ trellis jobs apply --file examples/secrets/trellis.yaml --wait
 ## Inspect metadata, not plaintext
 
 ```sh
-trellis --namespace default secrets list
-trellis --namespace default secrets describe api-token
-trellis --namespace default jobs status secrets-demo
+trellisctl --namespace default secrets list
+trellisctl --namespace default secrets describe api-token
+trellisctl --namespace default jobs status secrets-demo
 ```
 
 Secret APIs and the dashboard return name, version, update time, and key ID—not plaintext. Avoid `env`, diagnostic dumps, shell tracing, or application logging that could reveal an environment-delivered value. Prefer file delivery when the application supports it.
@@ -35,7 +35,7 @@ Secret APIs and the dashboard return name, version, update time, and key ID—no
 Use the current metadata version as a compare-and-swap guard:
 
 ```sh
-printf %s 'replacement' | trellis --namespace default secrets set api-token \
+printf %s 'replacement' | trellisctl --namespace default secrets set api-token \
   --stdin --expected-version 1
 ```
 

@@ -78,12 +78,18 @@ export function useAllocationEvents(id: string | null) {
   );
 }
 
-export function useAllocationLogs(id: string | null, tail = 200) {
+export function useAllocationLogs(
+  id: string | null,
+  task: string | null,
+  tail = 200,
+) {
   const { namespace } = useConfig();
+  const query = new URLSearchParams({ tail: String(tail) });
+  if (task) query.set("task", task);
   return useSWR<string>(
     id
       ? [
-          `/api/v1/allocations/${encodeURIComponent(id)}/logs?tail=${tail}`,
+          `/api/v1/allocations/${encodeURIComponent(id)}/logs?${query.toString()}`,
           namespace,
         ]
       : null,

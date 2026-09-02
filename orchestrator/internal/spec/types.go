@@ -164,7 +164,7 @@ type SecretRefSpec struct {
 	Mode   uint32       `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
-// PortSpec maps a host port to a container port.
+// PortSpec reserves a host port used directly by a host-networked task.
 type PortSpec struct {
 	HostPort      int `yaml:"host_port" json:"host_port"`
 	ContainerPort int `yaml:"container_port" json:"container_port"`
@@ -172,8 +172,8 @@ type PortSpec struct {
 
 // ResourcesSpec describes task CPU and memory requirements.
 type ResourcesSpec struct {
-	CPU    int `yaml:"cpu" json:"cpu"`
-	Memory int `yaml:"memory" json:"memory"`
+	CPU    int      `yaml:"cpu" json:"cpu"`
+	Memory ByteSize `yaml:"memory" json:"memory"`
 }
 
 // HealthCheckSpec configures task health monitoring.

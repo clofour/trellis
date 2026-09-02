@@ -175,6 +175,7 @@ export function JobDetail({
         <AllocationsTable
           allocations={job.allocations}
           initialAllocationId={initialAllocationId}
+          taskGroups={job.spec?.task_groups ?? []}
         />
       </div>
 

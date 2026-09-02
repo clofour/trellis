@@ -12,7 +12,7 @@ task_groups:
         networking:
           mode: host
           ports:
-            - host_port: 0
+            - host_port: 80
               container_port: 80
         resources:
           cpu: 100

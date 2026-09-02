@@ -264,18 +264,19 @@ func NewJobsLogsCmd() *cobra.Command {
 	var tail int
 	var allocation string
 	var group string
+	var task string
 	cmd := &cobra.Command{
 		Use:   "logs JOB",
 		Args:  cobra.ExactArgs(1),
-		Short: "Show logs for a job without requiring full allocation IDs",
-		Long:  "Show logs for a job. For a job with multiple allocations, non-following output includes every matching allocation. Use --allocation with the short prefix shown by 'jobs status' to select one allocation.",
+		Short: "Show task logs for a job without requiring full allocation IDs",
+		Long:  "Show logs for a job. Non-following output includes every matching task stream. Use --allocation, --group, and --task to narrow the selection; --follow requires exactly one task stream.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tlsCfg, err := buildCLITLSConfig()
 			if err != nil {
 				return err
 			}
 			serverClient := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg)
-			return runJobLogs(cmd.Context(), cmd.OutOrStdout(), serverClient, args[0], allocation, group, follow, tail)
+			return runJobLogs(cmd.Context(), cmd.OutOrStdout(), serverClient, args[0], allocation, group, task, follow, tail)
 		},
 	}
 	flags := cmd.Flags()
@@ -283,6 +284,7 @@ func NewJobsLogsCmd() *cobra.Command {
 	flags.IntVar(&tail, "tail", 100, "Number of trailing lines (0 means all)")
 	flags.StringVar(&allocation, "allocation", "", "Allocation ID or unique ID prefix")
 	flags.StringVar(&group, "group", "", "Only allocations for this task group")
+	flags.StringVar(&task, "task", "", "Only logs for this task name")
 	return cmd
 }
 
@@ -422,7 +424,7 @@ func printJobDiagnosis(w io.Writer, status *api.JobStatusResponse) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w, "\nInspect logs with: trellis jobs logs %s\nFollow convergence with: trellis jobs watch %s\n", status.Name, status.Name)
+	_, err := fmt.Fprintf(w, "\nInspect logs with: trellisctl jobs logs %s\nFollow convergence with: trellisctl jobs watch %s\n", status.Name, status.Name)
 	return err
 }
 

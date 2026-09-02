@@ -7,7 +7,7 @@ Complete [Getting Started](getting-started.md) first. It establishes the only go
 | Stage | Learn | Run |
 |---|---|---|
 | 1. Minimal workload | Job → task group → task → allocation; revisions and logs | [`examples/hello`](../../examples/hello/) |
-| 2. Healthy service | Multiple replicas, host networking, dynamic ports, HTTP health, rolling updates | [`examples/web-service`](../../examples/web-service/) |
+| 2. Healthy service | Multiple replicas, host networking, fixed port reservations, HTTP health, rolling updates | [`examples/web-service`](../../examples/web-service/) |
 | 3. Runtime configuration | Namespace-scoped environment/file secrets and rotation | [`examples/secrets`](../../examples/secrets/) |
 | 4. Persistence | Allocation-local storage, advertised host volumes, constraints, backup responsibility | [`examples/volumes`](../../examples/volumes/) |
 | 5. Colocated tasks | Sidecars and the consequences of shared placement/scaling/lifecycle | [`examples/sidecar`](../../examples/sidecar/) |
@@ -39,11 +39,12 @@ The `web-service` example adds several related operational ideas together:
 
 - `count: 2` asks for two task-group allocations;
 - `networking.mode: host` opts the task into the node network;
-- `networking.ports` reserves a host port, with `0` requesting dynamic assignment;
+- `networking.ports` reserves the exact port the process listens on; Trellis does not translate ports;
+- because both replicas reserve port 80, they need two different nodes;
 - the HTTP health check decides when a running task is ready;
-- rolling replacement waits for healthy new capacity before removing old capacity.
+- rolling replacement waits for healthy new capacity before removing old capacity, so a fixed-port service needs another compatible node during overlap.
 
-Apply it with `--wait`, change the image, run `jobs diff`, then apply again. Use `jobs diagnose` when health blocks progress. This is the baseline stateless-service pattern; later examples compose it rather than replacing it with new resource types.
+Apply it with `--wait`, change the image, run `jobs diff`, then apply again. Use `jobs diagnose` when health or placement blocks progress. This is the baseline stateless-service pattern; later examples compose it rather than replacing it with new resource types.
 
 ## 3. Secrets
 
@@ -70,10 +71,12 @@ Networking is selected per task:
 | `networking.mode` | Meaning | When to use it |
 |---|---|---|
 | omitted / empty | Private container namespace without external routes | Jobs that need no network, or custom runtime setup |
-| `host` | Join the node network; may declare host/container port mappings | Directly reachable services and simple local communication |
+| `host` | Join the node network; may reserve ports used directly by the process | Directly reachable services and simple local communication |
 | `wireguard` | Join the configured namespace WireGuard mesh | Cross-node namespace communication when every node has WireGuard/runsc configured |
 
-Host port mappings are valid only with `mode: host`. WireGuard tasks do not declare host-port mappings; check them from inside the container with a `script` health check when needed:
+Host port declarations are valid only with `mode: host`. `host_port` and `container_port` must be the same nonzero port because Trellis does not add NAT between a host-networked task and the node. A reservation prevents the scheduler from placing another Trellis task that declares the same port on that node; the process must actually bind the port itself.
+
+WireGuard tasks do not declare host-port mappings; check them from inside the container with a `script` health check when needed:
 
 ```yaml
 runtime: runsc
@@ -99,7 +102,7 @@ Every task in an API-enabled group can read the injected token, so do not add un
 
 ## 8. Release patterns
 
-Trellis directly implements `recreate` and `rolling`. Blue/green and canary are compositions of separate jobs plus external routing state. Read [`deployment-strategies`](../../examples/deployment-strategies/) only after running the simpler rolling update in `web-service`.
+Trellis directly implements `recreate` and `rolling`. Blue/green and canary are compositions of separate jobs plus external routing state. Read [`deployment-strategies`](../../examples/deployment-strategies/) only after running the simpler rolling update in `web-service`. When these patterns use a shared fixed host port, every simultaneously running allocation needs a node where that port is free; Trellis does not hide this capacity requirement behind a port-forwarding layer.
 
 ## 9. Stateful and HA patterns
 

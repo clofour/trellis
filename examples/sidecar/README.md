@@ -13,7 +13,7 @@ This example runs nginx and an nginx Prometheus exporter as one scheduling unit.
 
 ## Prerequisites
 
-Use at least two schedulable nodes if both replicas must run: host-networked nginx reserves port 80 on each selected node. Each node needs containerd and the two images must be pullable.
+Use at least two schedulable nodes if both replicas must run: host-networked nginx reserves port 80 on each selected node. Each node needs containerd and the two images must be pullable. A rolling replacement also needs another compatible node with port 80 available while old and new allocations overlap.
 
 The stock nginx image does not enable `/stub_status`. Build an nginx image with a server/location such as:
 
@@ -30,16 +30,16 @@ Change the `app` image in `trellis.yaml` to that image before expecting exporter
 ## Deploy and inspect
 
 ```sh
-trellis jobs apply --file examples/sidecar/trellis.yaml
-trellis --namespace default jobs status sidecar-demo
-trellis --namespace default jobs list
+trellisctl jobs apply --file examples/sidecar/trellis.yaml
+trellisctl --namespace default jobs status sidecar-demo
+trellisctl --namespace default jobs list
 ```
 
 Read each task's logs directly at the job level; no allocation UUID is required:
 
 ```sh
-trellis jobs logs sidecar-demo --task app
-trellis jobs logs sidecar-demo --task metrics-sidecar
+trellisctl jobs logs sidecar-demo --task app
+trellisctl jobs logs sidecar-demo --task metrics-sidecar
 ```
 
 ## Adapt the pattern

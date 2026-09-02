@@ -76,10 +76,9 @@ export interface SecretMetadata {
   key_id: string;
 }
 
-// Job spec types. Keep these aligned with orchestrator/internal/spec/types.go.
-// time.Duration is encoded as nanoseconds by Go's JSON encoder; the dashboard
-// editor also accepts manifest-style strings such as "10s" and normalizes them
-// before submission.
+// time.Duration is encoded as nanoseconds and memory as bytes in the JSON API.
+// The YAML editor accepts human forms such as "10s" and "64MiB" and normalizes
+// them before submission.
 export type DurationValue = number | string;
 
 export interface JobSpec {

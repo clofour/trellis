@@ -209,9 +209,19 @@ func (h *Handler) handleAllocationLogs(c *echo.Context) error {
 	if err != nil || tail < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "tail must be a non-negative integer")
 	}
-	logs, err := h.server.AllocationLogsForNamespace(c.Request().Context(), requestNamespace(c), c.Param("id"), c.QueryParam("follow") == "true", tail)
+	logs, err := h.server.AllocationTaskLogsForNamespace(
+		c.Request().Context(),
+		requestNamespace(c),
+		c.Param("id"),
+		c.QueryParam("task"),
+		c.QueryParam("follow") == "true",
+		tail,
+	)
+	if errors.Is(err, ErrTaskSelection) {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	if err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, "allocation not found")
+		return echo.NewHTTPError(http.StatusNotFound, "allocation or task logs not found")
 	}
 	defer func() { _ = logs.Close() }()
 	c.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")

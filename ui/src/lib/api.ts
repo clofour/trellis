@@ -44,6 +44,22 @@ export async function fetchJob(name: string): Promise<Job> {
   return apiFetch<Job>(`/api/v1/jobs/${encodeURIComponent(name)}`);
 }
 
+export async function fetchJobForPlan(
+  name: string,
+  namespace: string,
+): Promise<Job | null> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/jobs/${encodeURIComponent(name)}`,
+    { headers: { "X-Trellis-Namespace": namespace }, cache: "no-store" },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error || `API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export async function fetchAllocationEvents(
   id: string,
 ): Promise<AllocationEvent[]> {
@@ -68,17 +84,25 @@ export async function fetchAllocationLogs(
 }
 
 export async function submitJob(spec: JobSpec): Promise<void> {
-  await apiMutation("/api/v1/jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ spec }),
-  }, spec.namespace);
+  await apiMutation(
+    "/api/v1/jobs",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spec }),
+    },
+    spec.namespace,
+  );
 }
 
 export async function deleteJob(name: string, namespace: string): Promise<void> {
-  await apiMutation(`/api/v1/jobs/${encodeURIComponent(name)}`, {
-    method: "DELETE",
-  }, namespace);
+  await apiMutation(
+    `/api/v1/jobs/${encodeURIComponent(name)}`,
+    {
+      method: "DELETE",
+    },
+    namespace,
+  );
 }
 
 export async function drainNode(id: string): Promise<void> {
@@ -117,16 +141,24 @@ export async function setSecret(
     // created or rotated value.
     expected_version: expectedVersion ?? 0,
   };
-  const res = await apiMutation(`/api/v1/secrets/${encodeURIComponent(name)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }, namespace);
+  const res = await apiMutation(
+    `/api/v1/secrets/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    namespace,
+  );
   return res.json();
 }
 
 export async function deleteSecret(name: string, namespace: string): Promise<void> {
-  await apiMutation(`/api/v1/secrets/${encodeURIComponent(name)}`, {
-    method: "DELETE",
-  }, namespace);
+  await apiMutation(
+    `/api/v1/secrets/${encodeURIComponent(name)}`,
+    {
+      method: "DELETE",
+    },
+    namespace,
+  );
 }
