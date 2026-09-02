@@ -1,21 +1,37 @@
-# Namespace-scoped API access
+# In-cluster API access
 
 **Level:** Advanced · **Prerequisites:** complete the intermediate examples and use a reviewed controller image
 
-This example shows how a trusted workload can discover and automate resources in its own namespace without embedding the cluster administrator token in an image.
+This example shows the normal least-privilege pattern: a trusted workload discovers and automates resources in its own namespace without embedding the cluster administrator token in an image.
 
-## What `api_access` does
+## Choose an access mode
 
-Setting `api_access: true` on a task group causes Trellis to obtain a persistent namespace token and add these variables to every task in the group:
+`api_access` is an explicit task-group mode:
+
+| Mode | Credential | Intended use |
+|---|---|---|
+| omitted | None | Ordinary application workloads |
+| `namespace` | Persistent token restricted to the job's own namespace | Discovery, proxies, and namespace-local controllers |
+| `cluster` | Cluster administrator token | Fully trusted operator/control-plane workloads |
+
+This example uses `api_access: namespace`. There is intentionally no namespace selector inside `api_access`: a job in `default` gets access only to `default`; a job in `payments` gets access only to `payments`.
+
+Use `cluster` only when the workload genuinely needs administrative or cross-namespace operations. The injected `TRELLIS_NAMESPACE` still defaults to the job's namespace, but that default does not reduce the authority of a cluster token.
+
+For compatibility, old `api_access: true` manifests are interpreted as `namespace`, but new manifests should use the explicit mode.
+
+## What Trellis injects
+
+With either enabled mode, Trellis adds these variables to every task in the group:
 
 | Variable | Meaning |
 |---|---|
 | `TRELLIS_ADDR` | Address of the Trellis control-plane API. |
-| `TRELLIS_TOKEN` | Bearer token scoped to the job namespace. |
-| `TRELLIS_NAMESPACE` | Namespace to send in scoped requests. |
+| `TRELLIS_TOKEN` | Namespace token or cluster administrator token, according to the selected mode. |
+| `TRELLIS_NAMESPACE` | The job's namespace; use it as the default scope for namespace-aware requests. |
 | `TRELLIS_CA_CERT` | Cluster CA certificate (inline PEM) for TLS verification when configured. |
 
-This is a group-level privilege boundary: every task in the group can read the injected environment and act with the token. Use a reviewed, pinned image and do not mix an untrusted sidecar into the group.
+This is a group-level privilege boundary: every task in the group can read the injected environment and act with the token. Use a reviewed, pinned image and do not mix an untrusted sidecar into the group. This is especially important for `cluster`, because compromise of any task in that group exposes the administrator credential.
 
 ## Build a useful client image
 
@@ -40,8 +56,8 @@ Use allocation logs to inspect the controller's non-sensitive result. Never prin
 
 ## Controller behavior
 
-API clients should set request deadlines, retry transient transport/5xx failures with backoff, and tolerate resources changing between reads. Prefer read-only discovery loops unless mutation is essential. A namespace token must not be treated as a cluster-administration credential; secret management, backups, Raft membership, and other administrator operations require cluster authorization.
+API clients should set request deadlines, retry transient transport/5xx failures with backoff, and tolerate resources changing between reads. Prefer read-only discovery loops unless mutation is essential. A namespace token cannot be broadened by changing the namespace header; administrator operations require `cluster` access or an external cluster credential.
 
-For a long-running process, poll only as often as needed and preserve the last known-good generated configuration through temporary API outages. The reverse-proxy recipe in the public cookbook applies this exact controller pattern.
+For a long-running process, poll only as often as needed and preserve the last known-good generated configuration through temporary API outages. The reverse-proxy recipe in the public cookbook applies this exact namespace-controller pattern.
 
 [Examples index](../README.md) · [Learning path](../../docs/public/learning-path.md)
