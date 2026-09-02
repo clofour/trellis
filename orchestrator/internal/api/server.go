@@ -42,6 +42,8 @@ type NodeResponse struct {
 	LastHeartbeat time.Time          `json:"last_heartbeat"`
 	CPU           int                `json:"cpu"`
 	Memory        int64              `json:"memory"`
+	OS            string             `json:"os,omitempty"`
+	Arch          string             `json:"arch,omitempty"`
 	Labels        map[string]string  `json:"labels,omitempty"`
 	Volumes       []string           `json:"volumes,omitempty"`
 	Version       string             `json:"version,omitempty"`
