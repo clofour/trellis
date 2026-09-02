@@ -16,14 +16,18 @@ if text.count(old) != 1:
 text = text.replace(old, new)
 
 needle = '''    text = re.sub(r"^\\s*Status:\\s*string\\([^\\n]*\\.Status\\),\\n", "", text, flags=re.M)\n    write(response_path, text)'''
-replacement = '''    text = re.sub(r"^\\s*Status:\\s*string\\([^\\n]*\\.Status\\),\\n", "", text, flags=re.M)\n    text = text.replace(", Status: string(a.Status)", "")\n    text = text.replace(", Status: string(allocation.Status)", "")\n    write(response_path, text)'''
+replacement = '''    text = re.sub(r"^\\s*Status:\\s*string\\([^\\n]*\\.Status\\),\\n", "", text, flags=re.M)\n    text = text.replace(", Status: string(a.Status)", "")\n    text = text.replace(", Status: string(allocation.Status)", "")\n    if response_path == "orchestrator/internal/server/server.go":\n        text = re.sub(r"\\ba\\.Name\\b", "a.ID", text)\n    write(response_path, text)'''
 if text.count(needle) != 1:
     raise RuntimeError('expected public response cleanup block not found')
 text = text.replace(needle, replacement)
 
 path.write_text(text)
 
-# Removing APIAccessMode.UnmarshalJSON makes fmt unused in this file.
+# Removing compatibility helpers makes these imports unused.
 types = Path('orchestrator/internal/spec/types.go')
 types_text = types.read_text().replace('\t"fmt"\n', '')
 types.write_text(types_text)
+
+allocations = Path('orchestrator/internal/server/allocations.go')
+allocations_text = allocations.read_text().replace('\t"time"\n', '')
+allocations.write_text(allocations_text)
