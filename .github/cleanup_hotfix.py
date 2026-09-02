@@ -31,3 +31,8 @@ types.write_text(types_text)
 allocations = Path('orchestrator/internal/server/allocations.go')
 allocations_text = allocations.read_text().replace('\t"time"\n', '')
 allocations.write_text(allocations_text)
+
+# Tests should diagnose allocations by the canonical durable ID as well.
+update_test = Path('orchestrator/internal/server/update_test.go')
+update_text = update_test.read_text().replace('a.Name', 'a.ID')
+update_test.write_text(update_text)
