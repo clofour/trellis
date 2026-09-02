@@ -1,0 +1,60 @@
+package main
+
+import (
+	"fmt"
+
+	"github.com/clofour/trellis/internal/api"
+	"github.com/clofour/trellis/internal/client"
+	"github.com/spf13/cobra"
+)
+
+func NewCredentialsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "credentials",
+		Short:  "Mint scoped API credentials with the bootstrap cluster credential",
+		Hidden: true,
+	}
+	cmd.AddCommand(newCredentialsCreateCmd())
+	return cmd
+}
+
+func newCredentialsCreateCmd() *cobra.Command {
+	var scope, access, namespace string
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a scoped API credential",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if scope != "cluster" && scope != "namespace" {
+				return fmt.Errorf("--scope must be cluster or namespace")
+			}
+			if access != "read" && access != "write" {
+				return fmt.Errorf("--access must be read or write")
+			}
+			if scope == "namespace" && namespace == "" {
+				return fmt.Errorf("--namespace is required for namespace scope")
+			}
+			if scope == "cluster" && namespace != "" {
+				return fmt.Errorf("--namespace cannot be used with cluster scope")
+			}
+			tlsCfg, err := buildCLITLSConfig()
+			if err != nil {
+				return err
+			}
+			response, err := client.NewServerClient(config.ClusterToken, config.ServerAddr, tlsCfg).CreateCredential(cmd.Context(), &api.CredentialCreateRequest{
+				Scope: scope, Access: access, Namespace: namespace,
+			})
+			if err != nil {
+				return err
+			}
+			if config.Output == "json" {
+				return writeJSON(cmd.OutOrStdout(), response)
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), response.Token)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&scope, "scope", "", "Credential scope (cluster or namespace)")
+	cmd.Flags().StringVar(&access, "access", "", "Credential access (read or write)")
+	cmd.Flags().StringVar(&namespace, "namespace-scope", "", "Namespace for namespace-scoped credentials")
+	return cmd
+}
