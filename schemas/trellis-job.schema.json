@@ -119,7 +119,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "mode": { "type": "string", "enum": ["host", "wireguard"] },
+            "mode": { "type": "string", "enum": ["isolated", "host", "namespace"], "description": "isolated uses a private network namespace with no external routes; host joins the node network; namespace joins the Trellis namespace network." },
             "ports": {
               "type": "array",
               "items": {
