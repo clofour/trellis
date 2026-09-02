@@ -69,7 +69,48 @@ function durationNanoseconds(value: DurationValue, field: string): number {
   return Math.round(total);
 }
 
-function normalizeDurations(spec: JobSpec): JobSpec {
+function byteSizeBytes(value: unknown, field: string): number {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`${field} must be a non-negative byte count.`);
+    }
+    return Math.round(value);
+  }
+  if (typeof value !== "string") {
+    throw new Error(`${field} must be a byte count or size such as 64MiB.`);
+  }
+  const match = value.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]*)$/);
+  if (!match) {
+    throw new Error(`${field} has an invalid byte size: ${value}`);
+  }
+  const units: Record<string, number> = {
+    "": 1,
+    b: 1,
+    kb: 1_000,
+    mb: 1_000_000,
+    gb: 1_000_000_000,
+    tb: 1_000_000_000_000,
+    ki: 2 ** 10,
+    kib: 2 ** 10,
+    mi: 2 ** 20,
+    mib: 2 ** 20,
+    gi: 2 ** 30,
+    gib: 2 ** 30,
+    ti: 2 ** 40,
+    tib: 2 ** 40,
+  };
+  const multiplier = units[match[2].toLowerCase()];
+  if (multiplier === undefined) {
+    throw new Error(`${field} has an invalid byte-size unit: ${match[2]}`);
+  }
+  const bytes = Number(match[1]) * multiplier;
+  if (!Number.isSafeInteger(Math.round(bytes)) || bytes < 0) {
+    throw new Error(`${field} is too large.`);
+  }
+  return Math.round(bytes);
+}
+
+function normalizeManifestValues(spec: JobSpec): JobSpec {
   const normalized = JSON.parse(JSON.stringify(spec)) as JobSpec;
   for (const group of normalized.task_groups) {
     if (group.restart) {
@@ -79,6 +120,12 @@ function normalizeDurations(spec: JobSpec): JobSpec {
       );
     }
     for (const task of group.tasks) {
+      if (task.resources) {
+        task.resources.memory = byteSizeBytes(
+          task.resources.memory as unknown,
+          `${group.name}.${task.name}.resources.memory`,
+        );
+      }
       const check = task.health_check;
       if (!check) continue;
       if (check.interval !== undefined) {
@@ -212,7 +259,7 @@ function JobFormPanel({
         return;
       }
 
-      const spec = normalizeDurations(parse());
+      const spec = normalizeManifestValues(parse());
       const current = await fetchJobForPlan(spec.name, namespace);
       setPlan(planManifest(current, spec));
       setPlannedSpec(spec);
@@ -261,7 +308,7 @@ function JobFormPanel({
                 Active namespace: <span className="font-mono text-foreground">{namespace || "(unscoped)"}</span>. The manifest namespace must match; the dashboard never rewrites it.
               </p>
               <p className="mt-2">
-                YAML is Trellis&apos;s canonical human-authored job format. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>. Review the semantic plan before applying.
+                YAML is Trellis&apos;s canonical human-authored job format. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>; memory accepts values such as <span className="font-mono">64MiB</span> and <span className="font-mono">1GiB</span>. Review the semantic plan before applying.
               </p>
             </div>
 
