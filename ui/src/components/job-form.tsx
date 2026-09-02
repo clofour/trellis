@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DurationValue, JobSpec } from "@/lib/types";
 import { formatJobManifest, parseJobManifest } from "@/lib/manifest";
-import { submitJob } from "@/lib/api";
+import { fetchJobForPlan, submitJob } from "@/lib/api";
+import {
+  formatPlanValue,
+  planManifest,
+  type ManifestPlan,
+} from "@/lib/manifest-plan";
 import { useConfig } from "./config-provider";
 
 interface JobFormProps {
@@ -119,16 +124,18 @@ function JobFormPanel({
   onSuccess: () => void;
 }) {
   const { namespace } = useConfig();
-  const initial = useMemo(() => {
-    const spec = initialSpec
-      ? (JSON.parse(JSON.stringify(initialSpec)) as JobSpec)
-      : defaultSpec(namespace);
-    spec.namespace = namespace;
-    return spec;
-  }, [initialSpec, namespace]);
+  const initial = useMemo(
+    () =>
+      initialSpec
+        ? (JSON.parse(JSON.stringify(initialSpec)) as JobSpec)
+        : defaultSpec(namespace),
+    [initialSpec, namespace],
+  );
   const [source, setSource] = useState(() => formatJobManifest(initial));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<ManifestPlan | null>(null);
+  const [plannedSpec, setPlannedSpec] = useState<JobSpec | null>(null);
   const isEditing = !!initialSpec;
 
   const handleClose = useCallback(() => {
@@ -142,6 +149,11 @@ function JobFormPanel({
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [handleClose]);
+
+  const clearPlan = () => {
+    setPlan(null);
+    setPlannedSpec(null);
+  };
 
   const parse = (): JobSpec => {
     let spec: JobSpec;
@@ -160,13 +172,20 @@ function JobFormPanel({
         "Job name must start with a letter or digit and contain only letters, digits, hyphens, underscores, or dots.",
       );
     }
+    if (!spec.namespace || typeof spec.namespace !== "string") {
+      throw new Error("Job namespace is required.");
+    }
+    if (spec.namespace !== namespace) {
+      throw new Error(
+        `Manifest namespace ${JSON.stringify(spec.namespace)} does not match active namespace ${JSON.stringify(namespace)}. Change the manifest or select the intended namespace.`,
+      );
+    }
     if (!Array.isArray(spec.task_groups) || spec.task_groups.length === 0) {
       throw new Error("At least one task group is required.");
     }
     if (isEditing && spec.name !== initialSpec!.name) {
       throw new Error("Job name cannot be changed after creation.");
     }
-    spec.namespace = namespace;
     return spec;
   };
 
@@ -174,6 +193,7 @@ function JobFormPanel({
     try {
       const spec = parse();
       setSource(formatJobManifest(spec));
+      clearPlan();
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid job manifest");
@@ -185,10 +205,17 @@ function JobFormPanel({
     setSubmitting(true);
     setError(null);
     try {
+      if (plan && plannedSpec) {
+        await submitJob(plannedSpec);
+        onSuccess();
+        onClose();
+        return;
+      }
+
       const spec = normalizeDurations(parse());
-      await submitJob(spec);
-      onSuccess();
-      onClose();
+      const current = await fetchJobForPlan(spec.name, namespace);
+      setPlan(planManifest(current, spec));
+      setPlannedSpec(spec);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected error");
     } finally {
@@ -211,7 +238,7 @@ function JobFormPanel({
               {isEditing ? `Edit Manifest — ${initialSpec!.name}` : "Apply Manifest"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Edit the YAML job manifest used by the CLI, documentation, and examples.
+              Edit the same YAML job manifest used by trellisctl, documentation, and examples.
             </p>
           </div>
           <button
@@ -231,10 +258,10 @@ function JobFormPanel({
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <div className="mb-4 rounded-lg border border-border bg-background/60 p-4 text-xs text-muted-foreground">
               <p>
-                Namespace is fixed to <span className="font-mono text-foreground">{namespace || "(unscoped)"}</span> by the dashboard.
+                Active namespace: <span className="font-mono text-foreground">{namespace || "(unscoped)"}</span>. The manifest namespace must match; the dashboard never rewrites it.
               </p>
               <p className="mt-2">
-                YAML is Trellis&apos;s canonical human-authored job format; the dashboard converts it to the JSON API representation when applying it. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>.
+                YAML is Trellis&apos;s canonical human-authored job format. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>. Review the semantic plan before applying.
               </p>
             </div>
 
@@ -253,10 +280,47 @@ function JobFormPanel({
             <textarea
               id="job-manifest"
               value={source}
-              onChange={(event) => setSource(event.target.value)}
+              onChange={(event) => {
+                setSource(event.target.value);
+                clearPlan();
+                setError(null);
+              }}
               spellCheck={false}
               className="min-h-[520px] w-full resize-y rounded-lg border border-border bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100 outline-none focus:ring-2 focus:ring-emerald-500/40"
             />
+
+            {plan && (
+              <section className="mt-4 rounded-lg border border-border bg-background/60 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Semantic plan</p>
+                    <p className="mt-1 text-sm font-medium text-foreground">{plan.title}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearPlan}
+                    className="shrink-0 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                  >
+                    Edit again
+                  </button>
+                </div>
+                {plan.changes.length > 0 && (
+                  <div className="mt-3 max-h-64 overflow-auto rounded-md bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100">
+                    {plan.changes.map((change, index) => (
+                      <div key={`${change.path}-${index}`}>
+                        {change.operation === "add" ? (
+                          <span>+ {change.path}: {formatPlanValue(change.path, change.after)}</span>
+                        ) : change.operation === "remove" ? (
+                          <span>- {change.path}: {formatPlanValue(change.path, change.before)}</span>
+                        ) : (
+                          <span>~ {change.path}: {formatPlanValue(change.path, change.before)} → {formatPlanValue(change.path, change.after)}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
 
           <div className="border-t border-border px-6 py-4">
@@ -277,9 +341,15 @@ function JobFormPanel({
               <button
                 type="submit"
                 disabled={submitting}
-                className="min-w-[100px] rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="min-w-[120px] rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                {submitting ? "Applying…" : "Apply Manifest"}
+                {submitting
+                  ? plan
+                    ? "Applying…"
+                    : "Planning…"
+                  : plan
+                    ? "Apply Manifest"
+                    : "Review Plan"}
               </button>
             </div>
           </div>
