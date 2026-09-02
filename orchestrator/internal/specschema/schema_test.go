@@ -43,6 +43,9 @@ func TestYAMLSchemaOnlyAddsAuthoringRepresentation(t *testing.T) {
 	if _, ok := yamlMemory["oneOf"]; !ok {
 		t.Fatalf("YAML memory schema does not accept human quantities: %#v", yamlMemory)
 	}
+	if yamlMemory["description"] == nil {
+		t.Fatalf("YAML memory schema has no authoring guidance: %#v", yamlMemory)
+	}
 
 	apiMode := property(t, apiDefs, "TaskNetworkingSpec", "mode")
 	yamlMode := property(t, yamlDefs, "TaskNetworkingSpec", "mode")
@@ -51,6 +54,14 @@ func TestYAMLSchemaOnlyAddsAuthoringRepresentation(t *testing.T) {
 	}
 	if !contains(yamlMode["enum"].([]any), "namespace") {
 		t.Fatalf("YAML network modes = %#v, want namespace", yamlMode["enum"])
+	}
+	if yamlMode["description"] == nil {
+		t.Fatalf("YAML networking mode has no authoring guidance: %#v", yamlMode)
+	}
+
+	rootProperties := yaml["properties"].(map[string]any)
+	if rootProperties["task_groups"].(map[string]any)["description"] == nil {
+		t.Fatal("YAML task_groups field has no authoring guidance")
 	}
 }
 
