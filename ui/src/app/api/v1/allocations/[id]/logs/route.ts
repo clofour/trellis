@@ -15,14 +15,18 @@ export async function GET(
   }
   const { id } = await params;
   const tail = request.nextUrl.searchParams.get("tail") || "200";
+  const task = request.nextUrl.searchParams.get("task") || "";
+  const query = new URLSearchParams({ tail });
+  if (task) query.set("task", task);
   try {
     const res = await fetch(
-      `${TRELLIS_URL}/v1/allocations/${encodeURIComponent(id)}/logs?tail=${encodeURIComponent(tail)}`,
+      `${TRELLIS_URL}/v1/allocations/${encodeURIComponent(id)}/logs?${query.toString()}`,
       { headers: orchestratorHeaders(selected.namespace), cache: "no-store" },
     );
     if (!res.ok) {
+      const text = await res.text();
       return NextResponse.json(
-        { error: `Upstream error: ${res.status}` },
+        { error: text || `Upstream error: ${res.status}` },
         { status: res.status },
       );
     }
