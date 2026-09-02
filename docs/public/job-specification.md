@@ -120,6 +120,8 @@ api_access:
 - `cluster/write` is the normal high-privilege operator/controller credential for cluster-wide mutations.
 - omitted means no API credential is injected.
 
+A job may never delegate more authority than the credential submitting it. Namespace-scoped callers cannot request cluster-scoped workload credentials, and read-only callers cannot request write credentials. Planning enforces the same ceiling as apply so a preview cannot advertise a deployment the caller is not authorized to create.
+
 The bootstrap cluster token is intentionally separate. Trellis no longer injects that root credential into workloads. Operations such as Raft membership changes, backup/restore, and node registration remain bootstrap/root operations rather than abilities granted by ordinary `cluster/write` credentials.
 
 Enabled API access injects `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE`; when TLS is configured, `TRELLIS_CA_CERT` contains the cluster CA PEM. `TRELLIS_NAMESPACE` is initialized to the job namespace even for cluster-scoped credentials.
