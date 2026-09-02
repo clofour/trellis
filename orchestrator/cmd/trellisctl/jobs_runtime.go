@@ -65,7 +65,7 @@ func waitForJob(parent context.Context, w io.Writer, serverClient *client.Server
 		case <-ctx.Done():
 			timer.Stop()
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return fmt.Errorf("timed out waiting for job %s to become healthy; run 'trellis jobs diagnose %s'", name, name)
+				return fmt.Errorf("timed out waiting for job %s to become healthy; run 'trellisctl jobs diagnose %s'", name, name)
 			}
 			return ctx.Err()
 		case <-timer.C:
@@ -108,22 +108,27 @@ func waitForJobDeletion(parent context.Context, w io.Writer, serverClient *clien
 	}
 }
 
-func runJobLogs(ctx context.Context, w io.Writer, serverClient *client.ServerClient, target, allocationRef, group string, follow bool, tail int) error {
-	selected, err := resolveLogAllocations(ctx, serverClient, target, allocationRef, group)
+type jobLogStream struct {
+	allocation api.AllocationResponse
+	task       string
+}
+
+func runJobLogs(ctx context.Context, w io.Writer, serverClient *client.ServerClient, target, allocationRef, group, task string, follow bool, tail int) error {
+	streams, err := resolveLogStreams(ctx, serverClient, target, allocationRef, group, task)
 	if err != nil {
 		return err
 	}
-	if follow && len(selected) != 1 {
-		return fmt.Errorf("--follow requires exactly one allocation; select one with --allocation PREFIX or --group (matches: %s)", allocationRefs(selected))
+	if follow && len(streams) != 1 {
+		return fmt.Errorf("--follow requires exactly one task stream; narrow with --allocation, --group, or --task (matches: %s)", logStreamRefs(streams))
 	}
 
-	for i, allocation := range selected {
-		if len(selected) > 1 {
-			if _, err := fmt.Fprintf(w, "==> %s %s <==\n", shortID(allocation.ID), allocation.Group); err != nil {
+	for i, stream := range streams {
+		if len(streams) > 1 {
+			if _, err := fmt.Fprintf(w, "==> %s %s/%s <==\n", shortID(stream.allocation.ID), stream.allocation.Group, displayTask(stream.task)); err != nil {
 				return err
 			}
 		}
-		logs, err := serverClient.AllocationLogs(ctx, allocation.ID, follow, tail)
+		logs, err := serverClient.AllocationTaskLogs(ctx, stream.allocation.ID, stream.task, follow, tail)
 		if err != nil {
 			return err
 		}
@@ -135,7 +140,7 @@ func runJobLogs(ctx context.Context, w io.Writer, serverClient *client.ServerCli
 		if closeErr != nil {
 			return closeErr
 		}
-		if len(selected) > 1 && i < len(selected)-1 {
+		if len(streams) > 1 && i < len(streams)-1 {
 			if _, err := fmt.Fprintln(w); err != nil {
 				return err
 			}
@@ -144,7 +149,7 @@ func runJobLogs(ctx context.Context, w io.Writer, serverClient *client.ServerCli
 	return nil
 }
 
-func resolveLogAllocations(ctx context.Context, serverClient *client.ServerClient, target, allocationRef, group string) ([]api.AllocationResponse, error) {
+func resolveLogStreams(ctx context.Context, serverClient *client.ServerClient, target, allocationRef, group, task string) ([]jobLogStream, error) {
 	status, err := serverClient.GetJob(ctx, target)
 	if err != nil {
 		return nil, err
@@ -161,7 +166,65 @@ func resolveLogAllocations(ctx context.Context, serverClient *client.ServerClien
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("job %s has no allocations matching the requested filters", target)
 	}
-	return matches, nil
+
+	groupTasks := make(map[string][]string)
+	if status.Spec != nil {
+		for _, candidateGroup := range status.Spec.TaskGroups {
+			for _, candidateTask := range candidateGroup.Tasks {
+				groupTasks[candidateGroup.Name] = append(groupTasks[candidateGroup.Name], candidateTask.Name)
+			}
+		}
+	}
+
+	streams := make([]jobLogStream, 0)
+	for _, allocation := range matches {
+		tasks := groupTasks[allocation.Group]
+		if task != "" {
+			if containsTask(tasks, task) {
+				streams = append(streams, jobLogStream{allocation: allocation, task: task})
+			}
+			continue
+		}
+		if len(tasks) == 0 {
+			streams = append(streams, jobLogStream{allocation: allocation})
+			continue
+		}
+		for _, taskName := range tasks {
+			streams = append(streams, jobLogStream{allocation: allocation, task: taskName})
+		}
+	}
+	if len(streams) == 0 {
+		if task != "" {
+			return nil, fmt.Errorf("job %s has no task %q matching the requested allocation/group filters", target, task)
+		}
+		return nil, fmt.Errorf("job %s has no log streams matching the requested filters", target)
+	}
+	return streams, nil
+}
+
+func containsTask(tasks []string, task string) bool {
+	for _, candidate := range tasks {
+		if candidate == task {
+			return true
+		}
+	}
+	return false
+}
+
+func displayTask(task string) string {
+	if task == "" {
+		return "task"
+	}
+	return task
+}
+
+func logStreamRefs(streams []jobLogStream) string {
+	refs := make([]string, 0, len(streams))
+	for _, stream := range streams {
+		refs = append(refs, fmt.Sprintf("%s/%s/%s", shortID(stream.allocation.ID), stream.allocation.Group, displayTask(stream.task)))
+	}
+	sort.Strings(refs)
+	return strings.Join(refs, ", ")
 }
 
 func filterAllocations(allocations []api.AllocationResponse, group string) []api.AllocationResponse {
