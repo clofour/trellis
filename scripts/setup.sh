@@ -5,7 +5,7 @@ REPO="clofour/trellis-experimental"
 INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/trellis/data"
 CONFIG_DIR="/etc/trellis"
-ENV_FILE="${CONFIG_DIR}/trellis.env"
+CONFIG_FILE="${CONFIG_DIR}/trellis.yaml"
 SERVICE_FILE="/etc/systemd/system/trellis.service"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -167,28 +167,31 @@ case "$advertise_host" in
         ;;
 esac
 
-join_flag=""
 join_addr=""
 if confirm "Join an existing cluster?" "n"; then
     prompt join_addr "Address of an existing cluster node (host:8128)" ""
     [ -n "$join_addr" ] || error "An existing cluster node address is required."
-    join_flag="--join ${join_addr}"
 fi
 
-if [ -f "$ENV_FILE" ]; then
-    info "Existing bootstrap cluster token found at ${ENV_FILE}, keeping it."
-elif [ -n "$join_addr" ]; then
-    prompt_secret token "Bootstrap cluster token for the existing cluster"
-    printf 'TRELLIS_TOKEN=%s\n' "$token" > "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
-    unset token
+if [ -n "$join_addr" ]; then
+    prompt_secret cluster_token "Bootstrap token for the existing cluster"
 else
-    token="$(head -c 32 /dev/urandom | base64)"
-    printf 'TRELLIS_TOKEN=%s\n' "$token" > "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
-    unset token
-    info "Bootstrap token written to ${ENV_FILE}; normal operators receive a scoped credential below."
+    cluster_token="trls_boot_$(head -c 32 /dev/urandom | base64 | tr -d '=\n')"
 fi
+
+info "Writing node configuration to ${CONFIG_FILE}..."
+cat > "$CONFIG_FILE" <<EOF
+cluster: default
+bootstrap_token: ${cluster_token}
+data_dir: ${DATA_DIR}
+agent_advertise: ${advertise_host}:8127
+server_advertise: ${advertise_host}:8128
+raft_advertise: ${advertise_host}:8129
+EOF
+if [ -n "$join_addr" ]; then
+    printf 'join: %s\n' "$join_addr" >> "$CONFIG_FILE"
+fi
+chmod 600 "$CONFIG_FILE"
 
 info "Writing systemd unit to ${SERVICE_FILE}..."
 cat > "$SERVICE_FILE" <<EOF
@@ -198,13 +201,7 @@ After=containerd.service network-online.target
 Wants=containerd.service network-online.target
 
 [Service]
-EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/trellis \\
-  --data-dir ${DATA_DIR} \\
-  --agent-advertise ${advertise_host}:8127 \\
-  --server-advertise ${advertise_host}:8128 \\
-  --raft-advertise ${advertise_host}:8129 \\
-  --cluster-token \${TRELLIS_TOKEN}$([ -n "$join_flag" ] && printf ' \\\n  %s' "$join_flag")
+ExecStart=${INSTALL_DIR}/trellis --config ${CONFIG_FILE}
 Restart=on-failure
 RestartSec=5s
 
@@ -217,18 +214,17 @@ info "trellis is running."
 
 # The node is now usable. Optional runtime/networking features come afterwards
 # so a first install does not front-load concepts that are not needed to deploy.
-if confirm "Enable WireGuard namespace networking on this node?" "n"; then
-    info "Installing WireGuard dependencies..."
+if confirm "Enable namespace networking on this node?" "n"; then
+    info "Installing WireGuard dependencies for Trellis namespace networking..."
     apt-get update -qq
     apt-get install -y -qq wireguard-tools iproute2 iptables >/dev/null
     if ! command -v containerd-shim-runsc-v1 >/dev/null 2>&1; then
-        confirm "Install gVisor automatically?" "y" || error "gVisor is required for WireGuard jobs."
+        confirm "Install gVisor automatically?" "y" || error "gVisor is required for namespace-networked jobs."
         install_gvisor
     fi
-    warn "WireGuard dependencies are installed. Re-run the node with explicit WireGuard flags if this installation needs a non-default endpoint or pool."
+    info "Namespace networking dependencies are installed. Configure wireguard_endpoint, wireguard_port, or wireguard_pool in ${CONFIG_FILE} when non-default values are required, then restart trellis."
 fi
 
-cluster_token="$(grep -oP '(?<=TRELLIS_TOKEN=).+' "$ENV_FILE")"
 operator_token=""
 for attempt in $(seq 1 30); do
     if operator_token="$("${INSTALL_DIR}/trellisctl" --output table credentials create --scope cluster --access write 2>/dev/null)" && [ -n "$operator_token" ]; then
@@ -265,7 +261,6 @@ ui_namespace=""
 if confirm "Install the web dashboard?" "n"; then
     prompt ui_namespace "Dashboard default namespace" "default"
     [[ "$ui_namespace" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || error "Dashboard namespace must be a safe identifier."
-    dashboard_server_addr="${join_addr:-${advertise_host}:8128}"
 
     dashboard_mode="r"
     echo "  Dashboard authorization:"
@@ -331,6 +326,7 @@ fi
 unset cluster_token
 echo
 info "Setup complete!"
+info "Node configuration: ${CONFIG_FILE}"
 info "Verify the cluster: trellisctl nodes list"
 info "Start the tutorial: follow docs/public/getting-started.md"
 if [ "$install_ui" = true ]; then
