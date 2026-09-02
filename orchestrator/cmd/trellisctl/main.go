@@ -113,7 +113,7 @@ func loadConfig(cmd *cobra.Command) error {
 
 	if lc, err := localconfig.Read(localconfig.DefaultPath); err == nil {
 		merged.ServerAddr = lc.ServerAddr
-		merged.ClusterToken = lc.Token
+		merged.ClusterToken = lc.ClusterToken
 		merged.CACertPEM = lc.CACert
 	} else if !errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "warning: could not read %s: %v\n", localconfig.DefaultPath, err)
