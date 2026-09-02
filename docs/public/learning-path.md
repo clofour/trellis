@@ -13,7 +13,7 @@ Complete [Getting Started](getting-started.md) first. It establishes the only go
 | 5. Runtime configuration | Namespace-scoped environment/file secrets and rotation | [`examples/secrets`](../../examples/secrets/) |
 | 6. Persistence | Allocation-local storage, advertised host volumes, constraints, backup responsibility | [`examples/volumes`](../../examples/volumes/) |
 | 7. Colocated tasks | Sidecars and the consequences of shared placement/scaling/lifecycle | [`examples/sidecar`](../../examples/sidecar/) |
-| 8. Namespace networking | Isolated, host, and WireGuard-backed namespace networking; service discovery | [Networking below](#8-namespace-networking-and-discovery) |
+| 8. Namespace networking | Isolated, host, and namespace networking; service discovery | [Networking below](#8-namespace-networking-and-discovery) |
 | 9. In-cluster automation | Namespace/cluster scope and read/write API access | [`examples/api-access`](../../examples/api-access/) |
 | 10. Release architecture | Rolling, blue/green, and weighted canary composition | [`examples/deployment-strategies`](../../examples/deployment-strategies/) |
 | 11. Stateful compositions | Coupled development stacks, local-volume caveats, application-native HA | [`examples/wordpress`](../../examples/wordpress/), then [`examples/patroni`](../../examples/patroni/) |
@@ -99,9 +99,11 @@ Networking is selected per task:
 
 | `networking.mode` | Meaning | When to use it |
 |---|---|---|
-| omitted / empty | Private container namespace without external routes | Jobs that need no network, or custom runtime setup |
+| omitted / `isolated` | Private container namespace without external routes | Jobs that need no network, or custom runtime setup |
 | `host` | Join the node network; may reserve ports used directly by the process | Directly reachable services and simple local communication |
-| `wireguard` | Join the Trellis namespace network, currently implemented as a WireGuard mesh | Cross-node communication within the workload namespace when every node has WireGuard/runsc configured |
+| `namespace` | Join the private Trellis network for the job namespace | Cross-node communication within the workload namespace |
+
+`namespace` is the user-facing semantic mode. Its current implementation uses a WireGuard mesh and therefore requires the corresponding WireGuard and `runsc` node setup, but manifests do not depend on that implementation detail.
 
 Host port declarations are valid only with `mode: host`:
 
@@ -114,7 +116,7 @@ networking:
 
 There is only one port because host networking has no Trellis NAT or translation layer. The reservation prevents another Trellis task from claiming the same node port; the process must bind it itself.
 
-WireGuard-networked tasks do not declare host ports. Check them from inside the container with a script health check when needed:
+Namespace-networked tasks do not declare host ports. Check them from inside the container with a script health check when needed:
 
 ```yaml
 runtime: runsc
@@ -122,13 +124,13 @@ tasks:
   - name: app
     image: registry.example/app:v1
     networking:
-      mode: wireguard
+      mode: namespace
     health_check:
       type: script
       command: [wget, -q, -O, /dev/null, http://127.0.0.1:8080/health]
 ```
 
-Configure WireGuard/runsc on every participating node, open the configured UDP port between nodes, and verify the image contains the health-check command. Healthy allocations enter Trellis discovery; API-aware controllers can filter them by task-group labels. Treat discovery as runtime endpoint information, not application consensus.
+Configure the namespace-networking dependencies on every participating node, open the configured WireGuard UDP port between nodes, and verify the image contains the health-check command. Healthy allocations enter Trellis discovery; API-aware controllers can filter them by task-group labels. Treat discovery as runtime endpoint information, not application consensus.
 
 ## 9. In-cluster API access
 
@@ -146,7 +148,7 @@ Trellis gives every task in the group a bearer credential restricted to the job'
 
 Use `namespace/write` only for a namespace-local controller that actually mutates desired state. Use `cluster/read` for a trusted cluster-wide observer. Use `cluster/write` only for an operator workload that needs ordinary cluster mutations.
 
-The bootstrap cluster credential is separate and more privileged. It is used for node registration, Raft membership, backup/restore, and minting scoped credentials, and Trellis never injects it into workloads.
+The bootstrap credential is separate and more privileged. It is used for node registration, Raft membership, backup/restore, and minting scoped credentials, and Trellis never injects it into workloads.
 
 Every task in an API-enabled group can read the injected token, so do not add untrusted sidecars. The [`api-access`](../../examples/api-access/) example intentionally uses `namespace/read` and explains TLS verification, authenticated requests, last-known-good behavior, and token hygiene.
 
