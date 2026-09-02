@@ -41,12 +41,18 @@ func (h *Handler) handleLogs(c *echo.Context) error {
 	if err != nil || tail < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "tail must be a non-negative integer")
 	}
-	logs, err := h.agent.Logs(c.Request().Context(), c.Param("id"), c.QueryParam("follow") == "true", tail)
+	logs, err := h.agent.TaskLogs(
+		c.Request().Context(),
+		c.Param("id"),
+		c.QueryParam("task"),
+		c.QueryParam("follow") == "true",
+		tail,
+	)
 	if err != nil {
 		if errors.Is(err, ErrAllocationNotFound) {
-			return echo.NewHTTPError(http.StatusNotFound, "allocation not found")
+			return echo.NewHTTPError(http.StatusNotFound, err.Error())
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "unable to read allocation logs")
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	defer func() { _ = logs.Close() }()
 	c.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
