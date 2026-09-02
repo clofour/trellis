@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 path = Path('.github/remove_pre_v1_compat.py')
 text = path.read_text()
@@ -32,7 +33,26 @@ allocations = Path('orchestrator/internal/server/allocations.go')
 allocations_text = allocations.read_text().replace('\t"time"\n', '')
 allocations.write_text(allocations_text)
 
-# Tests should diagnose allocations by the canonical durable ID as well.
+# Tests should construct and diagnose allocations using the canonical fields,
+# without invoking the deleted persisted-state migration helper.
+alloc_test = Path('orchestrator/internal/server/allocations_test.go')
+alloc_text = alloc_test.read_text()
+alloc_text = alloc_text.replace('Name:          "default-web-frontend-deadbeef"', 'ID:            "default-web-frontend-deadbeef"')
+alloc_text = alloc_text.replace('Name:          "default-web-frontend-old"', 'ID:            "default-web-frontend-old"')
+alloc_text = re.sub(r'^\s*alloc\.normalize\(now\)\n', '', alloc_text, flags=re.M)
+alloc_test.write_text(alloc_text)
+
 update_test = Path('orchestrator/internal/server/update_test.go')
 update_text = update_test.read_text().replace('a.Name', 'a.ID')
+update_text = re.sub(r'^\s*a\.normalize\(now\)\n', '', update_text, flags=re.M)
 update_test.write_text(update_text)
+
+regression_test = Path('orchestrator/internal/server/update_regression_test.go')
+regression_text = regression_test.read_text().replace('old.Name', 'old.ID')
+regression_text = re.sub(r'^\s*a\.normalize\(now\)\n', '', regression_text, flags=re.M)
+regression_test.write_text(regression_text)
+
+state_test = Path('orchestrator/internal/server/state_test.go')
+state_text = state_test.read_text()
+state_text = state_text.replace('"github.com/clofour/trellis/internal/spec"\n', '"github.com/clofour/trellis/internal/lifecycle"\n\t"github.com/clofour/trellis/internal/spec"\n')
+state_test.write_text(state_text)
