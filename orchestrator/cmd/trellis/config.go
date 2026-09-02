@@ -64,7 +64,7 @@ func loadNodeConfig(path string, cfg *config, flags *pflag.FlagSet) error {
 	setString("join", parsed.Join, &cfg.Join)
 	setString("data-dir", parsed.DataDir, &cfg.DataDir)
 	setString("cluster", parsed.Cluster, &cfg.Cluster)
-	setString("bootstrap-token", parsed.BootstrapToken, &cfg.BootstrapToken)
+	setString("bootstrap-token", parsed.BootstrapToken, &cfg.ClusterToken)
 	setString("containerd-sock", parsed.ContainerdSock, &cfg.ContainerdSock)
 	setString("runtime", parsed.Runtime, &cfg.Runtime)
 	setString("runtime-faults", parsed.RuntimeFaults, &cfg.RuntimeFaults)
