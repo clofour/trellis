@@ -3,13 +3,15 @@ set -euo pipefail
 
 SHARE_DIR="/vagrant/bin"
 DATA_DIR="/var/lib/trellis/data"
+CONFIG_FILE="/etc/trellis/trellis.yaml"
 TOKEN_FILE="${SHARE_DIR}/token"
 
-# Generate a shared cluster token on the first node to write it.
+# Generate a shared bootstrap credential on the first node to write it.
 mkdir -p "${SHARE_DIR}"
 if [ ! -s "${TOKEN_FILE}" ]; then
     umask 077
-    head -c 32 /dev/urandom | base64 > "${TOKEN_FILE}"
+    printf 'trls_boot_' > "${TOKEN_FILE}"
+    head -c 32 /dev/urandom | base64 | tr -d '=\n' >> "${TOKEN_FILE}"
 fi
 
 # Install binaries from the shared folder.
@@ -17,13 +19,21 @@ fi
 install -m 0755 "${SHARE_DIR}/trellis"      /usr/local/bin/trellis
 install -m 0755 "${SHARE_DIR}/trellisctl"   /usr/local/bin/trellisctl
 
-mkdir -p "${DATA_DIR}"
+mkdir -p "${DATA_DIR}" /etc/trellis
 
 HOSTNAME=$(hostname)
-JOIN_FLAG=""
+cat > "$CONFIG_FILE" <<EOF
+cluster: default
+bootstrap_token: $(cat "${TOKEN_FILE}")
+data_dir: ${DATA_DIR}
+agent_advertise: ${HOSTNAME}:8127
+server_advertise: ${HOSTNAME}:8128
+raft_advertise: ${HOSTNAME}:8129
+EOF
 if [ "${HOSTNAME}" != "control.trellis.local" ]; then
-    JOIN_FLAG="--join control.trellis.local:8128"
+    printf 'join: control.trellis.local:8128\n' >> "$CONFIG_FILE"
 fi
+chmod 600 "$CONFIG_FILE"
 
 cat > /etc/systemd/system/trellis.service <<EOF
 [Unit]
@@ -32,12 +42,7 @@ After=containerd.service network-online.target
 Wants=containerd.service network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/trellis \
-  --data-dir ${DATA_DIR} \
-  --agent-advertise ${HOSTNAME}:8127 \
-  --server-advertise ${HOSTNAME}:8128 \
-  --raft-advertise ${HOSTNAME}:8129 \
-  --cluster-token $(cat "${TOKEN_FILE}") ${JOIN_FLAG}
+ExecStart=/usr/local/bin/trellis --config ${CONFIG_FILE}
 Restart=on-failure
 RestartSec=5s
 
