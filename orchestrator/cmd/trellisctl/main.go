@@ -66,7 +66,6 @@ func newRootCmd() *cobra.Command {
 	persistentFlags.StringVar(&config.CACert, "ca-cert", "", "Path to cluster CA certificate (PEM)")
 	persistentFlags.StringVar(&config.Cert, "cert", "", "Path to client certificate (PEM)")
 	persistentFlags.StringVar(&config.Key, "key", "", "Path to client private key (PEM)")
-	persistentFlags.StringVarP(&config.Output, "output", "o", "table", "Output format (table or json)")
 
 	root.AddCommand(NewContextCmd())
 	root.AddCommand(NewJobsCmd())
@@ -75,7 +74,36 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(NewBackupCmd())
 	root.AddCommand(NewCredentialsCmd())
 	root.AddCommand(NewVersionCmd())
+	addStructuredOutputFlags(root)
 	return root
+}
+
+var structuredOutputCommands = [][]string{
+	{"jobs", "validate"},
+	{"jobs", "diff"},
+	{"jobs", "list"},
+	{"jobs", "status"},
+	{"jobs", "diagnose"},
+	{"nodes", "list"},
+	{"nodes", "status"},
+	{"secrets", "set"},
+	{"secrets", "list"},
+	{"secrets", "describe"},
+	{"credentials", "create"},
+}
+
+// addStructuredOutputFlags keeps --output local to commands that deliberately
+// implement both human table/text output and a single structured JSON value.
+// Streaming and action-oriented commands therefore cannot silently ignore
+// "--output json" and emit prose instead.
+func addStructuredOutputFlags(root *cobra.Command) {
+	for _, path := range structuredOutputCommands {
+		command, _, err := root.Find(path)
+		if err != nil || command == root {
+			panic(fmt.Sprintf("structured output command %v is not registered", path))
+		}
+		command.Flags().StringVarP(&config.Output, "output", "o", "table", "Output format (table or json)")
+	}
 }
 
 func buildCLITLSConfig() (*tls.Config, error) {
@@ -201,6 +229,9 @@ func loadConfig(cmd *cobra.Command) error {
 		merged.Key = flagConfig.Key
 	}
 
+	if merged.Output == "" {
+		merged.Output = "table"
+	}
 	if merged.Output != "table" && merged.Output != "json" {
 		return fmt.Errorf("invalid output format %q: must be table or json", merged.Output)
 	}
