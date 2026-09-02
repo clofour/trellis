@@ -7,14 +7,16 @@ Complete [Getting Started](getting-started.md) first. It establishes the only go
 | Stage | Learn | Run |
 |---|---|---|
 | 1. Minimal workload | Job → task group → task → allocation; revisions and logs | [`examples/hello`](../../examples/hello/) |
-| 2. Healthy service | Multiple replicas, host networking, fixed port reservations, HTTP health, rolling updates | [`examples/web-service`](../../examples/web-service/) |
-| 3. Runtime configuration | Namespace-scoped environment/file secrets and rotation | [`examples/secrets`](../../examples/secrets/) |
-| 4. Persistence | Allocation-local storage, advertised host volumes, constraints, backup responsibility | [`examples/volumes`](../../examples/volumes/) |
-| 5. Colocated tasks | Sidecars and the consequences of shared placement/scaling/lifecycle | [`examples/sidecar`](../../examples/sidecar/) |
-| 6. Namespace networking | Isolated, host, and WireGuard task networking; service discovery | [Networking below](#6-namespace-networking-and-discovery) |
-| 7. In-cluster automation | Namespace/cluster scope and read/write API access | [`examples/api-access`](../../examples/api-access/) |
-| 8. Release architecture | Rolling, blue/green, and weighted canary composition | [`examples/deployment-strategies`](../../examples/deployment-strategies/) |
-| 9. Stateful compositions | Coupled development stacks, local-volume caveats, application-native HA | [`examples/wordpress`](../../examples/wordpress/), then [`examples/patroni`](../../examples/patroni/) |
+| 2. Healthy service | Host networking, one fixed port reservation, and HTTP health | [`examples/web-service`](../../examples/web-service/) |
+| 3. Replicas and placement | Multiple replicas and the scheduling consequences of fixed host ports | [`examples/replicated-service`](../../examples/replicated-service/) |
+| 4. Rolling updates | Healthy overlap, `max_parallel`, and temporary capacity requirements | [`examples/rolling-update`](../../examples/rolling-update/) |
+| 5. Runtime configuration | Namespace-scoped environment/file secrets and rotation | [`examples/secrets`](../../examples/secrets/) |
+| 6. Persistence | Allocation-local storage, advertised host volumes, constraints, backup responsibility | [`examples/volumes`](../../examples/volumes/) |
+| 7. Colocated tasks | Sidecars and the consequences of shared placement/scaling/lifecycle | [`examples/sidecar`](../../examples/sidecar/) |
+| 8. Namespace networking | Isolated, host, and namespace networking; service discovery | [Networking below](#8-namespace-networking-and-discovery) |
+| 9. In-cluster automation | Namespace/cluster scope and read/write API access | [`examples/api-access`](../../examples/api-access/) |
+| 10. Release architecture | Rolling, blue/green, and weighted canary composition | [`examples/deployment-strategies`](../../examples/deployment-strategies/) |
+| 11. Stateful compositions | Coupled development stacks, local-volume caveats, application-native HA | [`examples/wordpress`](../../examples/wordpress/), then [`examples/patroni`](../../examples/patroni/) |
 
 Do not skip directly to Patroni to learn basic Trellis. Patroni assumes you already understand every earlier layer and still requires a real DCS, replication, fencing, routing, and independent data backups.
 
@@ -33,46 +35,75 @@ trellisctl jobs delete hello --wait
 
 At this stage, understand that the manifest is desired state and the allocation is runtime state. Drill into allocation details only when status or logs require it.
 
-## 2. Health, networking, scaling, and updates
+## 2. Health and service networking
 
-The `web-service` example adds several related operational ideas together:
+The `web-service` example keeps `count: 1` and adds only the pieces needed to make the tutorial application a reachable, application-aware service:
 
-- `count: 2` asks for two task-group allocations;
 - `networking.mode: host` opts the task into the node network;
-- `networking.ports` reserves the exact `port` the process listens on; Trellis does not translate ports;
-- because both replicas reserve port 8080, they need two different nodes;
-- the HTTP health check decides when a running task is ready;
-- rolling replacement waits for healthy new capacity before removing old capacity, so a fixed-port service needs another compatible node during overlap.
+- `networking.ports` reserves the exact `port` the process listens on;
+- the HTTP health check decides when the running task is ready.
 
-Apply it with `--wait`, change the image, run `jobs diff`, then apply again. Use `jobs diagnose` when health or placement blocks progress. This is the baseline stateless-service pattern; later examples compose it rather than replacing it with new resource types.
+Host networking has no Trellis NAT or port translation. The reservation prevents another Trellis task from claiming the same node port, and the process must bind that port itself.
 
-## 3. Secrets
+Apply the example, reach the service at the selected node's port 8080, and use `jobs diagnose` if its health check blocks readiness. Do not add replicas yet; first make the one-allocation service model concrete.
+
+## 3. Replicas and placement
+
+The `replicated-service` example changes the healthy service from one desired allocation to two. Both replicas reserve port 8080, so they cannot share a node and require at least two compatible nodes.
+
+This stage is about scheduling rather than rollout policy. Inspect both allocations with:
+
+```sh
+trellisctl jobs status replicated-service
+trellisctl nodes list
+trellisctl nodes status NODE
+```
+
+If only one compatible node exists, `jobs diagnose replicated-service` should make the placement failure visible. Understand why the second allocation cannot be placed before moving on to overlapping updates.
+
+## 4. Rolling updates
+
+The `rolling-update` example keeps the same two-replica service and adds:
+
+```yaml
+update:
+  strategy: rolling
+  max_parallel: 1
+```
+
+Change only the tutorial image from `v1` to `v2`, run `jobs diff`, then apply again. Trellis starts healthy replacement capacity before completing removal of the old revision.
+
+The fixed host port makes the temporary-capacity cost visible: two old replicas already occupy port 8080 on two nodes, so the first replacement needs another compatible node with that port free. `max_parallel: 1` limits how much replacement capacity can be in flight at once. If placement or health blocks progress, use `jobs diagnose` rather than treating the rollout as an opaque failed command.
+
+## 5. Secrets
 
 Create secret values separately, reference only their names in YAML, and decide whether each application needs an environment or file target. Trellis never reads plaintext values back. A rotated value reaches newly started allocations; it does not mutate a running process.
 
 Follow [`examples/secrets`](../../examples/secrets/) before using secrets in a larger stack. Preserve and back up the node secrets-encryption key separately from Trellis desired-state backups.
 
-## 4. Volumes
+## 6. Volumes
 
 Start with allocation-managed scratch data, then learn advertised `host_volume` placement. A host-volume name tells the scheduler which nodes can satisfy a mount; it does not replicate, snapshot, or transport bytes.
 
-The [`volumes`](../../examples/volumes/) example deliberately requires operator preparation. Complete its node-label, directory-ownership, backup, and restore notes before adapting it to real data.
+The [`volumes`](../../examples/volumes/) example deliberately requires operator preparation. Complete its node-label, directory-ownership, backup, and restore notes before adapting it to real data. `trellisctl nodes status NODE` shows the labels and advertised host-volume names that affect placement.
 
-## 5. Sidecars and task groups
+## 7. Sidecars and task groups
 
 A task group is more than YAML nesting: every task in it is placed, scaled, updated, and drained together. The [`sidecar`](../../examples/sidecar/) example uses this coupling intentionally for nginx and its metrics exporter.
 
 If two containers should scale or fail independently, use separate task groups or jobs. If a helper needs to observe many allocations rather than only its colocated application, continue to the API-access/controller stage instead.
 
-## 6. Namespace networking and discovery
+## 8. Namespace networking and discovery
 
 Networking is selected per task:
 
 | `networking.mode` | Meaning | When to use it |
 |---|---|---|
-| omitted / empty | Private container namespace without external routes | Jobs that need no network, or custom runtime setup |
+| omitted / `isolated` | Private container namespace without external routes | Jobs that need no network, or custom runtime setup |
 | `host` | Join the node network; may reserve ports used directly by the process | Directly reachable services and simple local communication |
-| `wireguard` | Join the configured namespace WireGuard mesh | Cross-node namespace communication when every node has WireGuard/runsc configured |
+| `namespace` | Join the private Trellis network for the job namespace | Cross-node communication within the workload namespace |
+
+`namespace` is the user-facing semantic mode. Its current implementation uses a WireGuard mesh and therefore requires the corresponding WireGuard and `runsc` node setup, but manifests do not depend on that implementation detail.
 
 Host port declarations are valid only with `mode: host`:
 
@@ -85,7 +116,7 @@ networking:
 
 There is only one port because host networking has no Trellis NAT or translation layer. The reservation prevents another Trellis task from claiming the same node port; the process must bind it itself.
 
-WireGuard tasks do not declare host ports. Check them from inside the container with a script health check when needed:
+Namespace-networked tasks do not declare host ports. Check them from inside the container with a script health check when needed:
 
 ```yaml
 runtime: runsc
@@ -93,15 +124,15 @@ tasks:
   - name: app
     image: registry.example/app:v1
     networking:
-      mode: wireguard
+      mode: namespace
     health_check:
       type: script
       command: [wget, -q, -O, /dev/null, http://127.0.0.1:8080/health]
 ```
 
-Configure WireGuard/runsc on every participating node, open the configured UDP port between nodes, and verify the image contains the health-check command. Healthy allocations enter Trellis discovery; API-aware controllers can filter them by task-group labels. Treat discovery as runtime endpoint information, not application consensus.
+Configure the namespace-networking dependencies on every participating node, open the configured WireGuard UDP port between nodes, and verify the image contains the health-check command. Healthy allocations enter Trellis discovery; API-aware controllers can filter them by task-group labels. Treat discovery as runtime endpoint information, not application consensus.
 
-## 7. In-cluster API access
+## 9. In-cluster API access
 
 API access has two dimensions: **scope** (`namespace` or `cluster`) and **access** (`read` or `write`). Prefer the narrowest pair that works.
 
@@ -117,15 +148,17 @@ Trellis gives every task in the group a bearer credential restricted to the job'
 
 Use `namespace/write` only for a namespace-local controller that actually mutates desired state. Use `cluster/read` for a trusted cluster-wide observer. Use `cluster/write` only for an operator workload that needs ordinary cluster mutations.
 
-The bootstrap cluster credential is separate and more privileged. It is used for node registration, Raft membership, backup/restore, and minting scoped credentials, and Trellis never injects it into workloads.
+The bootstrap credential is separate and more privileged. It is used for node registration, Raft membership, backup/restore, and minting scoped credentials, and Trellis never injects it into workloads.
 
 Every task in an API-enabled group can read the injected token, so do not add untrusted sidecars. The [`api-access`](../../examples/api-access/) example intentionally uses `namespace/read` and explains TLS verification, authenticated requests, last-known-good behavior, and token hygiene.
 
-## 8. Release patterns
+## 10. Release patterns
 
-Trellis directly implements `recreate` and `rolling`. Blue/green and canary are compositions of separate jobs plus external routing state. Read [`deployment-strategies`](../../examples/deployment-strategies/) only after running the simpler rolling update in `web-service`. When these patterns use a shared fixed host port, every simultaneously running allocation needs a node where that port is free; Trellis does not hide this capacity requirement behind a port-forwarding layer.
+Trellis directly implements `recreate` and `rolling`. The dedicated [`rolling-update`](../../examples/rolling-update/) lesson covers the built-in rolling primitive before this stage. Blue/green and canary are compositions of separate jobs plus external routing state.
 
-## 9. Stateful and HA patterns
+Read [`deployment-strategies`](../../examples/deployment-strategies/) only after completing the rolling lesson. When these patterns use a shared fixed host port, every simultaneously running allocation needs a node where that port is free; Trellis does not hide this capacity requirement behind a port-forwarding layer.
+
+## 11. Stateful and HA patterns
 
 The WordPress example is a development composition, not a production topology. The Patroni example is an architecture skeleton, not a database service. At this stage you should be able to identify which responsibilities Trellis supplies—placement, lifecycle, health observation, secret delivery, network attachment—and which remain application/operator responsibilities.
 

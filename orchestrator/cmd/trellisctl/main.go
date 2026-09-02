@@ -30,7 +30,7 @@ var config CLIConfig
 
 type contextFileConfig struct {
 	ServerAddr   string `yaml:"server_addr,omitempty"`
-	ClusterToken string `yaml:"cluster_token,omitempty"`
+	ClusterToken string `yaml:"token,omitempty"`
 	Namespace    string `yaml:"namespace,omitempty"`
 	CACert       string `yaml:"ca_cert,omitempty"`
 	Cert         string `yaml:"cert,omitempty"`
@@ -61,7 +61,7 @@ func newRootCmd() *cobra.Command {
 	persistentFlags := root.PersistentFlags()
 	persistentFlags.StringVar(&config.Context, "context", "", "Named cluster context to use for this command")
 	persistentFlags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "Cluster API address")
-	persistentFlags.StringVar(&config.ClusterToken, "cluster-token", "", "Cluster token")
+	persistentFlags.StringVar(&config.ClusterToken, "token", "", "Bearer API credential")
 	persistentFlags.StringVar(&config.Namespace, "namespace", "", "Namespace scope for jobs, allocations, and secrets")
 	persistentFlags.StringVar(&config.CACert, "ca-cert", "", "Path to cluster CA certificate (PEM)")
 	persistentFlags.StringVar(&config.Cert, "cert", "", "Path to client certificate (PEM)")
@@ -185,7 +185,7 @@ func loadConfig(cmd *cobra.Command) error {
 	if flags.Changed("server-addr") {
 		merged.ServerAddr = flagConfig.ServerAddr
 	}
-	if flags.Changed("cluster-token") {
+	if flags.Changed("token") {
 		merged.ClusterToken = flagConfig.ClusterToken
 	}
 	if flags.Changed("namespace") {

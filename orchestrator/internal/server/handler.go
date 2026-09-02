@@ -571,7 +571,7 @@ func (h *Handler) handleMetrics(c *echo.Context) error {
 func (h *Handler) convertNode(node *Node) *api.NodeResponse {
 	return &api.NodeResponse{
 		ID: node.ID, Host: node.Host, Port: node.Port, Status: api.NodeStatusResponse(node.Status),
-		LastHeartbeat: node.LastHeartbeat, CPU: node.CPU, Memory: node.Memory, Labels: node.Labels,
+		LastHeartbeat: node.LastHeartbeat, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels,
 		Volumes: node.Volumes, Version: node.Version,
 	}
 }

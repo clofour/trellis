@@ -28,7 +28,7 @@ task_groups:
           PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
           PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
         networking:
-          mode: wireguard
+          mode: namespace
         secrets:
           - name: postgres-password
             target: env

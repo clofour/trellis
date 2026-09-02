@@ -110,6 +110,6 @@ If you installed the dashboard, open `http://NODE_ADDRESS:3000`. The default ins
 - Image-pull failures usually mean the node cannot reach GHCR or the image/tag is unavailable.
 - `trellisctl context current` and `trellisctl nodes list` verify the saved operator connection.
 
-Continue with the [learning path](learning-path.md). Stage 2 reuses the tutorial application with host networking, `/health`, replicas, and rolling updates before introducing secrets, volumes, sidecars, WireGuard, API access, release patterns, and stateful architectures.
+Continue with the [learning path](learning-path.md). It reuses the tutorial application and adds concepts one at a time: first host networking and `/health`, then replicas and placement, then rolling-update overlap before moving on to secrets, volumes, sidecars, namespace networking, API access, release patterns, and stateful architectures.
 
 [Documentation index](../README.md) · [Next: Learning path](learning-path.md)

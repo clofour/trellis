@@ -42,7 +42,7 @@ Those generation/fencing details are useful diagnostics, but they are not separa
 
 ## Networking and discovery
 
-Each task selects its attachment through `networking.mode`. The default is an isolated container network with no external routes; `host` joins the node network directly, and `wireguard` joins the namespace WireGuard mesh. Host-port reservations belong under that task's `networking` block and are valid only in host mode. Healthy allocation endpoints enter the service catalog. Discovery supports namespace and label filtering, and Trellis DNS resolves names shaped like `group.job.namespace.trellis`.
+Each task selects its attachment through `networking.mode`. Omission or `isolated` gives the task a private container network with no external routes; `host` joins the node network directly; `namespace` joins the private Trellis network for the workload namespace. Namespace networking is currently implemented with WireGuard and `runsc`, but those are node implementation details rather than manifest modes. Host-port reservations belong under that task's `networking` block and are valid only in host mode. Healthy allocation endpoints enter the service catalog. Discovery supports namespace and label filtering, and Trellis DNS resolves names shaped like `group.job.namespace.trellis`.
 
 ## Persistence and secrets
 

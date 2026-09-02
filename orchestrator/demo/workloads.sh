@@ -9,7 +9,7 @@ SHARE_DIR="/vagrant/bin"
 TOKEN_FILE="${SHARE_DIR}/token"
 TRELLIS_TOKEN="$(cat "${TOKEN_FILE}")"
 TRELLIS_ADDR="localhost:8128"
-CLI="trellisctl --server-addr ${TRELLIS_ADDR} --cluster-token ${TRELLIS_TOKEN}"
+CLI="trellisctl --server-addr ${TRELLIS_ADDR} --token ${TRELLIS_TOKEN}"
 
 wait_healthy() {
     local namespace="$1" job="$2" timeout="${3:-120}"
@@ -59,8 +59,7 @@ task_groups:
         networking:
           mode: host
           ports:
-            - host_port: 80
-              container_port: 80
+            - port: 80
         health_check:
           type: http
           port: 80
@@ -89,8 +88,7 @@ task_groups:
         networking:
           mode: host
           ports:
-            - host_port: 3306
-              container_port: 3306
+            - port: 3306
         volumes:
           - name: data
             path: /var/lib/mysql
@@ -124,8 +122,7 @@ task_groups:
         networking:
           mode: host
           ports:
-            - host_port: 80
-              container_port: 80
+            - port: 80
         health_check:
           type: http
           port: 80

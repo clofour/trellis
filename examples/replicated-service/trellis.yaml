@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/trellis-job.schema.json
-name: web-service
+name: replicated-service
 namespace: default
 task_groups:
   - name: web
-    count: 1
+    count: 2
     tasks:
       - name: tutorial
         image: ghcr.io/clofour/trellis-tutorial:v1

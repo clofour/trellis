@@ -70,17 +70,19 @@ type APIAccessSpec struct {
 type TaskNetworkMode string
 
 const (
+	// TaskNetworkDefault selects the default isolated task network when mode is omitted.
+	TaskNetworkDefault TaskNetworkMode = ""
 	// TaskNetworkIsolated gives the container a private network namespace with no external routes.
-	TaskNetworkIsolated TaskNetworkMode = ""
+	TaskNetworkIsolated TaskNetworkMode = "isolated"
 	// TaskNetworkHost joins the host network namespace directly.
 	TaskNetworkHost TaskNetworkMode = "host"
-	// TaskNetworkWireGuard gives the container a private namespace connected to the WireGuard mesh.
-	TaskNetworkWireGuard TaskNetworkMode = "wireguard"
+	// TaskNetworkWireGuard joins the Trellis namespace network, currently implemented with WireGuard.
+	TaskNetworkWireGuard TaskNetworkMode = "namespace"
 )
 
 // Valid reports whether m is a supported task network mode.
 func (m TaskNetworkMode) Valid() bool {
-	return m == TaskNetworkIsolated || m == TaskNetworkHost || m == TaskNetworkWireGuard
+	return m == TaskNetworkDefault || m == TaskNetworkIsolated || m == TaskNetworkHost || m == TaskNetworkWireGuard
 }
 
 // HealthCheckType identifies a supported health-check implementation.

@@ -27,12 +27,13 @@ export function DashboardContent() {
     mutate: refreshJobs,
   } = useJobs();
   const cluster = useOrchestratorStatus();
-  const { allowWrites, clusterName, namespace } = useConfig();
+  const { allowWrites, apiAccess, clusterName, namespace } = useConfig();
   const [formOpen, setFormOpen] = useState(false);
+  const clusterScope = apiAccess === "cluster";
 
-  if (nodesLoading || jobsLoading) return <DashboardSkeleton />;
+  if (jobsLoading || (clusterScope && nodesLoading)) return <DashboardSkeleton />;
 
-  const nodeList = nodes ?? [];
+  const nodeList = clusterScope ? (nodes ?? []) : [];
   const jobList = jobs ?? [];
   const issues = operationalIssues(jobList, nodeList);
   const actionIssues = issues.filter((issue) => issue.severity !== "info");
@@ -41,13 +42,14 @@ export function DashboardContent() {
   const healthyNodes = nodeList.filter((node) => node.status === "healthy").length;
   const { totalCPU, totalMemory } = aggregateResources(nodeList);
   const { requestedCPU, requestedMemory } = requestedResources(jobList);
-  const disconnected = !!nodesError || !!jobsError || cluster.error;
+  const disconnected = !!jobsError || cluster.error || (clusterScope && !!nodesError);
   const summary = operationalSummary({
     disconnected,
     actionIssues,
     converging: states.converging,
     healthyNodes,
     totalNodes: nodeList.length,
+    clusterScope,
   });
 
   return (
@@ -78,16 +80,18 @@ export function DashboardContent() {
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${clusterScope ? "lg:grid-cols-4" : ""}`}>
         <StateCard label="Ready" value={states.ready} tone="ready" detail="jobs at desired health" />
         <StateCard label="Converging" value={states.converging} tone="converging" detail="deployments in progress" />
         <StateCard label="Degraded" value={states.degraded} tone="degraded" detail="jobs with explicit failures" />
-        <StateCard
-          label="Nodes"
-          value={`${healthyNodes}/${nodeList.length}`}
-          tone={healthyNodes === nodeList.length ? "ready" : "degraded"}
-          detail="healthy cluster nodes"
-        />
+        {clusterScope && (
+          <StateCard
+            label="Nodes"
+            value={`${healthyNodes}/${nodeList.length}`}
+            tone={healthyNodes === nodeList.length ? "ready" : "degraded"}
+            detail="healthy cluster nodes"
+          />
+        )}
       </div>
 
       <section className="rounded-lg border border-border bg-card">
@@ -105,7 +109,9 @@ export function DashboardContent() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {states.converging > 0
                   ? "Some deployments are still converging; their progress is shown below."
-                  : "Desired capacity is healthy and no nodes require attention."}
+                  : clusterScope
+                    ? "Desired capacity is healthy and no nodes require attention."
+                    : "Desired workload capacity in this namespace is healthy."}
               </p>
             </div>
           </div>
@@ -145,14 +151,16 @@ export function DashboardContent() {
         </section>
       )}
 
-      <details className="rounded-lg border border-border bg-card">
-        <summary className="cursor-pointer select-none px-5 py-4 text-sm font-medium text-card-foreground">Capacity and reservation pressure</summary>
-        <div className="space-y-4 border-t border-border px-5 py-5">
-          <ResourceBar label="CPU requested" used={requestedCPU} total={totalCPU} format="cpu" />
-          <ResourceBar label="Memory requested" used={requestedMemory} total={totalMemory} format="memory" />
-          <p className="text-xs text-muted-foreground">Desired job reservations versus schedulable cluster capacity, not live container utilization.</p>
-        </div>
-      </details>
+      {clusterScope && (
+        <details className="rounded-lg border border-border bg-card">
+          <summary className="cursor-pointer select-none px-5 py-4 text-sm font-medium text-card-foreground">Capacity and reservation pressure</summary>
+          <div className="space-y-4 border-t border-border px-5 py-5">
+            <ResourceBar label="CPU requested" used={requestedCPU} total={totalCPU} format="cpu" />
+            <ResourceBar label="Memory requested" used={requestedMemory} total={totalMemory} format="memory" />
+            <p className="text-xs text-muted-foreground">Desired job reservations versus schedulable cluster capacity, not live container utilization.</p>
+          </div>
+        </details>
+      )}
 
       {allowWrites && (
         <JobForm open={formOpen} onClose={() => setFormOpen(false)} onSuccess={() => refreshJobs()} />
@@ -230,20 +238,21 @@ function StateCard({ label, value, detail, tone }: { label: string; value: strin
   );
 }
 
-function operationalSummary({ disconnected, actionIssues, converging, healthyNodes, totalNodes }: {
+function operationalSummary({ disconnected, actionIssues, converging, healthyNodes, totalNodes, clusterScope }: {
   disconnected: boolean;
   actionIssues: OperationalIssue[];
   converging: number;
   healthyNodes: number;
   totalNodes: number;
+  clusterScope: boolean;
 }) {
-  if (disconnected) return { title: "Cluster unavailable", description: "The dashboard cannot currently read cluster state.", style: "border-red-500/30 bg-red-500/5", dot: "bg-red-500" };
+  if (disconnected) return { title: "Cluster unavailable", description: "The dashboard cannot currently read its authorized Trellis state.", style: "border-red-500/30 bg-red-500/5", dot: "bg-red-500" };
   const critical = actionIssues.filter((issue) => issue.severity === "critical").length;
   if (critical > 0) return { title: "Cluster needs attention", description: `${critical} explicit failure${critical === 1 ? "" : "s"} detected. Start with the diagnostics below.`, style: "border-red-500/30 bg-red-500/5", dot: "bg-red-500" };
   if (actionIssues.length > 0) return { title: "Progress is blocked", description: `${actionIssues.length} deployment${actionIssues.length === 1 ? "" : "s"} report a placement or retry condition.`, style: "border-amber-500/30 bg-amber-500/5", dot: "bg-amber-500" };
   if (converging > 0) return { title: "Changes in progress", description: `${converging} deployment${converging === 1 ? " is" : "s are"} converging toward desired state.`, style: "border-amber-500/30 bg-amber-500/5", dot: "bg-amber-500" };
-  if (totalNodes === 0 || healthyNodes === 0) return { title: "No healthy nodes", description: "Register a healthy node before applying workloads.", style: "border-amber-500/30 bg-amber-500/5", dot: "bg-amber-500" };
-  return { title: "All systems ready", description: "Desired workload capacity is healthy and no cluster problems are reported.", style: "border-emerald-500/30 bg-emerald-500/5", dot: "bg-emerald-500" };
+  if (clusterScope && (totalNodes === 0 || healthyNodes === 0)) return { title: "No healthy nodes", description: "Register a healthy node before applying workloads.", style: "border-amber-500/30 bg-amber-500/5", dot: "bg-amber-500" };
+  return { title: "All systems ready", description: clusterScope ? "Desired workload capacity is healthy and no cluster problems are reported." : "Desired workload capacity in this namespace is healthy.", style: "border-emerald-500/30 bg-emerald-500/5", dot: "bg-emerald-500" };
 }
 
 function countStates(jobs: Job[]): Record<JobState, number> {

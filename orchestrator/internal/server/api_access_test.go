@@ -35,9 +35,8 @@ func TestAPIAccessTokenClusterRead(t *testing.T) {
 	if err != nil || stored == nil {
 		t.Fatalf("validate generated token: %v", err)
 	}
-	scope, access, namespace, ok := auth.DecodeScope(stored.Namespace)
-	if !ok || scope != auth.AccessCluster || access != auth.AccessRead || namespace != "" {
-		t.Fatalf("unexpected generated scope: %q", stored.Namespace)
+	if stored.Kind != auth.CredentialWorkload || stored.Scope != auth.AccessCluster || stored.Access != auth.AccessRead || stored.Namespace != "" {
+		t.Fatalf("unexpected generated principal: %#v", stored)
 	}
 }
 

@@ -16,3 +16,12 @@ func (s *ServerClient) CreateCredential(ctx context.Context, request *api.Creden
 	}
 	return &response, nil
 }
+
+// CredentialInfo returns the identity and effective authorization of this client's bearer credential.
+func (s *ServerClient) CredentialInfo(ctx context.Context) (*api.CredentialInfoResponse, error) {
+	var response api.CredentialInfoResponse
+	if err := s.client.request(ctx, http.MethodGet, s.address()+"/v1/auth/whoami", nil, &response); err != nil {
+		return nil, fmt.Errorf("inspect credential: %w", err)
+	}
+	return &response, nil
+}

@@ -54,6 +54,7 @@ import (
 const shutdownTime = 10 * time.Second
 
 type config struct {
+	ConfigFile                                                  string
 	AgentListen, AgentAdvertise, ServerListen, ServerAdvertise string
 	RaftListen, RaftAdvertise, Join                            string
 	DataDir, Cluster, ClusterToken, ContainerdSock             string
@@ -73,7 +74,14 @@ func main() {
 		Use:     "trellis",
 		Short:   "Trellis node",
 		Version: version.Current(),
-		RunE:    func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), cfg) },
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if cfg.ConfigFile != "" {
+				if err := loadNodeConfig(cfg.ConfigFile, cfg, cmd.Flags()); err != nil {
+					return err
+				}
+			}
+			return run(cmd.Context(), cfg)
+		},
 	}
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
@@ -82,6 +90,7 @@ func main() {
 		Run:   func(_ *cobra.Command, _ []string) { fmt.Println(version.Current()) },
 	})
 	f := root.Flags()
+	f.StringVar(&cfg.ConfigFile, "config", "", "Path to Trellis node configuration YAML")
 	f.StringVar(&cfg.AgentListen, "agent-listen", ":8127", "Agent API listen address")
 	f.StringVar(&cfg.AgentAdvertise, "agent-advertise", "", "Agent address advertised to the cluster")
 	f.StringVar(&cfg.ServerListen, "server-listen", ":8128", "Control-plane API listen address")
@@ -91,7 +100,7 @@ func main() {
 	f.StringVar(&cfg.Join, "join", "", "Address of an existing cluster member to join (server API address)")
 	f.StringVar(&cfg.DataDir, "data-dir", "/var/lib/trellis/data", "Directory for local state and volumes")
 	f.StringVar(&cfg.Cluster, "cluster", "default", "Cluster name")
-	f.StringVar(&cfg.ClusterToken, "cluster-token", "", "Shared cluster token")
+	f.StringVar(&cfg.ClusterToken, "bootstrap-token", "", "Bootstrap credential shared by Trellis nodes")
 	f.StringVar(&cfg.ContainerdSock, "containerd-sock", "/run/containerd/containerd.sock", "Containerd socket path")
 	f.StringVar(&cfg.Runtime, "runtime", "containerd", "Workload runtime: containerd or injected (test only)")
 	f.StringVar(&cfg.RuntimeFaults, "runtime-faults", "", "Injected runtime fault-control file")
@@ -116,7 +125,7 @@ func run(parent context.Context, cfg *config) error {
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	if cfg.ClusterToken == "" {
-		return fmt.Errorf("--cluster-token is required")
+		return fmt.Errorf("bootstrap_token or --bootstrap-token is required")
 	}
 	if cfg.WireGuardPort < 1 || cfg.WireGuardPort > 65535 {
 		return fmt.Errorf("--wireguard-port must be between 1 and 65535")
@@ -351,6 +360,7 @@ func run(parent context.Context, cfg *config) error {
 	elector := election.NewRaftElector(raftStore.Raft(), election.Leader{NodeID: id, Address: cfg.ServerAdvertise})
 	leaderHTTP := echo.New()
 	leaderHTTP.Use(middleware.Recover(), leaderAuthMiddleware(cfg.ClusterToken, control.TokenManager()))
+	leaderHTTP.GET("/v1/auth/whoami", server.HandleWhoAmI)
 	server.NewHandler(control).Register(leaderHTTP)
 	apiProxy := newControlPlaneProxy(elector, cfg.ServerAdvertise, leaderHTTP, newHTTPTransport(clientTLS), log)
 	go func() {
@@ -740,24 +750,27 @@ func clusterAuthMiddleware(token string) echo.MiddlewareFunc {
 	}})
 }
 
-func leaderAuthMiddleware(clusterToken string, tokenManager *auth.TokenManager) echo.MiddlewareFunc {
+func leaderAuthMiddleware(bootstrapToken string, tokenManager *auth.TokenManager) echo.MiddlewareFunc {
 	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		KeyLookup: "header:Authorization:Bearer ",
 		Skipper: func(c *echo.Context) bool {
 			return c.Request().URL.Path == "/metrics"
 		},
 		Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
-			if subtle.ConstantTimeCompare([]byte(key), []byte(clusterToken)) == 1 {
+			if subtle.ConstantTimeCompare([]byte(key), []byte(bootstrapToken)) == 1 {
+				principal := auth.BootstrapPrincipal()
 				ctx := context.WithValue(c.Request().Context(), server.AdminContextKey, true)
+				ctx = context.WithValue(ctx, server.PrincipalContextKey, principal)
 				c.SetRequest(c.Request().WithContext(ctx))
 				return true, nil
 			}
-			scope, err := tokenManager.ValidateToken(c.Request().Context(), key)
+			principal, err := tokenManager.ValidateToken(c.Request().Context(), key)
 			if err != nil {
 				return false, nil
 			}
-			if scope != nil {
-				ctx := context.WithValue(c.Request().Context(), server.NamespaceContextKey, scope.Namespace)
+			if principal != nil {
+				ctx := context.WithValue(c.Request().Context(), server.NamespaceContextKey, auth.EncodeScope(principal.Scope, principal.Access, principal.Namespace))
+				ctx = context.WithValue(ctx, server.PrincipalContextKey, *principal)
 				c.SetRequest(c.Request().WithContext(ctx))
 				return true, nil
 			}

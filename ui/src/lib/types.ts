@@ -8,6 +8,8 @@ export interface Node {
   last_heartbeat: string;
   cpu: number;
   memory: number;
+  os?: string;
+  arch?: string;
   labels?: Record<string, string>;
   volumes?: string[];
 }
@@ -88,7 +90,7 @@ export interface JobSpec {
 }
 
 export type Runtime = "" | "runc" | "runsc";
-export type TaskNetworkMode = "" | "host" | "wireguard";
+export type TaskNetworkMode = "" | "isolated" | "host" | "namespace";
 export type UpdateStrategy = "" | "recreate" | "rolling";
 export type APIAccessScope = "namespace" | "cluster";
 export type APIAccessLevel = "read" | "write";
