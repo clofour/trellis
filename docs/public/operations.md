@@ -1,6 +1,6 @@
 # Operations
 
-Operational commands use the vocabulary in the [Trellis user model](user-model.md): apply/delete jobs, inspect allocations, and drain/undrain nodes. Raft and leadership controls are advanced control-plane operations rather than part of the normal workload model. The [CLI workflows guide](cli.md) covers contexts, planning, rollout watching, diagnosis, and log selection in detail.
+Operational commands use the vocabulary in the [Trellis user model](user-model.md): apply/delete jobs, inspect allocations, and drain/undrain nodes. Raft and leadership controls are advanced control-plane operations rather than part of the normal workload model. The [CLI workflows guide](cli.md) covers contexts, planning, rollout watching, diagnosis, logging, and structured output in detail.
 
 ## Routine workflow
 
@@ -15,7 +15,7 @@ trellisctl jobs logs NAME --tail 200
 trellisctl jobs delete NAME
 ```
 
-Add `--output json` to list/status/secret commands for automation. JSON is the API/automation representation; human-authored jobs remain YAML manifests.
+Commands with a coherent structured result expose a local `--output json` flag; streaming and action commands do not. See [CLI workflows](cli.md#structured-output-and-automation) for the exact contract.
 
 ## Node configuration
 
@@ -58,6 +58,39 @@ trellisctl nodes list
 ```
 
 A joining node must use the existing bootstrap token; minting an ordinary operator/workload token does not create or join a cluster.
+
+## Mint operator credentials
+
+The installer creates one normal `cluster/write` credential for the installing user, but operators often need narrower credentials for another human, a read-only dashboard, or automation. `trellisctl credentials create` is the explicit administrative workflow for that.
+
+Credential minting requires the **bootstrap** credential. On an installed Trellis node, running the command as root automatically uses the root-readable local node connection, so the bootstrap value does not need to be copied into shell history:
+
+```sh
+# Read-only cluster observer
+sudo trellisctl credentials create --scope cluster --access read
+
+# Writer restricted to one namespace
+sudo trellisctl credentials create \
+  --scope namespace \
+  --namespace-scope staging \
+  --access write
+```
+
+The default output is the newly minted bearer token so it can be handed directly to a password manager or context setup. Use `--output json` when automation needs the response object instead:
+
+```sh
+sudo trellisctl credentials create --scope cluster --access read --output json
+```
+
+To save a generated credential as an ordinary user context without leaving it in command history:
+
+```sh
+TOKEN="$(sudo trellisctl credentials create --scope namespace --namespace-scope staging --access write)"
+trellisctl --token "$TOKEN" --namespace staging context save staging --use
+unset TOKEN
+```
+
+A remote bootstrap administrator may instead supply the bootstrap bearer credential through `TRELLIS_TOKEN` or `--token`, but it should be handled as a root secret. Ordinary `cluster/write` credentials cannot mint more credentials, join nodes, change Raft membership, or perform backup/restore.
 
 ## Drain and maintenance
 
