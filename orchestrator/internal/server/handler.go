@@ -25,7 +25,7 @@ type Handler struct {
 
 type contextKey string
 
-// NamespaceContextKey stores the authenticated namespace or generated credential scope in a request context.
+// NamespaceContextKey stores the authenticated namespace or encoded scoped authorization in a request context.
 const NamespaceContextKey contextKey = "trellis-namespace"
 
 // AdminContextKey stores bootstrap cluster-administrator status in a request context.
@@ -89,14 +89,13 @@ func requireClusterWrite(c *echo.Context, message string) error {
 }
 
 // NewHandler creates an HTTP handler for server.
-func NewHandler(server *Server) *Handler {
-	return &Handler{server: server}
-}
+func NewHandler(server *Server) *Handler { return &Handler{server: server} }
 
 // Register adds server routes to an Echo instance.
 func (h *Handler) Register(e *echo.Echo) {
 	e.GET("/metrics", h.handleMetrics)
 	v1 := e.Group("/v1")
+	v1.POST("/credentials", h.handleCreateCredential)
 	v1.GET("/nodes", h.handleListNodes)
 	v1.POST("/nodes", h.handleRegisterNode)
 	v1.POST("/nodes/:id/heartbeat", h.handleHeartbeat)
@@ -120,6 +119,37 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.GET("/namespaces/:namespace/secrets", h.handleListSecrets)
 	v1.GET("/namespaces/:namespace/secrets/:name", h.handleGetSecret)
 	v1.DELETE("/namespaces/:namespace/secrets/:name", h.handleDeleteSecret)
+}
+
+func (h *Handler) handleCreateCredential(c *echo.Context) error {
+	if err := requireRoot(c, "credential creation requires the bootstrap cluster credential"); err != nil {
+		return err
+	}
+	var request api.CredentialCreateRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	scope := auth.AccessScope(request.Scope)
+	access := auth.AccessLevel(request.Access)
+	if scope != auth.AccessNamespace && scope != auth.AccessCluster {
+		return echo.NewHTTPError(http.StatusBadRequest, "scope must be namespace or cluster")
+	}
+	if access != auth.AccessRead && access != auth.AccessWrite {
+		return echo.NewHTTPError(http.StatusBadRequest, "access must be read or write")
+	}
+	if scope == auth.AccessNamespace {
+		if !spec.ValidIdentifier(request.Namespace) {
+			return echo.NewHTTPError(http.StatusBadRequest, "namespace scope requires a valid namespace")
+		}
+	} else if request.Namespace != "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "cluster scope must not include a namespace")
+	}
+	token, err := h.server.CreateCredential(c.Request().Context(), scope, access, request.Namespace)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+	}
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.JSON(http.StatusCreated, api.CredentialCreateResponse{Token: token})
 }
 
 func (h *Handler) handleBackupCreate(c *echo.Context) error {
@@ -224,11 +254,9 @@ func (h *Handler) handleDeleteSecret(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	err = h.server.DeleteSecret(c.Request().Context(), ns, c.Param("name"))
-	if errors.Is(err, secretstore.ErrNotFound) {
+	if err := h.server.DeleteSecret(c.Request().Context(), ns, c.Param("name")); errors.Is(err, secretstore.ErrNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, "secret not found")
-	}
-	if err != nil {
+	} else if err != nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "unable to delete secret")
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -311,12 +339,15 @@ func (h *Handler) handleRegisterNode(c *echo.Context) error {
 	if err := requireRoot(c, "node registration requires the bootstrap cluster credential"); err != nil {
 		return err
 	}
-	ctx := c.Request().Context()
 	var request api.NodeRegistrationRequest
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	if err := h.server.RegisterNode(ctx, &NodeRegistration{ID: request.ID, Host: request.Host, Port: request.Port, CPU: request.CPU, Memory: request.Memory, OS: request.OS, Arch: request.Arch, Labels: request.Labels, Volumes: request.Volumes, WireGuardPublicKey: request.WireGuardPublicKey, WireGuardEndpoint: request.WireGuardEndpoint}); err != nil {
+	if err := h.server.RegisterNode(c.Request().Context(), &NodeRegistration{
+		ID: request.ID, Host: request.Host, Port: request.Port, CPU: request.CPU, Memory: request.Memory,
+		OS: request.OS, Arch: request.Arch, Labels: request.Labels, Volumes: request.Volumes,
+		WireGuardPublicKey: request.WireGuardPublicKey, WireGuardEndpoint: request.WireGuardEndpoint,
+	}); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to register node")
 	}
 	return c.JSON(http.StatusCreated, api.NodeRegistrationResponse{ID: request.ID})
@@ -326,7 +357,6 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 	if err := requireRoot(c, "node heartbeats require the bootstrap cluster credential"); err != nil {
 		return err
 	}
-	ctx := c.Request().Context()
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -335,15 +365,14 @@ func (h *Handler) handleHeartbeat(c *echo.Context) error {
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	if err := h.server.Heartbeat(ctx, id, request.Allocations, request.Version, request.Volumes); err != nil {
+	if err := h.server.Heartbeat(c.Request().Context(), id, request.Allocations, request.Version, request.Volumes); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to process heartbeat")
 	}
 	return c.JSON(http.StatusOK, h.server.HeartbeatResponse(id))
 }
 
 func (h *Handler) handleListJobs(c *echo.Context) error {
-	jobs := h.server.ListJobs(requestNamespace(c))
-	return c.JSON(http.StatusOK, jobs)
+	return c.JSON(http.StatusOK, h.server.ListJobs(requestNamespace(c)))
 }
 
 func (h *Handler) handleGetJob(c *echo.Context) error {
@@ -384,12 +413,10 @@ func (h *Handler) handlePlanJob(c *echo.Context) error {
 	if selected != "" && selected != request.Spec.Namespace {
 		return echo.NewHTTPError(http.StatusForbidden, "manifest namespace does not match selected namespace")
 	}
-	namespace := request.Spec.Namespace
 	var currentSpec *spec.JobSpec
 	var revision int
-	if current, ok := h.server.GetJob(namespace, request.Spec.Name); ok {
-		currentSpec = current.Spec
-		revision = current.Revision
+	if current, ok := h.server.GetJob(request.Spec.Namespace, request.Spec.Name); ok {
+		currentSpec, revision = current.Spec, current.Revision
 	}
 	return c.JSON(http.StatusOK, plan.Build(currentSpec, revision, &request.Spec))
 }
@@ -398,7 +425,6 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 	if err := requireWrite(c, "applying jobs requires write authorization"); err != nil {
 		return err
 	}
-	ctx := c.Request().Context()
 	var request api.JobRegistrationRequest
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
@@ -407,7 +433,7 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 	if selected != "" && selected != request.Spec.Namespace {
 		return echo.NewHTTPError(http.StatusForbidden, "manifest namespace does not match selected namespace")
 	}
-	if err := h.server.RegisterJob(ctx, request.Spec.Namespace, &request.Spec); err != nil {
+	if err := h.server.RegisterJob(c.Request().Context(), request.Spec.Namespace, &request.Spec); err != nil {
 		return validationResponse(c, err)
 	}
 	return c.NoContent(http.StatusAccepted)
@@ -415,8 +441,7 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 
 func (h *Handler) handleListAllocations(c *echo.Context) error {
 	var filter *AllocationListFilter
-	job := c.QueryParam("job")
-	label := c.QueryParam("label")
+	job, label := c.QueryParam("job"), c.QueryParam("label")
 	if job != "" || label != "" {
 		filter = &AllocationListFilter{Job: job, Label: label}
 	}
@@ -432,8 +457,7 @@ func (h *Handler) handleListDiscovery(c *echo.Context) error {
 		return err
 	}
 	var filter *catalog.ListFilter
-	job := c.QueryParam("job")
-	label := c.QueryParam("label")
+	job, label := c.QueryParam("job"), c.QueryParam("label")
 	if job != "" || label != "" {
 		filter = &catalog.ListFilter{Job: job, Label: label}
 	}
@@ -448,17 +472,17 @@ func (h *Handler) handleRaftJoin(c *echo.Context) error {
 	if err := requireRoot(c, "Raft membership changes require the bootstrap cluster credential"); err != nil {
 		return err
 	}
-	var req api.RaftJoinRequest
-	if err := c.Bind(&req); err != nil {
+	var request api.RaftJoinRequest
+	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	if req.ID == "" || req.RaftAddress == "" {
+	if request.ID == "" || request.RaftAddress == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "id and raft_address are required")
 	}
 	if h.server.joiner == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "cluster join not available")
 	}
-	if err := h.server.joiner.AddVoter(req.ID, req.RaftAddress); err != nil {
+	if err := h.server.joiner.AddVoter(request.ID, request.RaftAddress); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	caCert, caKey, err := h.server.ClusterCA()
@@ -504,5 +528,9 @@ func (h *Handler) handleMetrics(c *echo.Context) error {
 }
 
 func (h *Handler) convertNode(node *Node) *api.NodeResponse {
-	return &api.NodeResponse{ID: node.ID, Host: node.Host, Port: node.Port, Status: api.NodeStatusResponse(node.Status), LastHeartbeat: node.LastHeartbeat, CPU: node.CPU, Memory: node.Memory, Labels: node.Labels, Volumes: node.Volumes, Version: node.Version}
+	return &api.NodeResponse{
+		ID: node.ID, Host: node.Host, Port: node.Port, Status: api.NodeStatusResponse(node.Status),
+		LastHeartbeat: node.LastHeartbeat, CPU: node.CPU, Memory: node.Memory, Labels: node.Labels,
+		Volumes: node.Volumes, Version: node.Version,
+	}
 }
