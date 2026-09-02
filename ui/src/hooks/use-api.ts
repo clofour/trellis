@@ -62,7 +62,7 @@ export function useJob(name: string) {
     [`/api/v1/jobs/${encodeURIComponent(name)}`, namespace],
     namespacedFetcher,
     {
-    refreshInterval: REFRESH_INTERVAL,
+      refreshInterval: REFRESH_INTERVAL,
     },
   );
 }
@@ -93,12 +93,12 @@ export function useAllocationLogs(id: string | null, tail = 200) {
 }
 
 export function useSecrets() {
-  const { namespace } = useConfig();
+  const { apiAccess, namespace } = useConfig();
   return useSWR<SecretMetadata[]>(
-    ["/api/v1/secrets", namespace],
+    apiAccess === "cluster" ? ["/api/v1/secrets", namespace] : null,
     namespacedFetcher,
     {
-    refreshInterval: REFRESH_INTERVAL,
+      refreshInterval: REFRESH_INTERVAL,
     },
   );
 }
