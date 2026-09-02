@@ -13,7 +13,7 @@ Setting `api_access: true` on a task group causes Trellis to obtain a persistent
 | `TRELLIS_ADDR` | Address of the Trellis control-plane API. |
 | `TRELLIS_TOKEN` | Bearer token scoped to the job namespace. |
 | `TRELLIS_NAMESPACE` | Namespace to send in scoped requests. |
-| `TRELLIS_CA_CERT` | Cluster CA certificate (inline PEM) for TLS verification. |
+| `TRELLIS_CA_CERT` | Cluster CA certificate (inline PEM) for TLS verification when configured. |
 
 This is a group-level privilege boundary: every task in the group can read the injected environment and act with the token. Use a reviewed, pinned image and do not mix an untrusted sidecar into the group.
 
@@ -27,13 +27,13 @@ COPY --chmod=0755 list-jobs.sh /usr/local/bin/list-jobs
 ENTRYPOINT ["/usr/local/bin/list-jobs"]
 ```
 
-Build/push that image and replace the manifest's image. The helper validates that all three variables exist, sends Bearer authentication and `X-Trellis-Namespace`, and fails on a non-success HTTP response.
+Build and push that image, then replace the manifest's image. The helper validates the injected address, token, and namespace, sends Bearer authentication and `X-Trellis-Namespace`, treats an address without an explicit scheme as HTTPS, and uses `TRELLIS_CA_CERT` as a curl trust root when TLS is configured.
 
 ## Deploy and verify
 
 ```sh
-trellis jobs apply --file examples/api-access/trellis.yaml
-trellis --namespace default jobs status api-client
+trellisctl jobs apply --file examples/api-access/trellis.yaml
+trellisctl --namespace default jobs status api-client
 ```
 
 Use allocation logs to inspect the controller's non-sensitive result. Never print the token, dump the complete environment, return it to browser JavaScript, or include it in metrics and traces.
