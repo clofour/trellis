@@ -88,6 +88,29 @@ func requireClusterWrite(c *echo.Context, message string) error {
 	return nil
 }
 
+func requireAPIAccessDelegation(c *echo.Context, job *spec.JobSpec) error {
+	authz := authorization(c)
+	if authz.root {
+		return nil
+	}
+	if authz.scope != auth.AccessCluster && authz.scope != auth.AccessNamespace {
+		return echo.NewHTTPError(http.StatusForbidden, "API access delegation requires an authenticated scoped credential")
+	}
+	for i := range job.TaskGroups {
+		requested := job.TaskGroups[i].APIAccess
+		if requested == nil {
+			continue
+		}
+		if authz.scope == auth.AccessNamespace && auth.AccessScope(requested.Scope) == auth.AccessCluster {
+			return echo.NewHTTPError(http.StatusForbidden, "job api_access exceeds caller scope")
+		}
+		if authz.access == auth.AccessRead && auth.AccessLevel(requested.Access) == auth.AccessWrite {
+			return echo.NewHTTPError(http.StatusForbidden, "job api_access exceeds caller access")
+		}
+	}
+	return nil
+}
+
 // NewHandler creates an HTTP handler for server.
 func NewHandler(server *Server) *Handler { return &Handler{server: server} }
 
@@ -181,9 +204,6 @@ func (h *Handler) handleBackupRestore(c *echo.Context) error {
 
 func secretNamespace(c *echo.Context) (string, error) {
 	c.Response().Header().Set("Cache-Control", "no-store")
-	if err := requireClusterWrite(c, "secret management requires cluster/write authorization"); err != nil {
-		return "", err
-	}
 	ns := c.Param("namespace")
 	if !spec.ValidIdentifier(ns) {
 		return "", echo.NewHTTPError(http.StatusBadRequest, "invalid namespace")
@@ -195,6 +215,9 @@ func secretNamespace(c *echo.Context) (string, error) {
 }
 
 func (h *Handler) handleSetSecret(c *echo.Context) error {
+	if err := requireClusterWrite(c, "setting secrets requires cluster/write authorization"); err != nil {
+		return err
+	}
 	ns, err := secretNamespace(c)
 	if err != nil {
 		return err
@@ -223,6 +246,9 @@ func (h *Handler) handleSetSecret(c *echo.Context) error {
 }
 
 func (h *Handler) handleListSecrets(c *echo.Context) error {
+	if err := requireClusterRead(c, "secret metadata requires cluster/read authorization"); err != nil {
+		return err
+	}
 	ns, err := secretNamespace(c)
 	if err != nil {
 		return err
@@ -235,6 +261,9 @@ func (h *Handler) handleListSecrets(c *echo.Context) error {
 }
 
 func (h *Handler) handleGetSecret(c *echo.Context) error {
+	if err := requireClusterRead(c, "secret metadata requires cluster/read authorization"); err != nil {
+		return err
+	}
 	ns, err := secretNamespace(c)
 	if err != nil {
 		return err
@@ -250,6 +279,9 @@ func (h *Handler) handleGetSecret(c *echo.Context) error {
 }
 
 func (h *Handler) handleDeleteSecret(c *echo.Context) error {
+	if err := requireClusterWrite(c, "deleting secrets requires cluster/write authorization"); err != nil {
+		return err
+	}
 	ns, err := secretNamespace(c)
 	if err != nil {
 		return err
@@ -413,6 +445,9 @@ func (h *Handler) handlePlanJob(c *echo.Context) error {
 	if selected != "" && selected != request.Spec.Namespace {
 		return echo.NewHTTPError(http.StatusForbidden, "manifest namespace does not match selected namespace")
 	}
+	if err := requireAPIAccessDelegation(c, &request.Spec); err != nil {
+		return err
+	}
 	var currentSpec *spec.JobSpec
 	var revision int
 	if current, ok := h.server.GetJob(request.Spec.Namespace, request.Spec.Name); ok {
@@ -429,9 +464,15 @@ func (h *Handler) handleRegisterJob(c *echo.Context) error {
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
+	if err := spec.Validate(&request.Spec); err != nil {
+		return validationResponse(c, err)
+	}
 	selected := requestNamespace(c)
 	if selected != "" && selected != request.Spec.Namespace {
 		return echo.NewHTTPError(http.StatusForbidden, "manifest namespace does not match selected namespace")
+	}
+	if err := requireAPIAccessDelegation(c, &request.Spec); err != nil {
+		return err
 	}
 	if err := h.server.RegisterJob(c.Request().Context(), request.Spec.Namespace, &request.Spec); err != nil {
 		return validationResponse(c, err)
