@@ -12,6 +12,9 @@ interface JobSummary {
   spec?: {
     namespace?: string;
   };
+  allocations?: Array<{
+    namespace?: string;
+  }> | null;
 }
 
 export async function GET() {
@@ -40,8 +43,12 @@ export async function GET() {
     const namespaces = new Set<string>();
     if (defaultNamespace) namespaces.add(defaultNamespace);
     for (const job of jobs) {
-      const namespace = job.spec?.namespace?.trim();
-      if (namespace) namespaces.add(namespace);
+      const specNamespace = job.spec?.namespace?.trim();
+      if (specNamespace) namespaces.add(specNamespace);
+      for (const allocation of job.allocations ?? []) {
+        const allocationNamespace = allocation.namespace?.trim();
+        if (allocationNamespace) namespaces.add(allocationNamespace);
+      }
     }
 
     const result = Array.from(namespaces);
