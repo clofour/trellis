@@ -1,6 +1,24 @@
 #!/bin/sh
 set -eu
-curl --fail --silent --show-error \
+: "${TRELLIS_ADDR:?api_access must inject TRELLIS_ADDR}"
+: "${TRELLIS_TOKEN:?api_access must inject TRELLIS_TOKEN}"
+: "${TRELLIS_NAMESPACE:?api_access must inject TRELLIS_NAMESPACE}"
+
+case "$TRELLIS_ADDR" in
+  http://*|https://*) api_url=${TRELLIS_ADDR%/} ;;
+  *) api_url="https://${TRELLIS_ADDR%/}" ;;
+esac
+
+set -- --fail --silent --show-error \
   -H "Authorization: Bearer $TRELLIS_TOKEN" \
-  -H "X-Trellis-Namespace: $TRELLIS_NAMESPACE" \
-  "http://$TRELLIS_ADDR/v1/allocations?label=service:patroni"
+  -H "X-Trellis-Namespace: $TRELLIS_NAMESPACE"
+
+ca_file=
+if [ -n "${TRELLIS_CA_CERT:-}" ] && [ "${api_url#https://}" != "$api_url" ]; then
+  ca_file=$(mktemp)
+  trap 'rm -f "$ca_file"' EXIT HUP INT TERM
+  printf '%s\n' "$TRELLIS_CA_CERT" > "$ca_file"
+  set -- "$@" --cacert "$ca_file"
+fi
+
+curl "$@" "$api_url/v1/allocations?label=service:patroni"
