@@ -17,6 +17,29 @@ trellisctl jobs delete NAME
 
 Add `--output json` to list/status/secret commands for automation. JSON is the API/automation representation; human-authored jobs remain YAML manifests.
 
+## Node configuration
+
+Installer-managed nodes keep their durable daemon configuration at `/etc/trellis/trellis.yaml`. The file is root-readable and contains the node's bootstrap credential together with operator-managed settings such as advertise addresses, labels, host-volume advertisements, secret-encryption key path, and WireGuard transport settings.
+
+A minimal installed node resembles:
+
+```yaml
+cluster: default
+bootstrap_token: trls_boot_...
+data_dir: /var/lib/trellis/data
+agent_advertise: node-a:8127
+server_advertise: node-a:8128
+raft_advertise: node-a:8129
+```
+
+Edit this file when changing persistent node configuration, then restart the service:
+
+```sh
+sudo systemctl restart trellis
+```
+
+`trellis --config PATH` loads the same strict YAML format. Explicit daemon flags override values from the file and are useful for one-off runs; the installed systemd unit intentionally contains only `trellis --config /etc/trellis/trellis.yaml` so there is one durable configuration source.
+
 ## Add a node
 
 Run the same setup script on the new Debian/Ubuntu machine. When prompted:
@@ -24,9 +47,9 @@ Run the same setup script on the new Debian/Ubuntu machine. When prompted:
 1. choose an advertise address reachable by the existing nodes;
 2. answer **yes** to **Join an existing cluster?**;
 3. enter an existing node's `host:8128` address;
-4. enter the existing cluster token when prompted. The token input is not echoed.
+4. enter the existing bootstrap token when prompted. The token input is not echoed.
 
-The cluster token is the value stored in `/etc/trellis/trellis.env` on an existing node. Treat it as an administrator credential and transfer it over a secure channel rather than placing it in shell history.
+The bootstrap token is the `bootstrap_token` value in `/etc/trellis/trellis.yaml` on an existing node. Treat it as the root cluster credential and transfer it over a secure channel rather than placing it in shell history.
 
 After the new daemon starts, verify membership from an existing CLI context:
 
@@ -34,7 +57,7 @@ After the new daemon starts, verify membership from an existing CLI context:
 trellisctl nodes list
 ```
 
-A joining node must use the existing cluster token; creating a second independent token does not create a shared cluster.
+A joining node must use the existing bootstrap token; minting an ordinary operator/workload token does not create or join a cluster.
 
 ## Drain and maintenance
 
@@ -53,7 +76,7 @@ trellisctl backup create --file trellis-backup.json
 trellisctl backup restore trellis-backup.json
 ```
 
-Backups contain desired jobs and encrypted secret records, not allocations, container images, local volume data, TLS private keys, or the secret encryption key. Restores schedule fresh allocations. Secure and separately back up the 32-byte secrets key configured with `--secrets-key`; encrypted records are unusable without it.
+Backups contain desired jobs and encrypted secret records, not allocations, container images, local volume data, TLS private keys, or the secret encryption key. Restores schedule fresh allocations. Secure and separately back up the 32-byte secrets key referenced by `secrets_key` in the node config; encrypted records are unusable without it.
 
 ## Secrets
 
@@ -67,13 +90,13 @@ Use `--expected-version N` for compare-and-swap (`0` means create only). Values 
 
 ## Observability
 
-The control plane exposes Prometheus metrics at `/metrics`. Job status and allocation events explain lifecycle transitions; logs proxy per-task allocation logs. Monitor leader availability, unhealthy/draining nodes, desired-versus-running/healthy counts, reconciliation latency, retries, and disk capacity for Raft, containerd, and volumes.
+The control plane exposes Prometheus metrics at `/metrics`. `GET /v1/auth/whoami` reports the kind, scope, and access of the bearer credential making the request. Job status and allocation events explain lifecycle transitions; logs proxy per-task allocation logs. Monitor leader availability, unhealthy/draining nodes, desired-versus-running/healthy counts, reconciliation latency, retries, and disk capacity for Raft, containerd, and volumes.
 
 For normal workload diagnosis, start with `jobs status`. `ready`, `converging`, and `degraded` summarize desired-versus-observed state without collapsing allocation lifecycle and health. `jobs diagnose` then surfaces only the allocations that need attention, including reason/message, retry timing, and attempt count. `jobs logs NAME` reads matching task streams without requiring full internal runtime IDs.
 
 ## Networking and TLS
 
-Ports `8127`, `8128`, and `8129` must be reachable between appropriate cluster members; allow WireGuard UDP `51820` and DNS UDP `8053` when enabled. Never expose the unauthenticated transport surface to an untrusted network. Configure a CA and node certificates on every node and pass the CA/client certificate flags to the CLI. Advertised addresses must be routable from peers, not wildcard bind addresses.
+Ports `8127`, `8128`, and `8129` must be reachable between appropriate cluster members; allow WireGuard UDP `51820` and DNS UDP `8053` when namespace networking is enabled. Never expose the unauthenticated transport surface to an untrusted network. Configure a CA and node certificates on every node and pass the CA/client certificate flags to the CLI. Advertised addresses must be routable from peers, not wildcard bind addresses.
 
 ## Failure recovery
 
