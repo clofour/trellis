@@ -33,7 +33,7 @@ allocations = Path('orchestrator/internal/server/allocations.go')
 allocations_text = allocations.read_text().replace('\t"time"\n', '')
 allocations.write_text(allocations_text)
 
-# Tests should construct and diagnose allocations using the canonical fields,
+# Tests should construct and diagnose allocations using canonical fields,
 # without invoking the deleted persisted-state migration helper.
 alloc_test = Path('orchestrator/internal/server/allocations_test.go')
 alloc_text = alloc_test.read_text()
@@ -43,13 +43,15 @@ alloc_text = re.sub(r'^\s*alloc\.normalize\(now\)\n', '', alloc_text, flags=re.M
 alloc_test.write_text(alloc_text)
 
 update_test = Path('orchestrator/internal/server/update_test.go')
-update_text = update_test.read_text().replace('a.Name', 'a.ID')
-update_text = re.sub(r'^\s*a\.normalize\(now\)\n', '', update_text, flags=re.M)
+update_text = update_test.read_text()
+update_text = re.sub(r'\ba\.Name\b', 'a.ID', update_text)
+update_text = re.sub(r'^\s*[A-Za-z_][A-Za-z0-9_]*\.normalize\(now\)\n', '', update_text, flags=re.M)
 update_test.write_text(update_text)
 
 regression_test = Path('orchestrator/internal/server/update_regression_test.go')
-regression_text = regression_test.read_text().replace('old.Name', 'old.ID')
-regression_text = re.sub(r'^\s*a\.normalize\(now\)\n', '', regression_text, flags=re.M)
+regression_text = regression_test.read_text()
+regression_text = re.sub(r'\bold\.Name\b', 'old.ID', regression_text)
+regression_text = re.sub(r'^\s*[A-Za-z_][A-Za-z0-9_]*\.normalize\(now\)\n', '', regression_text, flags=re.M)
 regression_test.write_text(regression_text)
 
 state_test = Path('orchestrator/internal/server/state_test.go')
