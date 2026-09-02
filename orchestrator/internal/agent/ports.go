@@ -75,7 +75,7 @@ func (p *PortManager) check(hostPort int) (bool, error) {
 func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	hostPort := portSpec.HostPort
+	hostPort := portSpec.Port
 	if hostPort == 0 {
 
 		for {
@@ -113,7 +113,7 @@ func (p *PortManager) Claim(portSpec spec.PortSpec) (*runtime.Port, error) {
 
 	port := &runtime.Port{
 		HostPort:      hostPort,
-		ContainerPort: portSpec.ContainerPort,
+		ContainerPort: hostPort,
 	}
 
 	p.claims[hostPort] = port
