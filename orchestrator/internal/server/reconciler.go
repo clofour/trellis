@@ -178,15 +178,10 @@ func (s *Server) Reconcile(ctx context.Context) {
 					}
 				}
 			}
-
-			// Scale down non-draining allocations if over count.
 			for len(current) > group.Count {
 				actions = append(actions, Action{Type: ActionStop, Allocation: current[len(current)-1]})
 				current = current[:len(current)-1]
 			}
-
-			// For rolling updates, stop only the draining allocations that have
-			// healthy replacements beyond the number still needed to reach count.
 			if len(draining) > 0 {
 				healthyNew := 0
 				for _, alloc := range current {
@@ -199,8 +194,6 @@ func (s *Server) Reconcile(ctx context.Context) {
 					actions = append(actions, Action{Type: ActionStop, Allocation: draining[i]})
 				}
 			}
-
-			// Place new allocations up to the desired count.
 			deficit := group.Count - len(current)
 			if deficit > 0 {
 				strategy := updateStrategy(job, group.Name)
@@ -265,7 +258,7 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 			return fmt.Errorf("job %s was deleted before allocation start", alloc.JobName)
 		}
 		var groupRuntime string
-		var groupAPIAccess spec.APIAccessMode
+		var groupAPIAccess *spec.APIAccessSpec
 		var groupRestart *spec.RestartPolicySpec
 		var groupUsesWireGuard bool
 		for _, group := range job.Spec.TaskGroups {
@@ -313,7 +306,7 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 		raw, _ := json.Marshal(hashInput)
 		hash := sha256.Sum256(raw)
 		request.ExecutionHash = hex.EncodeToString(hash[:])
-		if groupAPIAccess != spec.APIAccessNone {
+		if groupAPIAccess != nil {
 			token, err := s.apiAccessToken(ctx, groupAPIAccess, alloc.Namespace)
 			if err != nil {
 				return err
