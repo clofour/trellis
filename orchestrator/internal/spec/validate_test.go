@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseYAML(t *testing.T) {
-	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        networking:\n          mode: host\n          ports:\n            - host_port: 8080\n              container_port: 8080\n")
+	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        networking:\n          mode: host\n          ports:\n            - port: 8080\n")
 	job, err := ParseYAML(raw)
 	if err != nil {
 		t.Fatalf("parse manifest: %v", err)
@@ -15,13 +15,13 @@ func TestParseYAML(t *testing.T) {
 		t.Fatalf("validate parsed manifest: %v", err)
 	}
 	port := job.TaskGroups[0].Tasks[0].Networking.Ports[0]
-	if port.HostPort != 8080 || port.ContainerPort != 8080 {
+	if port.Port != 8080 {
 		t.Fatalf("unexpected port declaration: %#v", port)
 	}
 }
 
 func TestParseYAMLRejectsUnknownFields(t *testing.T) {
-	raw := []byte("namespace: default\nname: web\nnetwork:\n  wireguard: true\ntask_groups:\n  - name: api\n    count: 1\n    network_mode: host\n    tasks:\n      - name: server\n        image: example/server:1\n        ports:\n          - host_port: 8080\n            container_port: 80\n")
+	raw := []byte("namespace: default\nname: web\nnetwork:\n  wireguard: true\ntask_groups:\n  - name: api\n    count: 1\n    network_mode: host\n    tasks:\n      - name: server\n        image: example/server:1\n")
 	if _, err := ParseYAML(raw); err == nil {
 		t.Fatal("expected unknown manifest fields to be rejected")
 	}
@@ -34,7 +34,7 @@ func TestValidate(t *testing.T) {
 	}
 
 	withExtensions := &JobSpec{Namespace: "default", Name: "proxy", TaskGroups: []TaskGroupSpec{{
-		Name: "proxy", Count: 1, APIAccess: APIAccessNamespace,
+		Name: "proxy", Count: 1, APIAccess: &APIAccessSpec{Scope: APIAccessNamespace, Access: APIAccessRead},
 		Labels: map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"},
 		Tasks:  []TaskSpec{{Name: "nginx", Image: "nginx:latest", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost}}},
 	}}}
@@ -50,9 +50,8 @@ func TestValidate(t *testing.T) {
 		{"missing name", &JobSpec{}},
 		{"zero replicas", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
 		{"missing image", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server"}}}}}},
-		{"invalid port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{HostPort: 70000, ContainerPort: 70000}}}}}}}}},
-		{"dynamic host port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{HostPort: 0, ContainerPort: 8080}}}}}}}}},
-		{"translated host port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{HostPort: 8080, ContainerPort: 80}}}}}}}}},
+		{"invalid port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{Port: 70000}}}}}}}}},
+		{"zero port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{Port: 0}}}}}}}}},
 		{"invalid network_mode", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: "bridge"}}}}}}},
 		{"invalid label key", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Labels: map[string]string{"123bad": "v"}, Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
 	}
@@ -62,6 +61,18 @@ func TestValidate(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateAggregatesErrors(t *testing.T) {
+	job := &JobSpec{Namespace: "", Name: "bad name", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 0}}}
+	err := Validate(job)
+	issues, ok := err.(ValidationErrors)
+	if !ok {
+		t.Fatalf("expected ValidationErrors, got %T: %v", err, err)
+	}
+	if len(issues) < 3 {
+		t.Fatalf("expected multiple issues, got %#v", issues)
 	}
 }
 
@@ -162,7 +173,6 @@ func TestValidateConstraints(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if err := Validate(job(test.constraints...)); err == nil {
 				t.Fatal("expected validation error")
-			}
-		})
+			})
 	}
 }
