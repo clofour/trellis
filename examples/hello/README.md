@@ -44,4 +44,4 @@ Remove the desired state and wait for the job to disappear:
 trellisctl jobs delete hello --wait
 ```
 
-Next, continue to the [`web-service` example](../web-service/) to expose the same tutorial application on port 8080, add an HTTP health check, multiple replicas, and rolling replacement.
+Next, continue to the [`web-service` example](../web-service/) to expose the same tutorial application on port 8080 and add an HTTP health check. Replication/placement and rolling replacement are introduced separately in the examples after that.
