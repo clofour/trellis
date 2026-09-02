@@ -8,6 +8,15 @@ export const TRELLIS_URL = /^https?:\/\//.test(rawTrellisURL)
   : `https://${rawTrellisURL}`;
 
 export type DashboardAPIAccess = "namespace" | "cluster";
+export type DashboardAccessLevel = "read" | "write";
+export type DashboardCredentialKind = "bootstrap" | "operator" | "workload";
+
+export interface DashboardCredentialInfo {
+  kind: DashboardCredentialKind;
+  scope: DashboardAPIAccess;
+  access: DashboardAccessLevel;
+  namespace?: string;
+}
 
 const namespacePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
 
@@ -39,33 +48,23 @@ export function getDefaultNamespace(): string {
   return namespaces.includes(configuredDefault) ? configuredDefault : namespaces[0];
 }
 
-export function getConfiguredAPIAccess(): DashboardAPIAccess | null {
-  const configured = process.env.TRELLIS_API_ACCESS?.trim().toLowerCase();
-  if (configured === "cluster" || configured === "namespace") return configured;
-  return null;
-}
-
-export async function detectDashboardAPIAccess(): Promise<DashboardAPIAccess> {
-  const configured = getConfiguredAPIAccess();
-  if (configured) return configured;
-
-  const namespace = getDefaultNamespace();
-  if (!namespace) return "namespace";
-
-  try {
-    // Secret metadata is administrator-only. A 403 therefore identifies a
-    // namespace-scoped token without exposing or mutating secret values.
-    const res = await fetch(
-      `${TRELLIS_URL}/v1/namespaces/${encodeURIComponent(namespace)}/secrets`,
-      { headers: orchestratorHeaders(namespace), cache: "no-store" },
-    );
-    if (res.status === 401 || res.status === 403) return "namespace";
-    return "cluster";
-  } catch {
-    // Fail closed while the control plane is unavailable. The UI can still
-    // operate in its configured namespace without advertising admin controls.
-    return "namespace";
+export async function getDashboardCredentialInfo(): Promise<DashboardCredentialInfo> {
+  const res = await fetch(`${TRELLIS_URL}/v1/auth/whoami`, {
+    headers: orchestratorHeaders(null),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`credential introspection failed: ${res.status}`);
   }
+  const data = (await res.json()) as Partial<DashboardCredentialInfo>;
+  if (
+    (data.kind !== "bootstrap" && data.kind !== "operator" && data.kind !== "workload") ||
+    (data.scope !== "cluster" && data.scope !== "namespace") ||
+    (data.access !== "read" && data.access !== "write")
+  ) {
+    throw new Error("credential introspection returned an invalid principal");
+  }
+  return data as DashboardCredentialInfo;
 }
 
 export function resolveDashboardNamespace(request: Request):
