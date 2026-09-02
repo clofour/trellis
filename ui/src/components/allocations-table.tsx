@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Allocation } from "@/lib/types";
+import type { Allocation, TaskGroupSpec } from "@/lib/types";
 import { StatusBadge } from "./status-badge";
 import { EmptyState } from "./empty-state";
 import { AllocationDetail } from "./allocation-detail";
@@ -9,9 +9,11 @@ import { AllocationDetail } from "./allocation-detail";
 export function AllocationsTable({
   allocations,
   initialAllocationId,
+  taskGroups,
 }: {
   allocations: Allocation[] | null;
   initialAllocationId?: string;
+  taskGroups: TaskGroupSpec[];
 }) {
   const [selectedID, setSelectedID] = useState<string | null>(null);
   const [initialDismissed, setInitialDismissed] = useState(false);
@@ -19,6 +21,11 @@ export function AllocationsTable({
   const selected = (allocations ?? []).find(
     (allocation) => allocation.id === effectiveID,
   );
+  const selectedTasks = selected
+    ? taskGroups
+        .find((group) => group.name === selected.group)
+        ?.tasks.map((task) => task.name) ?? []
+    : [];
 
   if (!allocations || allocations.length === 0) {
     return (
@@ -35,7 +42,7 @@ export function AllocationsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">ID</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Allocation</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Task Group</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Node</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Lifecycle</th>
@@ -52,11 +59,13 @@ export function AllocationsTable({
                 title="Open allocation diagnostics"
               >
                 <td className="px-4 py-3 font-mono text-xs text-card-foreground">
-                  <span className="underline-offset-2 hover:underline">{alloc.id}</span>
+                  <span className="underline-offset-2 hover:underline" title={alloc.id}>
+                    {alloc.id.substring(0, 8)}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-card-foreground">{alloc.group}</td>
                 <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                  {alloc.node_id ? alloc.node_id.substring(0, 8) : "—"}
+                  {alloc.address || (alloc.node_id ? alloc.node_id.substring(0, 8) : "—")}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={alloc.phase} />
@@ -74,7 +83,9 @@ export function AllocationsTable({
       </div>
       {selected && (
         <AllocationDetail
+          key={selected.id}
           allocation={selected}
+          tasks={selectedTasks}
           onClose={() => {
             setSelectedID(null);
             setInitialDismissed(true);
