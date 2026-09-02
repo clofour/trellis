@@ -47,7 +47,7 @@ func TestLoadConfigUsesNamedContextThenExplicitFlags(t *testing.T) {
 contexts:
   production:
     server_addr: prod.example:8128
-    cluster_token: prod-token
+    token: prod-token
     namespace: payments
     ca_cert: prod-ca
 `)
@@ -103,11 +103,11 @@ func TestWriteUserConfigProtectsTokenFile(t *testing.T) {
 }
 
 func testRootCommand() *cobra.Command {
-	root := &cobra.Command{Use: "trellis"}
+	root := &cobra.Command{Use: "trellisctl"}
 	flags := root.PersistentFlags()
 	flags.StringVar(&config.Context, "context", "", "")
 	flags.StringVar(&config.ServerAddr, "server-addr", "localhost:8128", "")
-	flags.StringVar(&config.ClusterToken, "cluster-token", "", "")
+	flags.StringVar(&config.ClusterToken, "token", "", "")
 	flags.StringVar(&config.Namespace, "namespace", "", "")
 	flags.StringVar(&config.CACert, "ca-cert", "", "")
 	flags.StringVar(&config.Cert, "cert", "", "")
