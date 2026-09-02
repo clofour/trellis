@@ -409,14 +409,21 @@ func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateCont
 func (s *Server) AcquireLeadership(ctx context.Context) error {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
-	s.mu.Lock()
-	s.cluster.ControlEpoch++
-	epoch := s.cluster.ControlEpoch
-	s.mu.Unlock()
-	if err := s.state.PutCluster(ctx, s.cluster); err != nil {
+
+	cluster, err := s.state.GetCluster(ctx)
+	if err != nil {
+		return fmt.Errorf("load control-plane epoch: %w", err)
+	}
+	if cluster == nil {
+		return fmt.Errorf("load control-plane epoch: cluster is not initialized")
+	}
+	cluster.ControlEpoch++
+	epoch := cluster.ControlEpoch
+	if err := s.state.PutCluster(ctx, cluster); err != nil {
 		return fmt.Errorf("persist control-plane epoch: %w", err)
 	}
 	s.mu.Lock()
+	s.cluster = cluster
 	s.controlEpoch = epoch
 	s.leaderSince = s.now()
 	s.mu.Unlock()
