@@ -112,6 +112,14 @@ func TestStructuredOutputFlagIsCommandLocal(t *testing.T) {
 		t.Fatal("--output must not be a persistent/global flag")
 	}
 
+	credentials, _, err := root.Find([]string{"credentials"})
+	if err != nil {
+		t.Fatalf("find credentials: %v", err)
+	}
+	if credentials.Hidden {
+		t.Fatal("credentials command must be discoverable in CLI help")
+	}
+
 	for _, path := range [][]string{{"jobs", "status"}, {"nodes", "list"}, {"secrets", "describe"}, {"credentials", "create"}} {
 		command, _, err := root.Find(path)
 		if err != nil {
