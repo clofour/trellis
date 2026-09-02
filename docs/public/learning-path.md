@@ -12,7 +12,7 @@ Complete [Getting Started](getting-started.md) first. It establishes the only go
 | 4. Persistence | Allocation-local storage, advertised host volumes, constraints, backup responsibility | [`examples/volumes`](../../examples/volumes/) |
 | 5. Colocated tasks | Sidecars and the consequences of shared placement/scaling/lifecycle | [`examples/sidecar`](../../examples/sidecar/) |
 | 6. Namespace networking | Isolated, host, and WireGuard task networking; service discovery | [Networking below](#6-namespace-networking-and-discovery) |
-| 7. In-cluster automation | Namespace-scoped API credentials and trusted controllers | [`examples/api-access`](../../examples/api-access/) |
+| 7. In-cluster automation | Namespace and cluster API credential modes; trusted controllers | [`examples/api-access`](../../examples/api-access/) |
 | 8. Release architecture | Rolling, blue/green, and weighted canary composition | [`examples/deployment-strategies`](../../examples/deployment-strategies/) |
 | 9. Stateful compositions | Coupled development stacks, local-volume caveats, application-native HA | [`examples/wordpress`](../../examples/wordpress/), then [`examples/patroni`](../../examples/patroni/) |
 
@@ -23,12 +23,12 @@ Do not skip directly to Patroni to learn basic Trellis. Patroni assumes you alre
 The `hello` example intentionally omits network exposure and application health settings. Learn the core loop first:
 
 ```sh
-trellis jobs validate --file examples/hello/trellis.yaml
-trellis jobs diff --file examples/hello/trellis.yaml
-trellis jobs apply --file examples/hello/trellis.yaml --wait
-trellis jobs status hello
-trellis jobs logs hello
-trellis jobs delete hello --wait
+trellisctl jobs validate --file examples/hello/trellis.yaml
+trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --file examples/hello/trellis.yaml --wait
+trellisctl jobs status hello
+trellisctl jobs logs hello
+trellisctl jobs delete hello --wait
 ```
 
 At this stage, understand that the manifest is desired state and the allocation is runtime state. Drill into allocation details only when status or logs require it.
@@ -91,7 +91,11 @@ Enable WireGuard during setup (or configure every node equivalently), open the c
 
 ## 7. In-cluster API access
 
-Only reviewed controllers should receive `api_access: true`. Every task in that group can read the injected namespace token. The [`api-access`](../../examples/api-access/) example explains how to build a useful image, send authenticated namespace-scoped requests, retain last-known-good configuration, and avoid token leakage.
+Use `api_access: namespace` for normal in-cluster controllers. Trellis gives every task in the group a persistent bearer token restricted to the **job's own namespace**, plus the API address, job namespace, and cluster CA when configured. The namespace is not separately configurable: if the job is in `payments`, namespace mode can act only in `payments`.
+
+Use `api_access: cluster` only for a fully trusted operator workload that genuinely needs cluster-administrator capabilities such as nodes, backups, secret administration, cross-namespace operations, or Raft controls. Cluster mode injects the cluster administrator token. `TRELLIS_NAMESPACE` still defaults to the job namespace so namespace-aware clients have a conservative default, but that environment value does not restrict a cluster credential.
+
+Every task in an API-enabled group can read the injected token, so do not add untrusted sidecars. Prefer namespace mode wherever it is sufficient. The [`api-access`](../../examples/api-access/) example intentionally uses namespace mode and explains TLS verification, authenticated requests, last-known-good behavior, and token hygiene.
 
 ## 8. Release patterns
 
