@@ -76,11 +76,10 @@ export interface SecretMetadata {
   key_id: string;
 }
 
-// time.Duration and memory byte counts are numbers in the JSON API. The YAML
-// editor also accepts human forms such as "10s" and "64MiB" and normalizes
+// time.Duration is encoded as nanoseconds and memory as bytes in the JSON API.
+// The YAML editor accepts human forms such as "10s" and "64MiB" and normalizes
 // them before submission.
 export type DurationValue = number | string;
-export type ByteSizeValue = number | string;
 
 export interface JobSpec {
   name: string;
@@ -160,7 +159,7 @@ export interface SecretRefSpec {
 
 export interface ResourcesSpec {
   cpu: number;
-  memory: ByteSizeValue;
+  memory: number;
 }
 
 export interface HealthCheckSpec {
