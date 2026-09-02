@@ -248,11 +248,14 @@ else
     operator_group="$(id -gn "$operator_user")"
     [ -n "$operator_home" ] || error "Could not determine home directory for ${operator_user}."
 fi
-mkdir -p "${operator_home}/.config"
-HOME="$operator_home" XDG_CONFIG_HOME="${operator_home}/.config" \
+operator_config_home="${operator_home}/.config"
+if [ ! -d "$operator_config_home" ]; then
+    install -d -m 0700 -o "$operator_user" -g "$operator_group" "$operator_config_home"
+fi
+HOME="$operator_home" XDG_CONFIG_HOME="$operator_config_home" \
     "${INSTALL_DIR}/trellisctl" --cluster-token "$operator_token" --namespace default context save local --use >/dev/null
 if [ "$operator_user" != "root" ]; then
-    chown -R "${operator_user}:${operator_group}" "${operator_home}/.config/trellis"
+    chown -R "${operator_user}:${operator_group}" "${operator_config_home}/trellis"
 fi
 unset operator_token
 info "Saved a scoped cluster/write context for ${operator_user}; normal trellisctl commands no longer need sudo."
