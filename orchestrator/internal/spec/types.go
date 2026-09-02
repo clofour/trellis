@@ -10,16 +10,14 @@ import (
 type UpdateStrategy string
 
 const (
-	// UpdateRecreate and UpdateRolling describe allocation replacement strategies.
+	// UpdateRecreate replaces old allocations before creating replacements.
 	UpdateRecreate UpdateStrategy = "recreate"
 	// UpdateRolling replaces allocations incrementally.
 	UpdateRolling UpdateStrategy = "rolling"
 )
 
 // Valid reports whether s is a supported update strategy.
-func (s UpdateStrategy) Valid() bool {
-	return s == "" || s == UpdateRecreate || s == UpdateRolling
-}
+func (s UpdateStrategy) Valid() bool { return s == "" || s == UpdateRecreate || s == UpdateRolling }
 
 // Runtime identifies the OCI runtime used for a task group.
 type Runtime string
@@ -27,32 +25,45 @@ type Runtime string
 const (
 	// RuntimeDefault uses the orchestrator default OCI runtime.
 	RuntimeDefault Runtime = ""
-	// RuntimeRunc selects the runc OCI runtime.
+	// RuntimeRunc selects runc.
 	RuntimeRunc Runtime = "runc"
-	// RuntimeRunsc selects the runsc OCI runtime.
+	// RuntimeRunsc selects runsc.
 	RuntimeRunsc Runtime = "runsc"
 )
 
 // Valid reports whether r is a supported runtime.
-func (r Runtime) Valid() bool {
-	return r == RuntimeDefault || r == RuntimeRunc || r == RuntimeRunsc
-}
+func (r Runtime) Valid() bool { return r == RuntimeDefault || r == RuntimeRunc || r == RuntimeRunsc }
 
-// APIAccessMode controls which control-plane credential is injected into a task group.
-type APIAccessMode string
+// APIAccessScope controls where an injected control-plane credential may operate.
+type APIAccessScope string
 
 const (
-	// APIAccessNone disables in-allocation API credentials.
-	APIAccessNone APIAccessMode = ""
-	// APIAccessNamespace injects a token restricted to the job's own namespace.
-	APIAccessNamespace APIAccessMode = "namespace"
-	// APIAccessCluster injects the cluster administrator token.
-	APIAccessCluster APIAccessMode = "cluster"
+	// APIAccessNamespace restricts the credential to the job's namespace.
+	APIAccessNamespace APIAccessScope = "namespace"
+	// APIAccessCluster allows the credential to operate across the cluster.
+	APIAccessCluster APIAccessScope = "cluster"
 )
 
-// Valid reports whether m is a supported API access mode.
-func (m APIAccessMode) Valid() bool {
-	return m == APIAccessNone || m == APIAccessNamespace || m == APIAccessCluster
+// Valid reports whether s is a supported API access scope.
+func (s APIAccessScope) Valid() bool { return s == APIAccessNamespace || s == APIAccessCluster }
+
+// APIAccessLevel controls whether an injected control-plane credential may mutate state.
+type APIAccessLevel string
+
+const (
+	// APIAccessRead grants observation-only API access.
+	APIAccessRead APIAccessLevel = "read"
+	// APIAccessWrite grants ordinary mutation API access within the credential scope.
+	APIAccessWrite APIAccessLevel = "write"
+)
+
+// Valid reports whether a is a supported API access level.
+func (a APIAccessLevel) Valid() bool { return a == APIAccessRead || a == APIAccessWrite }
+
+// APIAccessSpec configures the scoped credential injected into a task group.
+type APIAccessSpec struct {
+	Scope  APIAccessScope `yaml:"scope" json:"scope"`
+	Access APIAccessLevel `yaml:"access" json:"access"`
 }
 
 // TaskNetworkMode controls how a task container joins the network.
@@ -76,7 +87,7 @@ func (m TaskNetworkMode) Valid() bool {
 type HealthCheckType string
 
 const (
-	// HealthCheckHTTP and the following values select a health-check mechanism.
+	// HealthCheckHTTP performs an HTTP health check.
 	HealthCheckHTTP HealthCheckType = "http"
 	// HealthCheckTCP performs a TCP health check.
 	HealthCheckTCP HealthCheckType = "tcp"
@@ -102,14 +113,14 @@ type UpdateSpec struct {
 	MaxParallel int            `yaml:"max_parallel,omitempty" json:"max_parallel,omitempty"`
 }
 
-// TaskGroupSpec describes a scalable group of tasks.
+// TaskGroupSpec describes a scalable group of colocated tasks.
 type TaskGroupSpec struct {
 	Name        string             `yaml:"name" json:"name"`
 	Count       int                `yaml:"count" json:"count"`
 	Runtime     Runtime            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Tasks       []TaskSpec         `yaml:"tasks" json:"tasks"`
 	Labels      map[string]string  `yaml:"labels,omitempty" json:"labels,omitempty"`
-	APIAccess   APIAccessMode      `yaml:"api_access,omitempty" json:"api_access,omitempty"`
+	APIAccess   *APIAccessSpec     `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
 	Constraints []ConstraintSpec   `yaml:"constraints,omitempty" json:"constraints,omitempty"`
 	Update      *UpdateSpec        `yaml:"update,omitempty" json:"update,omitempty"`
@@ -149,7 +160,7 @@ type TaskSpec struct {
 type SecretTarget string
 
 const (
-	// SecretTargetEnv and SecretTargetFile select the delivery mechanism.
+	// SecretTargetEnv delivers a secret as an environment variable.
 	SecretTargetEnv SecretTarget = "env"
 	// SecretTargetFile delivers a secret as a file.
 	SecretTargetFile SecretTarget = "file"
@@ -164,10 +175,10 @@ type SecretRefSpec struct {
 	Mode   uint32       `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
-// PortSpec reserves a host port used directly by a host-networked task.
+// PortSpec reserves the single user-facing port used directly by a host-networked task.
 type PortSpec struct {
-	HostPort      int `yaml:"host_port" json:"host_port"`
-	ContainerPort int `yaml:"container_port" json:"container_port"`
+	Port     int `yaml:"port" json:"port"`
+	HostPort int `yaml:"-" json:"-"`
 }
 
 // ResourcesSpec describes task CPU and memory requirements.
@@ -187,7 +198,7 @@ type HealthCheckSpec struct {
 	Threshold int             `yaml:"threshold,omitempty" json:"threshold,omitempty"`
 }
 
-// VolumeSpec mounts a host volume into a task.
+// VolumeSpec mounts storage into a task.
 type VolumeSpec struct {
 	Name       string `yaml:"name" json:"name"`
 	Path       string `yaml:"path" json:"path"`
@@ -195,36 +206,17 @@ type VolumeSpec struct {
 	ReadOnly   bool   `yaml:"read_only,omitempty" json:"read_only,omitempty"`
 }
 
-// TaskGroupContentHash returns a SHA-256 hex digest of the task group fields
-// that affect running containers. Labels, update strategy, and count are
-// excluded so that changes to those fields can be detected as metadata-only.
+// TaskGroupContentHash returns a digest of task-group fields that affect running containers.
 func TaskGroupContentHash(g *TaskGroupSpec) string {
 	hashable := struct {
 		Name        string
 		Runtime     Runtime
 		Tasks       []TaskSpec
-		APIAccess   APIAccessMode
+		APIAccess   *APIAccessSpec
 		Restart     *RestartPolicySpec
 		Constraints []ConstraintSpec
-	}{
-		Name:        g.Name,
-		Runtime:     g.Runtime,
-		Tasks:       g.Tasks,
-		APIAccess:   g.APIAccess,
-		Restart:     g.Restart,
-		Constraints: g.Constraints,
-	}
+	}{Name: g.Name, Runtime: g.Runtime, Tasks: g.Tasks, APIAccess: g.APIAccess, Restart: g.Restart, Constraints: g.Constraints}
 	raw, _ := json.Marshal(hashable)
 	h := sha256.Sum256(raw)
 	return string(h[:])
-}
-
-// GroupUsesWireGuard reports whether any task in the group requests WireGuard networking.
-func GroupUsesWireGuard(g *TaskGroupSpec) bool {
-	for _, task := range g.Tasks {
-		if task.Networking != nil && task.Networking.Mode == TaskNetworkWireGuard {
-			return true
-		}
-	}
-	return false
 }

@@ -19,8 +19,8 @@ type CLIConfig struct {
 	ServerAddr   string
 	ClusterToken string
 	Namespace    string
-	CACert       string // path (from --ca-cert flag or TRELLIS_CA_CERT)
-	CACertPEM    string // inline PEM (from run file or user config file)
+	CACert       string
+	CACertPEM    string
 	Cert         string
 	Key          string
 	Output       string
@@ -73,6 +73,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(NewNodesCmd())
 	root.AddCommand(NewSecretsCmd())
 	root.AddCommand(NewBackupCmd())
+	root.AddCommand(NewCredentialsCmd())
 	root.AddCommand(NewVersionCmd())
 	return root
 }
@@ -95,10 +96,7 @@ func buildCLITLSConfig() (*tls.Config, error) {
 	if !pool.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
-	cfg := &tls.Config{
-		RootCAs:    pool,
-		ServerName: "trellis",
-	}
+	cfg := &tls.Config{RootCAs: pool, ServerName: "trellis"}
 	if config.Cert != "" && config.Key != "" {
 		cert, err := tls.LoadX509KeyPair(config.Cert, config.Key)
 		if err != nil {
@@ -111,15 +109,8 @@ func buildCLITLSConfig() (*tls.Config, error) {
 
 func loadConfig(cmd *cobra.Command) error {
 	flagConfig := config
-	merged := CLIConfig{
-		ServerAddr: "localhost:8128",
-		CACert:     flagConfig.CACert,
-		Cert:       flagConfig.Cert,
-		Key:        flagConfig.Key,
-		Output:     flagConfig.Output,
-	}
+	merged := CLIConfig{ServerAddr: "localhost:8128", CACert: flagConfig.CACert, Cert: flagConfig.Cert, Key: flagConfig.Key, Output: flagConfig.Output}
 
-	// 1. Run file — lowest priority; present only while a local node is running.
 	if lc, err := localconfig.Read(localconfig.DefaultPath); err == nil {
 		merged.ServerAddr = lc.ServerAddr
 		merged.ClusterToken = lc.ClusterToken
@@ -128,8 +119,6 @@ func loadConfig(cmd *cobra.Command) error {
 		fmt.Fprintf(os.Stderr, "warning: could not read %s: %v\n", localconfig.DefaultPath, err)
 	}
 
-	// 2. User config file. The selected named context is applied before
-	// environment variables and explicit flags.
 	cfgPath, err := userConfigPath()
 	if err != nil {
 		return err
@@ -161,7 +150,6 @@ func loadConfig(cmd *cobra.Command) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read config file %s: %w", cfgPath, err)
 	} else {
-		// A requested context cannot be resolved without a config file.
 		selected := ""
 		if value, ok := os.LookupEnv("TRELLIS_CONTEXT"); ok {
 			selected = value
@@ -174,7 +162,6 @@ func loadConfig(cmd *cobra.Command) error {
 		}
 	}
 
-	// 3. Environment variables.
 	if value, ok := os.LookupEnv("TRELLIS_ADDR"); ok {
 		merged.ServerAddr = value
 	}
@@ -194,7 +181,6 @@ func loadConfig(cmd *cobra.Command) error {
 		merged.Key = value
 	}
 
-	// 4. Explicit flags — highest priority.
 	flags := cmd.Root().PersistentFlags()
 	if flags.Changed("server-addr") {
 		merged.ServerAddr = flagConfig.ServerAddr
@@ -218,7 +204,6 @@ func loadConfig(cmd *cobra.Command) error {
 	if merged.Output != "table" && merged.Output != "json" {
 		return fmt.Errorf("invalid output format %q: must be table or json", merged.Output)
 	}
-
 	config = merged
 	return nil
 }

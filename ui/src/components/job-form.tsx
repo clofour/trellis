@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DurationValue, JobSpec } from "@/lib/types";
 import { formatJobManifest, parseJobManifest } from "@/lib/manifest";
-import { fetchJobForPlan, submitJob } from "@/lib/api";
+import { planJob, submitJob } from "@/lib/api";
 import {
   formatPlanValue,
-  planManifest,
+  planTitle,
   type ManifestPlan,
 } from "@/lib/manifest-plan";
 import { useConfig } from "./config-provider";
@@ -28,8 +28,8 @@ function defaultSpec(namespace: string): JobSpec {
         count: 1,
         tasks: [
           {
-            name: "nginx",
-            image: "docker.io/library/nginx:1.27-alpine",
+            name: "tutorial",
+            image: "ghcr.io/clofour/trellis-tutorial:v1",
             resources: { cpu: 100, memory: 67108864 },
           },
         ],
@@ -110,6 +110,8 @@ function byteSizeBytes(value: unknown, field: string): number {
   return Math.round(bytes);
 }
 
+// The dashboard owns conversion from its human-authored YAML representation to
+// canonical API JSON. Trellis owns validation, defaults, and planning semantics.
 function normalizeManifestValues(spec: JobSpec): JobSpec {
   const normalized = JSON.parse(JSON.stringify(spec)) as JobSpec;
   for (const group of normalized.task_groups) {
@@ -214,11 +216,6 @@ function JobFormPanel({
     if (!spec.name || typeof spec.name !== "string") {
       throw new Error("Job name is required.");
     }
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/.test(spec.name)) {
-      throw new Error(
-        "Job name must start with a letter or digit and contain only letters, digits, hyphens, underscores, or dots.",
-      );
-    }
     if (!spec.namespace || typeof spec.namespace !== "string") {
       throw new Error("Job namespace is required.");
     }
@@ -226,9 +223,6 @@ function JobFormPanel({
       throw new Error(
         `Manifest namespace ${JSON.stringify(spec.namespace)} does not match active namespace ${JSON.stringify(namespace)}. Change the manifest or select the intended namespace.`,
       );
-    }
-    if (!Array.isArray(spec.task_groups) || spec.task_groups.length === 0) {
-      throw new Error("At least one task group is required.");
     }
     if (isEditing && spec.name !== initialSpec!.name) {
       throw new Error("Job name cannot be changed after creation.");
@@ -267,8 +261,7 @@ function JobFormPanel({
       }
 
       const spec = normalizeManifestValues(parse());
-      const current = await fetchJobForPlan(spec.name, namespace);
-      setPlan(planManifest(current, spec));
+      setPlan(await planJob(spec));
       setPlannedSpec(spec);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected error");
@@ -315,7 +308,7 @@ function JobFormPanel({
                 Active namespace: <span className="font-mono text-foreground">{namespace || "(unscoped)"}</span>. The manifest namespace must match; the dashboard never rewrites it.
               </p>
               <p className="mt-2">
-                YAML is Trellis&apos;s canonical human-authored job format. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>; memory accepts values such as <span className="font-mono">64MiB</span> and <span className="font-mono">1GiB</span>. Review the semantic plan before applying.
+                YAML is a human-authored representation. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>; memory accepts values such as <span className="font-mono">64MiB</span> and <span className="font-mono">1GiB</span>. The dashboard converts those values to canonical JSON, then Trellis validates and plans the result.
               </p>
             </div>
 
@@ -348,7 +341,7 @@ function JobFormPanel({
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Semantic plan</p>
-                    <p className="mt-1 text-sm font-medium text-foreground">{plan.title}</p>
+                    <p className="mt-1 text-sm font-medium text-foreground">{planTitle(plan)}</p>
                   </div>
                   <button
                     type="button"
@@ -379,7 +372,7 @@ function JobFormPanel({
 
           <div className="border-t border-border px-6 py-4">
             {error && (
-              <p className="mb-3 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+              <p className="mb-3 whitespace-pre-line rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-600 dark:text-red-400">
                 {error}
               </p>
             )}

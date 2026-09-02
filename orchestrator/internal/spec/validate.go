@@ -12,206 +12,288 @@ var identifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 var labelKeyPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._/-]{0,62}$`)
 var envPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// ValidationIssue describes one independently actionable manifest error.
+type ValidationIssue struct {
+	Path    string `json:"path"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// ValidationErrors contains every validation issue found in a manifest.
+type ValidationErrors []ValidationIssue
+
+// Error implements error while preserving useful output for CLI callers.
+func (v ValidationErrors) Error() string {
+	if len(v) == 0 {
+		return ""
+	}
+	if len(v) == 1 {
+		if v[0].Path == "" {
+			return v[0].Message
+		}
+		return fmt.Sprintf("%s: %s", v[0].Path, v[0].Message)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d validation errors", len(v))
+	for _, issue := range v {
+		b.WriteString("\n- ")
+		if issue.Path != "" {
+			b.WriteString(issue.Path)
+			b.WriteString(": ")
+		}
+		b.WriteString(issue.Message)
+	}
+	return b.String()
+}
+
 // ValidIdentifier reports whether value is safe for use as an identifier.
 func ValidIdentifier(value string) bool { return identifierPattern.MatchString(value) }
 
 // Validate checks that a job specification is complete and internally consistent.
-func Validate(spec *JobSpec) error {
-	if spec == nil {
+func Validate(job *JobSpec) error {
+	if job == nil {
 		return errors.New("job is required")
 	}
-	if strings.TrimSpace(spec.Name) == "" {
-		return errors.New("job name is required")
+
+	issues := ValidationErrors{}
+	add := func(path, code, message string) {
+		issues = append(issues, ValidationIssue{Path: path, Code: code, Message: message})
 	}
-	if !identifierPattern.MatchString(spec.Name) {
-		return errors.New("job name must be a safe identifier")
+
+	if strings.TrimSpace(job.Name) == "" {
+		add("name", "required", "job name is required")
+	} else if !identifierPattern.MatchString(job.Name) {
+		add("name", "invalid_identifier", "job name must be a safe identifier")
 	}
-	if strings.TrimSpace(spec.Namespace) == "" {
-		return errors.New("job namespace is required")
+	if strings.TrimSpace(job.Namespace) == "" {
+		add("namespace", "required", "job namespace is required")
+	} else if !identifierPattern.MatchString(job.Namespace) {
+		add("namespace", "invalid_identifier", "job namespace must be a safe identifier")
 	}
-	if !identifierPattern.MatchString(spec.Namespace) {
-		return errors.New("job namespace must be a safe identifier")
+	if len(job.TaskGroups) == 0 {
+		add("task_groups", "required", "at least one task group is required")
 	}
-	var totalCPU int
-	var totalMemory ByteSize
-	if len(spec.TaskGroups) == 0 {
-		return errors.New("at least one task group is required")
-	}
+
 	groups := make(map[string]struct{})
-	for i, group := range spec.TaskGroups {
+	for i, group := range job.TaskGroups {
+		groupPath := fmt.Sprintf("task_groups[%d]", i)
+		if group.Name != "" {
+			groupPath = fmt.Sprintf("task_groups[%s]", group.Name)
+		}
 		if strings.TrimSpace(group.Name) == "" {
-			return fmt.Errorf("task group %d: name is required", i)
+			add(groupPath+".name", "required", "name is required")
+		} else {
+			if !identifierPattern.MatchString(group.Name) {
+				add(groupPath+".name", "invalid_identifier", "name must be a safe identifier")
+			}
+			if _, exists := groups[group.Name]; exists {
+				add(groupPath+".name", "duplicate", fmt.Sprintf("duplicate task group %q", group.Name))
+			} else {
+				groups[group.Name] = struct{}{}
+			}
 		}
-		if !identifierPattern.MatchString(group.Name) {
-			return fmt.Errorf("task group %q: name must be a safe identifier", group.Name)
-		}
-		if _, exists := groups[group.Name]; exists {
-			return fmt.Errorf("duplicate task group %q", group.Name)
-		}
-		groups[group.Name] = struct{}{}
 		if !group.Runtime.Valid() {
-			return fmt.Errorf("task group %q: unsupported runtime %q", group.Name, group.Runtime)
+			add(groupPath+".runtime", "unsupported", fmt.Sprintf("unsupported runtime %q", group.Runtime))
 		}
-		if !group.APIAccess.Valid() {
-			return fmt.Errorf("task group %q: api_access must be namespace or cluster", group.Name)
+		if group.APIAccess != nil {
+			if !group.APIAccess.Scope.Valid() {
+				add(groupPath+".api_access.scope", "unsupported", "must be namespace or cluster")
+			}
+			if !group.APIAccess.Access.Valid() {
+				add(groupPath+".api_access.access", "unsupported", "must be read or write")
+			}
 		}
 		if group.Restart != nil {
 			if group.Restart.MaxRestarts < 0 {
-				return fmt.Errorf("task group %q: restart max_restarts must be at least 0", group.Name)
+				add(groupPath+".restart.max_restarts", "out_of_range", "must be at least 0")
 			}
 			if group.Restart.Window <= 0 {
-				return fmt.Errorf("task group %q: restart window must be positive", group.Name)
+				add(groupPath+".restart.window", "out_of_range", "must be positive")
 			}
 		}
 		if group.Update != nil {
 			if !group.Update.Strategy.Valid() {
-				return fmt.Errorf("task group %q: unsupported update strategy %q", group.Name, group.Update.Strategy)
+				add(groupPath+".update.strategy", "unsupported", fmt.Sprintf("unsupported update strategy %q", group.Update.Strategy))
 			}
 			if group.Update.MaxParallel < 0 {
-				return fmt.Errorf("task group %q: update max_parallel must be at least 0", group.Name)
+				add(groupPath+".update.max_parallel", "out_of_range", "must be at least 0")
 			}
 		}
+
 		constraints := make(map[string]struct{}, len(group.Constraints))
-		for _, constraint := range group.Constraints {
+		for j, constraint := range group.Constraints {
+			path := fmt.Sprintf("%s.constraints[%d]", groupPath, j)
 			if !labelKeyPattern.MatchString(constraint.Attribute) {
-				return fmt.Errorf("task group %q: invalid constraint attribute %q", group.Name, constraint.Attribute)
+				add(path+".attribute", "invalid", fmt.Sprintf("invalid constraint attribute %q", constraint.Attribute))
 			}
 			if strings.TrimSpace(constraint.Value) == "" {
-				return fmt.Errorf("task group %q: constraint %q requires a value", group.Name, constraint.Attribute)
+				add(path+".value", "required", "constraint value is required")
 			}
-			if _, exists := constraints[constraint.Attribute]; exists {
-				return fmt.Errorf("task group %q: duplicate constraint attribute %q", group.Name, constraint.Attribute)
+			if constraint.Attribute != "" {
+				if _, exists := constraints[constraint.Attribute]; exists {
+					add(path+".attribute", "duplicate", fmt.Sprintf("duplicate constraint attribute %q", constraint.Attribute))
+				} else {
+					constraints[constraint.Attribute] = struct{}{}
+				}
 			}
-			constraints[constraint.Attribute] = struct{}{}
 		}
-		for k, v := range group.Labels {
-			if !labelKeyPattern.MatchString(k) {
-				return fmt.Errorf("task group %q: invalid label key %q", group.Name, k)
+		for key, value := range group.Labels {
+			if !labelKeyPattern.MatchString(key) {
+				add(groupPath+".labels", "invalid", fmt.Sprintf("invalid label key %q", key))
 			}
-			if len(v) > 256 {
-				return fmt.Errorf("task group %q: label value for %q exceeds 256 characters", group.Name, k)
+			if len(value) > 256 {
+				add(groupPath+".labels."+key, "too_long", "label value exceeds 256 characters")
 			}
 		}
 		if group.Count < 1 {
-			return fmt.Errorf("task group %q: count must be at least 1", group.Name)
+			add(groupPath+".count", "out_of_range", "must be at least 1")
 		}
 		if len(group.Tasks) == 0 {
-			return fmt.Errorf("task group %q: at least one task is required", group.Name)
+			add(groupPath+".tasks", "required", "at least one task is required")
 		}
+
 		tasks := make(map[string]struct{})
 		for j, task := range group.Tasks {
+			taskPath := fmt.Sprintf("%s.tasks[%d]", groupPath, j)
+			if task.Name != "" {
+				taskPath = fmt.Sprintf("%s.tasks[%s]", groupPath, task.Name)
+			}
 			if strings.TrimSpace(task.Name) == "" {
-				return fmt.Errorf("task group %q task %d: name is required", group.Name, j)
-			}
-			if !identifierPattern.MatchString(task.Name) {
-				return fmt.Errorf("task group %q task %q: name must be a safe identifier", group.Name, task.Name)
-			}
-			if _, exists := tasks[task.Name]; exists {
-				return fmt.Errorf("task group %q: duplicate task %q", group.Name, task.Name)
-			}
-			tasks[task.Name] = struct{}{}
-			secretNames, secretEnvs, secretPaths := map[string]struct{}{}, map[string]struct{}{}, map[string]struct{}{}
-			for _, secret := range task.Secrets {
-				if !ValidIdentifier(secret.Name) {
-					return fmt.Errorf("task group %q task %q: invalid secret name %q", group.Name, task.Name, secret.Name)
+				add(taskPath+".name", "required", "name is required")
+			} else {
+				if !identifierPattern.MatchString(task.Name) {
+					add(taskPath+".name", "invalid_identifier", "name must be a safe identifier")
 				}
-				if _, ok := secretNames[secret.Name]; ok {
-					return fmt.Errorf("task group %q task %q: duplicate secret %q", group.Name, task.Name, secret.Name)
-				}
-				secretNames[secret.Name] = struct{}{}
-				switch secret.Target {
-				case SecretTargetEnv:
-					if !envPattern.MatchString(secret.Env) || secret.Path != "" || secret.Mode != 0 {
-						return fmt.Errorf("task group %q task %q: env secret %q requires only a valid env name", group.Name, task.Name, secret.Name)
-					}
-					if _, ok := secretEnvs[secret.Env]; ok {
-						return fmt.Errorf("task group %q task %q: duplicate secret env %q", group.Name, task.Name, secret.Env)
-					}
-					if _, ok := task.Env[secret.Env]; ok {
-						return fmt.Errorf("task group %q task %q: secret env %q conflicts with env", group.Name, task.Name, secret.Env)
-					}
-					secretEnvs[secret.Env] = struct{}{}
-				case SecretTargetFile:
-					clean := filepath.Clean(secret.Path)
-					if secret.Env != "" || clean != secret.Path || !strings.HasPrefix(clean, "/run/trellis-secrets/") {
-						return fmt.Errorf("task group %q task %q: file secret %q requires a clean path below /run/trellis-secrets", group.Name, task.Name, secret.Name)
-					}
-					if secret.Mode != 0 && secret.Mode != 0o400 && secret.Mode != 0o600 {
-						return fmt.Errorf("task group %q task %q: file secret %q mode must be 0400 or 0600", group.Name, task.Name, secret.Name)
-					}
-					if _, ok := secretPaths[clean]; ok {
-						return fmt.Errorf("task group %q task %q: duplicate secret path %q", group.Name, task.Name, clean)
-					}
-					secretPaths[clean] = struct{}{}
-				default:
-					return fmt.Errorf("task group %q task %q: secret %q target must be env or file", group.Name, task.Name, secret.Name)
+				if _, exists := tasks[task.Name]; exists {
+					add(taskPath+".name", "duplicate", fmt.Sprintf("duplicate task %q", task.Name))
+				} else {
+					tasks[task.Name] = struct{}{}
 				}
 			}
 			if strings.TrimSpace(task.Image) == "" {
-				return fmt.Errorf("task group %q task %q: image is required", group.Name, task.Name)
-			}
-			if task.Resources != nil && (task.Resources.CPU < 0 || task.Resources.Memory < 0) {
-				return fmt.Errorf("task group %q task %q: resources cannot be negative", group.Name, task.Name)
+				add(taskPath+".image", "required", "image is required")
 			}
 			if task.Resources != nil {
-				totalCPU += task.Resources.CPU * group.Count
-				totalMemory += task.Resources.Memory * ByteSize(group.Count)
+				if task.Resources.CPU < 0 {
+					add(taskPath+".resources.cpu", "out_of_range", "cannot be negative")
+				}
+				if task.Resources.Memory < 0 {
+					add(taskPath+".resources.memory", "out_of_range", "cannot be negative")
+				}
 			}
+
+			secretNames, secretEnvs, secretPaths := map[string]struct{}{}, map[string]struct{}{}, map[string]struct{}{}
+			for k, secret := range task.Secrets {
+				path := fmt.Sprintf("%s.secrets[%d]", taskPath, k)
+				if !ValidIdentifier(secret.Name) {
+					add(path+".name", "invalid_identifier", fmt.Sprintf("invalid secret name %q", secret.Name))
+				}
+				if secret.Name != "" {
+					if _, ok := secretNames[secret.Name]; ok {
+						add(path+".name", "duplicate", fmt.Sprintf("duplicate secret %q", secret.Name))
+					} else {
+						secretNames[secret.Name] = struct{}{}
+					}
+				}
+				switch secret.Target {
+				case SecretTargetEnv:
+					if !envPattern.MatchString(secret.Env) || secret.Path != "" || secret.Mode != 0 {
+						add(path, "invalid_target", "env secret requires only a valid env name")
+					}
+					if secret.Env != "" {
+						if _, ok := secretEnvs[secret.Env]; ok {
+							add(path+".env", "duplicate", fmt.Sprintf("duplicate secret env %q", secret.Env))
+						} else {
+							secretEnvs[secret.Env] = struct{}{}
+						}
+						if _, ok := task.Env[secret.Env]; ok {
+							add(path+".env", "conflict", fmt.Sprintf("secret env %q conflicts with env", secret.Env))
+						}
+					}
+				case SecretTargetFile:
+					clean := filepath.Clean(secret.Path)
+					if secret.Env != "" || clean != secret.Path || !strings.HasPrefix(clean, "/run/trellis-secrets/") {
+						add(path, "invalid_target", "file secret requires a clean path below /run/trellis-secrets")
+					}
+					if secret.Mode != 0 && secret.Mode != 0o400 && secret.Mode != 0o600 {
+						add(path+".mode", "unsupported", "must be 0400 or 0600")
+					}
+					if secret.Path != "" {
+						if _, ok := secretPaths[clean]; ok {
+							add(path+".path", "duplicate", fmt.Sprintf("duplicate secret path %q", clean))
+						} else {
+							secretPaths[clean] = struct{}{}
+						}
+					}
+				default:
+					add(path+".target", "unsupported", "must be env or file")
+				}
+			}
+
 			volumes := make(map[string]struct{})
-			for _, volume := range task.Volumes {
-				if !identifierPattern.MatchString(volume.Name) || strings.TrimSpace(volume.Path) == "" || !strings.HasPrefix(volume.Path, "/") {
-					return fmt.Errorf("task group %q task %q: volume name and absolute path are required", group.Name, task.Name)
+			for k, volume := range task.Volumes {
+				path := fmt.Sprintf("%s.volumes[%d]", taskPath, k)
+				if !identifierPattern.MatchString(volume.Name) {
+					add(path+".name", "invalid_identifier", "volume name must be a safe identifier")
+				}
+				if strings.TrimSpace(volume.Path) == "" || !strings.HasPrefix(volume.Path, "/") {
+					add(path+".path", "invalid", "absolute path is required")
 				}
 				if volume.HostVolume != "" && !identifierPattern.MatchString(volume.HostVolume) {
-					return fmt.Errorf("task group %q task %q: invalid host volume %q", group.Name, task.Name, volume.HostVolume)
+					add(path+".host_volume", "invalid_identifier", fmt.Sprintf("invalid host volume %q", volume.HostVolume))
 				}
-				if _, exists := volumes[volume.Name]; exists {
-					return fmt.Errorf("task group %q task %q: duplicate volume %q", group.Name, task.Name, volume.Name)
+				if volume.Name != "" {
+					if _, exists := volumes[volume.Name]; exists {
+						add(path+".name", "duplicate", fmt.Sprintf("duplicate volume %q", volume.Name))
+					} else {
+						volumes[volume.Name] = struct{}{}
+					}
 				}
-				volumes[volume.Name] = struct{}{}
 			}
+
 			if task.Networking != nil {
 				if !task.Networking.Mode.Valid() {
-					return fmt.Errorf("task group %q task %q: unsupported networking mode %q", group.Name, task.Name, task.Networking.Mode)
+					add(taskPath+".networking.mode", "unsupported", fmt.Sprintf("unsupported networking mode %q", task.Networking.Mode))
 				}
 				if task.Networking.Mode != TaskNetworkHost && len(task.Networking.Ports) > 0 {
-					return fmt.Errorf("task group %q task %q: ports require networking mode host", group.Name, task.Name)
+					add(taskPath+".networking.ports", "invalid", "ports require networking mode host")
 				}
-				for _, port := range task.Networking.Ports {
-					if port.HostPort < 1 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
-						return fmt.Errorf("task group %q task %q: invalid host port declaration %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)
-					}
-					if port.HostPort != port.ContainerPort {
-						return fmt.Errorf("task group %q task %q: host networking does not translate ports; host_port must equal container_port", group.Name, task.Name)
+				for k, port := range task.Networking.Ports {
+					if port.Port < 1 || port.Port > 65535 {
+						add(fmt.Sprintf("%s.networking.ports[%d].port", taskPath, k), "out_of_range", "must be between 1 and 65535")
 					}
 				}
 			}
+
 			if task.HealthCheck != nil {
-				if task.HealthCheck.Interval != 0 && task.HealthCheck.Interval <= 0 {
-					return fmt.Errorf("task group %q task %q: health check interval must be positive", group.Name, task.Name)
+				checkPath := taskPath + ".health_check"
+				if task.HealthCheck.Interval < 0 {
+					add(checkPath+".interval", "out_of_range", "must be positive")
 				}
-				if task.HealthCheck.Timeout != 0 && task.HealthCheck.Timeout <= 0 {
-					return fmt.Errorf("task group %q task %q: health check timeout must be positive", group.Name, task.Name)
+				if task.HealthCheck.Timeout < 0 {
+					add(checkPath+".timeout", "out_of_range", "must be positive")
 				}
-				if task.HealthCheck.Threshold != 0 && task.HealthCheck.Threshold < 1 {
-					return fmt.Errorf("task group %q task %q: health check threshold must be at least 1", group.Name, task.Name)
+				if task.HealthCheck.Threshold < 0 {
+					add(checkPath+".threshold", "out_of_range", "must be at least 1 when set")
 				}
 				switch task.HealthCheck.Type {
 				case HealthCheckHTTP, HealthCheckTCP:
 					if task.HealthCheck.Port < 1 || task.HealthCheck.Port > 65535 {
-						return fmt.Errorf("task group %q task %q: health check port is required", group.Name, task.Name)
+						add(checkPath+".port", "out_of_range", "port is required and must be between 1 and 65535")
 					}
 				case HealthCheckScript:
 					if len(task.HealthCheck.Command) == 0 {
-						return fmt.Errorf("task group %q task %q: health check command is required", group.Name, task.Name)
+						add(checkPath+".command", "required", "command is required for a script health check")
 					}
 				default:
-					return fmt.Errorf("task group %q task %q: unsupported health check type %q", group.Name, task.Name, task.HealthCheck.Type)
+					add(checkPath+".type", "unsupported", fmt.Sprintf("unsupported health check type %q", task.HealthCheck.Type))
 				}
 			}
 		}
 	}
-	_ = totalCPU
-	_ = totalMemory
+
+	if len(issues) > 0 {
+		return issues
+	}
 	return nil
 }

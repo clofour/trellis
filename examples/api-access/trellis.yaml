@@ -3,7 +3,9 @@ namespace: default
 task_groups:
   - name: observer
     count: 1
-    api_access: namespace
+    api_access:
+      scope: namespace
+      access: read
     tasks:
       - name: dashboard
         image: docker.io/library/nginx:1.27-alpine

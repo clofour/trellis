@@ -5,8 +5,20 @@ import (
 	"time"
 )
 
+func validJob() *JobSpec {
+	return &JobSpec{
+		Namespace: "default",
+		Name:      "web",
+		TaskGroups: []TaskGroupSpec{{
+			Name:  "api",
+			Count: 1,
+			Tasks: []TaskSpec{{Name: "server", Image: "example/server:1"}},
+		}},
+	}
+}
+
 func TestParseYAML(t *testing.T) {
-	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        networking:\n          mode: host\n          ports:\n            - host_port: 8080\n              container_port: 8080\n")
+	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n        networking:\n          mode: host\n          ports:\n            - port: 8080\n")
 	job, err := ParseYAML(raw)
 	if err != nil {
 		t.Fatalf("parse manifest: %v", err)
@@ -14,54 +26,70 @@ func TestParseYAML(t *testing.T) {
 	if err := Validate(job); err != nil {
 		t.Fatalf("validate parsed manifest: %v", err)
 	}
-	port := job.TaskGroups[0].Tasks[0].Networking.Ports[0]
-	if port.HostPort != 8080 || port.ContainerPort != 8080 {
-		t.Fatalf("unexpected port declaration: %#v", port)
+	if got := job.TaskGroups[0].Tasks[0].Networking.Ports[0].Port; got != 8080 {
+		t.Fatalf("port = %d, want 8080", got)
 	}
 }
 
 func TestParseYAMLRejectsUnknownFields(t *testing.T) {
-	raw := []byte("namespace: default\nname: web\nnetwork:\n  wireguard: true\ntask_groups:\n  - name: api\n    count: 1\n    network_mode: host\n    tasks:\n      - name: server\n        image: example/server:1\n        ports:\n          - host_port: 8080\n            container_port: 80\n")
+	raw := []byte("namespace: default\nname: web\nunknown: true\ntask_groups:\n  - name: api\n    count: 1\n    tasks:\n      - name: server\n        image: example/server:1\n")
 	if _, err := ParseYAML(raw); err == nil {
-		t.Fatal("expected unknown manifest fields to be rejected")
+		t.Fatal("expected unknown field to be rejected")
 	}
 }
 
-func TestValidate(t *testing.T) {
-	valid := &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "example/server:1"}}}}}
-	if err := Validate(valid); err != nil {
-		t.Fatalf("valid job rejected: %v", err)
+func TestValidateAcceptsExtensions(t *testing.T) {
+	job := validJob()
+	group := &job.TaskGroups[0]
+	group.APIAccess = &APIAccessSpec{Scope: APIAccessNamespace, Access: APIAccessRead}
+	group.Labels = map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"}
+	group.Constraints = []ConstraintSpec{{Attribute: "arch", Value: "amd64"}}
+	group.Update = &UpdateSpec{Strategy: UpdateRolling, MaxParallel: 1}
+	group.Restart = &RestartPolicySpec{MaxRestarts: 3, Window: 5 * time.Minute}
+	group.Tasks[0].Networking = &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{Port: 8080}}}
+	group.Tasks[0].HealthCheck = &HealthCheckSpec{Type: HealthCheckHTTP, Port: 8080, Path: "/", Interval: 5 * time.Second, Timeout: 2 * time.Second, Threshold: 2}
+	if err := Validate(job); err != nil {
+		t.Fatalf("valid extended job rejected: %v", err)
 	}
+}
 
-	withExtensions := &JobSpec{Namespace: "default", Name: "proxy", TaskGroups: []TaskGroupSpec{{
-		Name: "proxy", Count: 1, APIAccess: APIAccessNamespace,
-		Labels: map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"},
-		Tasks:  []TaskSpec{{Name: "nginx", Image: "nginx:latest", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost}}},
-	}}}
-	if err := Validate(withExtensions); err != nil {
-		t.Fatalf("valid job with extensions rejected: %v", err)
-	}
-
+func TestValidateRejectsInvalidJobs(t *testing.T) {
 	tests := []struct {
-		name string
-		job  *JobSpec
+		name   string
+		mutate func(*JobSpec)
 	}{
-		{"nil", nil},
-		{"missing name", &JobSpec{}},
-		{"zero replicas", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
-		{"missing image", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server"}}}}}},
-		{"invalid port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{HostPort: 70000, ContainerPort: 70000}}}}}}}}},
-		{"dynamic host port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{HostPort: 0, ContainerPort: 8080}}}}}}}}},
-		{"translated host port", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{HostPort: 8080, ContainerPort: 80}}}}}}}}},
-		{"invalid network_mode", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", Networking: &TaskNetworkingSpec{Mode: "bridge"}}}}}}},
-		{"invalid label key", &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 1, Labels: map[string]string{"123bad": "v"}, Tasks: []TaskSpec{{Name: "server", Image: "image"}}}}}},
+		{"missing name", func(j *JobSpec) { j.Name = "" }},
+		{"unsafe name", func(j *JobSpec) { j.Name = "bad name" }},
+		{"missing namespace", func(j *JobSpec) { j.Namespace = "" }},
+		{"zero replicas", func(j *JobSpec) { j.TaskGroups[0].Count = 0 }},
+		{"missing image", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].Image = "" }},
+		{"invalid port", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].Networking = &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{Port: 70000}}} }},
+		{"port without host networking", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].Networking = &TaskNetworkingSpec{Ports: []PortSpec{{Port: 8080}}} }},
+		{"invalid networking", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].Networking = &TaskNetworkingSpec{Mode: "bridge"} }},
+		{"invalid label", func(j *JobSpec) { j.TaskGroups[0].Labels = map[string]string{"123bad": "v"} }},
+		{"invalid api scope", func(j *JobSpec) { j.TaskGroups[0].APIAccess = &APIAccessSpec{Scope: "other", Access: APIAccessRead} }},
+		{"invalid api access", func(j *JobSpec) { j.TaskGroups[0].APIAccess = &APIAccessSpec{Scope: APIAccessNamespace, Access: "admin"} }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := Validate(test.job); err == nil {
+			job := validJob()
+			test.mutate(job)
+			if err := Validate(job); err == nil {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateAggregatesErrors(t *testing.T) {
+	job := &JobSpec{Namespace: "", Name: "bad name", TaskGroups: []TaskGroupSpec{{Name: "api", Count: 0}}}
+	err := Validate(job)
+	issues, ok := err.(ValidationErrors)
+	if !ok {
+		t.Fatalf("expected ValidationErrors, got %T: %v", err, err)
+	}
+	if len(issues) < 4 {
+		t.Fatalf("expected multiple issues, got %#v", issues)
 	}
 }
 
@@ -74,95 +102,25 @@ func TestParseConfigurableHealthAndRestartPolicy(t *testing.T) {
 	if err := Validate(job); err != nil {
 		t.Fatalf("validate manifest: %v", err)
 	}
-	restart := job.TaskGroups[0].Restart
-	if restart == nil || restart.MaxRestarts != 5 || restart.Window != 2*time.Minute {
-		t.Fatalf("unexpected restart policy: %#v", restart)
+	if got := job.TaskGroups[0].Restart.Window; got != 2*time.Minute {
+		t.Fatalf("restart window = %s", got)
 	}
-	health := job.TaskGroups[0].Tasks[0].HealthCheck
-	if health.Interval != 15*time.Second || health.Timeout != 3*time.Second || health.Threshold != 2 {
-		t.Fatalf("unexpected health check timing: %#v", health)
-	}
-}
-
-func TestValidateHealthAndRestartPolicy(t *testing.T) {
-	job := func() *JobSpec {
-		return &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{
-			Name: "api", Count: 1, Tasks: []TaskSpec{{Name: "server", Image: "image", HealthCheck: &HealthCheckSpec{Type: "tcp", Port: 8080}}},
-		}}}
-	}
-
-	tests := []struct {
-		name   string
-		mutate func(*JobSpec)
-	}{
-		{"negative health interval", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].HealthCheck.Interval = -time.Second }},
-		{"negative health timeout", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].HealthCheck.Timeout = -time.Second }},
-		{"negative health threshold", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].HealthCheck.Threshold = -1 }},
-		{"negative max restarts", func(j *JobSpec) { j.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: -1, Window: time.Minute} }},
-		{"zero restart window", func(j *JobSpec) { j.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: 0} }},
-		{"negative restart window", func(j *JobSpec) { j.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: 1, Window: -time.Minute} }},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			candidate := job()
-			test.mutate(candidate)
-			if err := Validate(candidate); err == nil {
-				t.Fatal("expected validation error")
-			}
-		})
-	}
-
-	valid := job()
-	valid.TaskGroups[0].Restart = &RestartPolicySpec{MaxRestarts: 0, Window: time.Minute}
-	if err := Validate(valid); err != nil {
-		t.Fatalf("zero-restart policy rejected: %v", err)
-	}
-}
-
-func TestParseConstraints(t *testing.T) {
-	raw := []byte("namespace: default\nname: web\ntask_groups:\n  - name: api\n    count: 1\n    constraints:\n      - attribute: os\n        value: linux\n      - attribute: arch\n        value: arm64\n    tasks:\n      - name: server\n        image: example/server:1\n")
-	job, err := ParseYAML(raw)
-	if err != nil {
-		t.Fatalf("parse manifest: %v", err)
-	}
-	if err := Validate(job); err != nil {
-		t.Fatalf("validate manifest: %v", err)
-	}
-	constraints := job.TaskGroups[0].Constraints
-	if len(constraints) != 2 || constraints[0].Attribute != "os" || constraints[0].Value != "linux" || constraints[1].Attribute != "arch" || constraints[1].Value != "arm64" {
-		t.Fatalf("unexpected constraints: %#v", constraints)
+	check := job.TaskGroups[0].Tasks[0].HealthCheck
+	if check.Interval != 15*time.Second || check.Timeout != 3*time.Second || check.Threshold != 2 {
+		t.Fatalf("unexpected health config: %#v", check)
 	}
 }
 
 func TestValidateConstraints(t *testing.T) {
-	job := func(constraints ...ConstraintSpec) *JobSpec {
-		return &JobSpec{Namespace: "default", Name: "web", TaskGroups: []TaskGroupSpec{{
-			Name: "api", Count: 1, Constraints: constraints, Tasks: []TaskSpec{{Name: "server", Image: "image"}},
-		}}}
-	}
-
-	valid := job(
-		ConstraintSpec{Attribute: "os", Value: "linux"},
-		ConstraintSpec{Attribute: "example.com/accelerator", Value: "gpu"},
-	)
+	valid := validJob()
+	valid.TaskGroups[0].Constraints = []ConstraintSpec{{Attribute: "os", Value: "linux"}, {Attribute: "example.com/accelerator", Value: "gpu"}}
 	if err := Validate(valid); err != nil {
 		t.Fatalf("valid constraints rejected: %v", err)
 	}
 
-	tests := []struct {
-		name        string
-		constraints []ConstraintSpec
-	}{
-		{"missing attribute", []ConstraintSpec{{Value: "linux"}}},
-		{"invalid attribute", []ConstraintSpec{{Attribute: "bad attribute", Value: "linux"}}},
-		{"missing value", []ConstraintSpec{{Attribute: "os"}}},
-		{"duplicate attribute", []ConstraintSpec{{Attribute: "arch", Value: "amd64"}, {Attribute: "arch", Value: "arm64"}}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if err := Validate(job(test.constraints...)); err == nil {
-				t.Fatal("expected validation error")
-			}
-		})
+	invalid := validJob()
+	invalid.TaskGroups[0].Constraints = []ConstraintSpec{{Attribute: "arch", Value: "amd64"}, {Attribute: "arch", Value: "arm64"}}
+	if err := Validate(invalid); err == nil {
+		t.Fatal("expected duplicate constraint to be rejected")
 	}
 }

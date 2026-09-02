@@ -10,7 +10,7 @@ import (
 	"github.com/clofour/trellis/internal/spec"
 )
 
-func TestDiffJobSpecsUsesNamesAndHumanDurations(t *testing.T) {
+func TestDiffJobSpecsUsesTaskGroupNamesAndHumanDurations(t *testing.T) {
 	before := &spec.JobSpec{Name: "web", Namespace: "default", TaskGroups: []spec.TaskGroupSpec{{
 		Name: "frontend", Count: 1, Restart: &spec.RestartPolicySpec{MaxRestarts: 3, Window: time.Minute},
 		Tasks: []spec.TaskSpec{{Name: "app", Image: "example/app:v1"}},
@@ -28,8 +28,8 @@ func TestDiffJobSpecsUsesNamesAndHumanDurations(t *testing.T) {
 		paths = append(paths, change.Path)
 	}
 	joined := strings.Join(paths, "\n")
-	if !strings.Contains(joined, "task_groups[frontend].tasks[app].image") {
-		t.Fatalf("named task path missing: %s", joined)
+	if !strings.Contains(joined, "task_groups[frontend].tasks[0].image") {
+		t.Fatalf("positional task path missing: %s", joined)
 	}
 	if !strings.Contains(joined, "task_groups[frontend].restart.window") {
 		t.Fatalf("duration path missing: %s", joined)

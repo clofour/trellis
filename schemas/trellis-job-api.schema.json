@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job-api.schema.json",
+  "title": "Trellis canonical JSON JobSpec",
+  "description": "Canonical JSON representation accepted by the Trellis API. Human authoring syntaxes must convert quantities and durations before submission.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "namespace", "task_groups"],
+  "properties": {
+    "name": { "$ref": "#/$defs/identifier" },
+    "namespace": { "$ref": "#/$defs/identifier" },
+    "task_groups": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/taskGroup" } }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$" },
+    "duration": { "type": "integer", "minimum": 0, "description": "Nanoseconds." },
+    "apiAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "access"],
+      "properties": {
+        "scope": { "type": "string", "enum": ["namespace", "cluster"] },
+        "access": { "type": "string", "enum": ["read", "write"] }
+      }
+    },
+    "taskGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "count", "tasks"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "count": { "type": "integer", "minimum": 1 },
+        "runtime": { "type": "string", "enum": ["runc", "runsc", ""] },
+        "api_access": { "$ref": "#/$defs/apiAccess" },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "constraints": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["attribute", "value"], "properties": { "attribute": { "type": "string" }, "value": { "type": "string" } } } },
+        "restart": { "type": "object", "additionalProperties": false, "required": ["max_restarts", "window"], "properties": { "max_restarts": { "type": "integer", "minimum": 0 }, "window": { "$ref": "#/$defs/duration" } } },
+        "update": { "type": "object", "additionalProperties": false, "required": ["strategy"], "properties": { "strategy": { "type": "string", "enum": ["recreate", "rolling", ""] }, "max_parallel": { "type": "integer", "minimum": 0 } } },
+        "tasks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/task" } }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "image"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "image": { "type": "string", "minLength": 1 },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "resources": { "type": "object", "additionalProperties": false, "required": ["cpu", "memory"], "properties": { "cpu": { "type": "integer", "minimum": 0 }, "memory": { "type": "integer", "minimum": 0, "description": "Bytes." } } },
+        "networking": { "type": "object", "additionalProperties": false, "properties": { "mode": { "type": "string", "enum": ["", "host", "wireguard"] }, "ports": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["port"], "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } } } } } },
+        "health_check": { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "type": "string", "enum": ["http", "tcp", "script"] }, "port": { "type": "integer", "minimum": 0, "maximum": 65535 }, "path": { "type": "string" }, "command": { "type": "array", "items": { "type": "string" } }, "interval": { "$ref": "#/$defs/duration" }, "timeout": { "$ref": "#/$defs/duration" }, "threshold": { "type": "integer", "minimum": 0 } } },
+        "volumes": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "path"], "properties": { "name": { "$ref": "#/$defs/identifier" }, "path": { "type": "string" }, "host_volume": { "$ref": "#/$defs/identifier" }, "read_only": { "type": "boolean" } } } },
+        "secrets": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "target"], "properties": { "name": { "$ref": "#/$defs/identifier" }, "target": { "type": "string", "enum": ["env", "file"] }, "env": { "type": "string" }, "path": { "type": "string" }, "mode": { "type": "integer", "minimum": 0 } } } }
+      }
+    }
+  }
+}

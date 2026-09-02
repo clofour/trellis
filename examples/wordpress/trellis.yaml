@@ -24,8 +24,7 @@ task_groups:
         networking:
           mode: host
           ports:
-            - host_port: 3306
-              container_port: 3306
+            - port: 3306
         volumes:
           - name: db-data
             path: /var/lib/mysql
@@ -49,8 +48,7 @@ task_groups:
         networking:
           mode: host
           ports:
-            - host_port: 80
-              container_port: 80
+            - port: 80
         volumes:
           - name: wp-content
             path: /var/www/html/wp-content

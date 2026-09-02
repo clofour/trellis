@@ -54,6 +54,26 @@ jobs:
           docker push "${IMAGE}:${VERSION}"
           docker push "${IMAGE}:latest"
 
+      - name: Build and publish tutorial images
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/trellis-tutorial
+        run: |
+          for tutorial_version in v1 v2; do
+            # Tutorial versions are stable learning fixtures. Once published,
+            # a later Trellis release must not silently replace their contents.
+            if docker manifest inspect "${IMAGE}:${tutorial_version}" >/dev/null 2>&1; then
+              echo "${IMAGE}:${tutorial_version} already exists; leaving it unchanged"
+              continue
+            fi
+            docker build \
+              --build-arg "TUTORIAL_VERSION=${tutorial_version}" \
+              --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --label "org.opencontainers.image.revision=${{ github.sha }}" \
+              --tag "${IMAGE}:${tutorial_version}" \
+              tutorial
+            docker push "${IMAGE}:${tutorial_version}"
+          done
+
       - name: Create release
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631
         with:
