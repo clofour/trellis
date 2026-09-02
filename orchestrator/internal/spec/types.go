@@ -137,12 +137,8 @@ type SecretRefSpec struct {
 }
 
 // PortSpec reserves the single port used directly by a host-networked task.
-// HostPort is not part of either the YAML or JSON model; it exists only so
-// agent diagnostics compiled against PortSpec can name the already-normalized
-// port without reintroducing a second user-facing port concept.
 type PortSpec struct {
-	Port     int `yaml:"port" json:"port"`
-	HostPort int `yaml:"-" json:"-"`
+	Port int `yaml:"port" json:"port"`
 }
 
 type ResourcesSpec struct {
@@ -175,14 +171,7 @@ func TaskGroupContentHash(g *TaskGroupSpec) string {
 		APIAccess   *APIAccessSpec
 		Restart     *RestartPolicySpec
 		Constraints []ConstraintSpec
-	}{
-		Name:        g.Name,
-		Runtime:     g.Runtime,
-		Tasks:       g.Tasks,
-		APIAccess:   g.APIAccess,
-		Restart:     g.Restart,
-		Constraints: g.Constraints,
-	}
+	}{Name: g.Name, Runtime: g.Runtime, Tasks: g.Tasks, APIAccess: g.APIAccess, Restart: g.Restart, Constraints: g.Constraints}
 	raw, _ := json.Marshal(hashable)
 	h := sha256.Sum256(raw)
 	return string(h[:])
