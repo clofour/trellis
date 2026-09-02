@@ -77,8 +77,8 @@ export interface SecretMetadata {
 }
 
 // time.Duration is encoded as nanoseconds and memory as bytes in the JSON API.
-// The YAML editor accepts human forms such as "10s" and "64MiB" and normalizes
-// them before submission.
+// The YAML editor accepts human forms such as "10s" and "64MiB" and converts
+// them before sending canonical JSON to Trellis.
 export type DurationValue = number | string;
 
 export interface JobSpec {
@@ -90,7 +90,13 @@ export interface JobSpec {
 export type Runtime = "" | "runc" | "runsc";
 export type TaskNetworkMode = "" | "host" | "wireguard";
 export type UpdateStrategy = "" | "recreate" | "rolling";
-export type APIAccessMode = "namespace" | "cluster";
+export type APIAccessScope = "namespace" | "cluster";
+export type APIAccessLevel = "read" | "write";
+
+export interface APIAccessSpec {
+  scope: APIAccessScope;
+  access: APIAccessLevel;
+}
 
 export interface TaskGroupSpec {
   name: string;
@@ -98,7 +104,7 @@ export interface TaskGroupSpec {
   runtime?: Runtime;
   tasks: TaskSpec[];
   labels?: Record<string, string>;
-  api_access?: APIAccessMode;
+  api_access?: APIAccessSpec;
   restart?: RestartPolicySpec;
   constraints?: ConstraintSpec[];
   update?: UpdateSpec;
@@ -136,8 +142,7 @@ export interface TaskNetworkingSpec {
 }
 
 export interface PortSpec {
-  host_port: number;
-  container_port: number;
+  port: number;
 }
 
 export interface VolumeSpec {
