@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOrchestratorStatus } from "@/hooks/use-api";
@@ -25,6 +25,7 @@ const navigation = [
   {
     name: "Nodes",
     href: "/nodes",
+    clusterOnly: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="1.5" width="12" height="5" rx="1" />
@@ -62,6 +63,7 @@ export function Sidebar() {
   const {
     allowWrites,
     apiAccess,
+    accessLevel,
     clusterName,
     namespace,
     namespaces,
@@ -69,6 +71,10 @@ export function Sidebar() {
     setNamespace,
   } = useConfig();
   const [namespaceInput, setNamespaceInput] = useState(namespace);
+
+  useEffect(() => {
+    setNamespaceInput(namespace);
+  }, [namespace]);
 
   const visibleNavigation = navigation.filter(
     (item) => !item.clusterOnly || apiAccess === "cluster",
@@ -198,10 +204,15 @@ export function Sidebar() {
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
               <span className="font-medium text-amber-600 dark:text-amber-400">Read-write</span>
             </>
+          ) : accessLevel === "write" ? (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
+              <span className="text-muted-foreground">UI read-only · write credential</span>
+            </>
           ) : (
             <>
               <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
-              <span className="text-muted-foreground">Read-only</span>
+              <span className="text-muted-foreground">Read-only credential</span>
             </>
           )}
         </div>
