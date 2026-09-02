@@ -10,6 +10,7 @@ import {
   type ManifestPlan,
 } from "@/lib/manifest-plan";
 import { useConfig } from "./config-provider";
+import { ManifestEditor } from "./manifest-editor";
 
 interface JobFormProps {
   open: boolean;
@@ -204,6 +205,11 @@ function JobFormPanel({
     setPlannedSpec(null);
   };
 
+  const markSourceDirty = () => {
+    clearPlan();
+    setError(null);
+  };
+
   const parse = (): JobSpec => {
     let spec: JobSpec;
     try {
@@ -324,16 +330,10 @@ function JobFormPanel({
                 Format YAML
               </button>
             </div>
-            <textarea
-              id="job-manifest"
+            <ManifestEditor
               value={source}
-              onChange={(event) => {
-                setSource(event.target.value);
-                clearPlan();
-                setError(null);
-              }}
-              spellCheck={false}
-              className="min-h-[520px] w-full resize-y rounded-lg border border-border bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100 outline-none focus:ring-2 focus:ring-emerald-500/40"
+              onChange={setSource}
+              onDirty={markSourceDirty}
             />
 
             {plan && (
