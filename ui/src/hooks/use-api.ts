@@ -44,7 +44,8 @@ async function namespacedTextFetcher([url, namespace]: [string, string]): Promis
 }
 
 export function useNodes() {
-  return useSWR<Node[]>("/api/v1/nodes", fetcher, {
+  const { apiAccess } = useConfig();
+  return useSWR<Node[]>(apiAccess === "cluster" ? "/api/v1/nodes" : null, fetcher, {
     refreshInterval: REFRESH_INTERVAL,
   });
 }
