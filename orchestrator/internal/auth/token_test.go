@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -23,18 +24,21 @@ func (m memStore) Delete(_ context.Context, key string) error { delete(m, key); 
 func TestTokenRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewTokenManager(memStore{}, "test")
+	principal := Principal{Kind: CredentialOperator, Scope: AccessNamespace, Access: AccessRead, Namespace: "acme"}
 
-	token, err := mgr.CreateToken(ctx, AccessNamespace, AccessRead, "acme")
+	token, err := mgr.CreateToken(ctx, principal)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(token, "trls_op_") {
+		t.Fatalf("operator token has unexpected prefix: %q", token)
 	}
 	saved, err := mgr.ValidateToken(ctx, token)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope, access, namespace, ok := DecodeScope(saved.Namespace)
-	if !ok || scope != AccessNamespace || access != AccessRead || namespace != "acme" {
-		t.Fatalf("unexpected scope: %#v", saved)
+	if saved == nil || saved.Kind != CredentialOperator || saved.Scope != AccessNamespace || saved.Access != AccessRead || saved.Namespace != "acme" || saved.CreatedAt.IsZero() {
+		t.Fatalf("unexpected principal: %#v", saved)
 	}
 
 	saved, err = mgr.ValidateToken(ctx, "invalid-token")
@@ -42,38 +46,55 @@ func TestTokenRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if saved != nil {
-		t.Fatalf("expected nil scope for invalid token, got %#v", saved)
+		t.Fatalf("expected nil principal for invalid token, got %#v", saved)
 	}
 }
 
-func TestGetOrCreateReturnsStableTokenPerScope(t *testing.T) {
+func TestWorkloadTokenIsStablePerTaskGroup(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewTokenManager(memStore{}, "test")
 
-	token1, err := mgr.GetOrCreateToken(ctx, AccessCluster, AccessRead, "")
+	token1, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme", "api", "web")
 	if err != nil {
 		t.Fatal(err)
 	}
-	token2, err := mgr.GetOrCreateToken(ctx, AccessCluster, AccessRead, "")
+	token2, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme", "api", "web")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if token1 != token2 {
-		t.Fatalf("expected stable token, got %q and %q", token1, token2)
+		t.Fatalf("expected stable workload token, got %q and %q", token1, token2)
 	}
-	writeToken, err := mgr.GetOrCreateToken(ctx, AccessCluster, AccessWrite, "")
+	if !strings.HasPrefix(token1, "trls_wl_") {
+		t.Fatalf("workload token has unexpected prefix: %q", token1)
+	}
+
+	otherGroup, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme", "api", "worker")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if writeToken == token1 {
-		t.Fatal("read and write access must use distinct credentials")
+	if otherGroup == token1 {
+		t.Fatal("different task groups must not share workload credentials")
+	}
+
+	saved, err := mgr.ValidateToken(ctx, token1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.Subject == nil || saved.Subject.Namespace != "acme" || saved.Subject.Job != "api" || saved.Subject.TaskGroup != "web" {
+		t.Fatalf("unexpected workload subject: %#v", saved)
 	}
 }
 
-func TestScopeEncoding(t *testing.T) {
-	encoded := EncodeScope(AccessNamespace, AccessWrite, "acme")
-	scope, access, namespace, ok := DecodeScope(encoded)
-	if !ok || scope != AccessNamespace || access != AccessWrite || namespace != "acme" {
-		t.Fatalf("decoded %q as %q/%q/%q ok=%t", encoded, scope, access, namespace, ok)
+func TestPrincipalValidation(t *testing.T) {
+	for _, principal := range []Principal{
+		{Kind: CredentialOperator, Scope: AccessNamespace, Access: AccessRead},
+		{Kind: CredentialOperator, Scope: AccessCluster, Access: AccessWrite, Namespace: "acme"},
+		{Kind: CredentialWorkload, Scope: AccessNamespace, Access: AccessRead, Namespace: "acme"},
+		{Kind: CredentialWorkload, Scope: AccessNamespace, Access: AccessRead, Namespace: "other", Subject: &CredentialSubject{Namespace: "acme", Job: "api", TaskGroup: "web"}},
+	} {
+		if err := principal.Validate(); err == nil {
+			t.Fatalf("expected principal to be invalid: %#v", principal)
+		}
 	}
 }
