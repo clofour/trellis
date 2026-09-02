@@ -5,14 +5,34 @@ import type {
   Node,
   SecretMetadata,
 } from "./types";
+import type { ManifestPlan } from "./manifest-plan";
 
 const API_BASE = process.env.NEXT_PUBLIC_TRELLIS_API_URL || "";
+
+function errorMessage(data: unknown, fallback: string): string {
+  if (typeof data !== "object" || data === null) return fallback;
+  const record = data as Record<string, unknown>;
+  if (Array.isArray(record.issues)) {
+    const issues = record.issues
+      .map((issue) => {
+        if (typeof issue !== "object" || issue === null) return null;
+        const item = issue as Record<string, unknown>;
+        if (typeof item.message !== "string") return null;
+        return typeof item.path === "string" && item.path
+          ? `${item.path}: ${item.message}`
+          : item.message;
+      })
+      .filter((value): value is string => value !== null);
+    if (issues.length > 0) return issues.join("\n");
+  }
+  return typeof record.error === "string" ? record.error : fallback;
+}
 
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`);
   if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(data?.error || `API error: ${res.status} ${res.statusText}`);
+    const data: unknown = await res.json().catch(() => null);
+    throw new Error(errorMessage(data, `API error: ${res.status} ${res.statusText}`));
   }
   return res.json();
 }
@@ -26,8 +46,8 @@ async function apiMutation(
   if (namespace !== undefined) headers.set("X-Trellis-Namespace", namespace);
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(data?.error || `API error: ${res.status} ${res.statusText}`);
+    const data: unknown = await res.json().catch(() => null);
+    throw new Error(errorMessage(data, `API error: ${res.status} ${res.statusText}`));
   }
   return res;
 }
@@ -44,19 +64,16 @@ export async function fetchJob(name: string): Promise<Job> {
   return apiFetch<Job>(`/api/v1/jobs/${encodeURIComponent(name)}`);
 }
 
-export async function fetchJobForPlan(
-  name: string,
-  namespace: string,
-): Promise<Job | null> {
-  const res = await fetch(
-    `${API_BASE}/api/v1/jobs/${encodeURIComponent(name)}`,
-    { headers: { "X-Trellis-Namespace": namespace }, cache: "no-store" },
+export async function planJob(spec: JobSpec): Promise<ManifestPlan> {
+  const res = await apiMutation(
+    "/api/v1/jobs/plan",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spec }),
+    },
+    spec.namespace,
   );
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(data?.error || `API error: ${res.status} ${res.statusText}`);
-  }
   return res.json();
 }
 
@@ -77,8 +94,8 @@ export async function fetchAllocationLogs(
     { cache: "no-store" },
   );
   if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    throw new Error(data?.error || `API error: ${res.status} ${res.statusText}`);
+    const data: unknown = await res.json().catch(() => null);
+    throw new Error(errorMessage(data, `API error: ${res.status} ${res.statusText}`));
   }
   return res.text();
 }
@@ -98,9 +115,7 @@ export async function submitJob(spec: JobSpec): Promise<void> {
 export async function deleteJob(name: string, namespace: string): Promise<void> {
   await apiMutation(
     `/api/v1/jobs/${encodeURIComponent(name)}`,
-    {
-      method: "DELETE",
-    },
+    { method: "DELETE" },
     namespace,
   );
 }
@@ -136,9 +151,6 @@ export async function setSecret(
 ): Promise<SecretMetadata> {
   const body = {
     value_base64: encodeUTF8Base64(value),
-    // New secrets are create-only; rotations require the version we displayed.
-    // This prevents the dashboard from silently overwriting a concurrently
-    // created or rotated value.
     expected_version: expectedVersion ?? 0,
   };
   const res = await apiMutation(
@@ -156,9 +168,7 @@ export async function setSecret(
 export async function deleteSecret(name: string, namespace: string): Promise<void> {
   await apiMutation(
     `/api/v1/secrets/${encodeURIComponent(name)}`,
-    {
-      method: "DELETE",
-    },
+    { method: "DELETE" },
     namespace,
   );
 }
