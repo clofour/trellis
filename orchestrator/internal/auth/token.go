@@ -16,8 +16,6 @@ import (
 )
 
 // TokenScope is the authorization context attached to an authenticated request.
-// Namespace is encoded so the HTTP layer can recover both scope and access
-// without teaching authentication middleware about individual API routes.
 type TokenScope struct {
 	Namespace string `json:"namespace"`
 }
@@ -26,15 +24,19 @@ type TokenScope struct {
 type AccessScope string
 
 const (
+	// AccessNamespace restricts a generated credential to one namespace.
 	AccessNamespace AccessScope = "namespace"
-	AccessCluster   AccessScope = "cluster"
+	// AccessCluster permits cluster-wide operations allowed by the access level.
+	AccessCluster AccessScope = "cluster"
 )
 
 // AccessLevel controls whether a generated API credential may mutate state.
 type AccessLevel string
 
 const (
-	AccessRead  AccessLevel = "read"
+	// AccessRead grants observation-only API access.
+	AccessRead AccessLevel = "read"
+	// AccessWrite grants ordinary mutation API access within the credential scope.
 	AccessWrite AccessLevel = "write"
 )
 
@@ -48,8 +50,7 @@ func EncodeScope(scope AccessScope, access AccessLevel, namespace string) string
 	return authorizationPrefix + "namespace:" + string(access) + ":" + namespace
 }
 
-// DecodeScope decodes a generated credential context. ok is false for the
-// bootstrap cluster token and for malformed values.
+// DecodeScope decodes a generated credential context.
 func DecodeScope(value string) (scope AccessScope, access AccessLevel, namespace string, ok bool) {
 	if !strings.HasPrefix(value, authorizationPrefix) {
 		return "", "", "", false
@@ -104,7 +105,6 @@ func (m *TokenManager) CreateToken(ctx context.Context, scope AccessScope, acces
 		return "", fmt.Errorf("generate token: %w", err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
-
 	hash := sha256.Sum256([]byte(token))
 	hashHex := hex.EncodeToString(hash[:])
 	data, err := json.Marshal(&TokenScope{Namespace: EncodeScope(scope, access, namespace)})
@@ -130,7 +130,6 @@ func (m *TokenManager) ValidateToken(ctx context.Context, rawToken string) (*Tok
 	if data == nil {
 		return nil, nil
 	}
-
 	var scope TokenScope
 	if err := json.Unmarshal(data, &scope); err != nil {
 		return nil, fmt.Errorf("unmarshal scope: %w", err)
