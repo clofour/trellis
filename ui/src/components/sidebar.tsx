@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOrchestratorStatus } from "@/hooks/use-api";
@@ -69,10 +69,6 @@ export function Sidebar() {
     setNamespace,
   } = useConfig();
   const [namespaceInput, setNamespaceInput] = useState(namespace);
-
-  useEffect(() => {
-    setNamespaceInput(namespace);
-  }, [namespace]);
 
   const visibleNavigation = navigation.filter(
     (item) => !item.clusterOnly || apiAccess === "cluster",
