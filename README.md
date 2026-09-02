@@ -2,7 +2,7 @@
 
 Trellis is a container scheduler built on containerd. It sits in the space between rolling your own deployment scripts and adopting Kubernetes — a real orchestrator for container workloads, without the operational complexity.
 
-Every project that ships software ends up rebuilding the same infrastructure: workload placement, health checks, rolling updates, port allocation. Tools like Coolify improve the developer experience, but at their core they are not orchestrators. Kubernetes is a full orchestrator, but it brings significant complexity that many workloads simply do not need. Trellis is closer to Nomad in spirit: a lightweight, focused scheduler you can understand and operate yourself.
+Every project that ships software ends up rebuilding the same infrastructure: workload placement, health checks, rolling updates, port reservation. Tools like Coolify improve the developer experience, but at their core they are not orchestrators. Kubernetes is a full orchestrator, but it brings significant complexity that many workloads simply do not need. Trellis is closer to Nomad in spirit: a lightweight, focused scheduler you can understand and operate yourself.
 
 Every machine runs the same `trellis` daemon. Raft consensus elects one node to serve the control-plane API and reconcile jobs, while every node continues to run allocations and participate in the next election.
 
@@ -23,7 +23,7 @@ git clone https://github.com/clofour/trellis-experimental.git
 sudo ./trellis-experimental/scripts/setup.sh
 ```
 
-The script interactively asks whether to enable WireGuard networking, whether to install the web dashboard, and whether this node should join an existing cluster.
+The script interactively asks whether to enable WireGuard networking, whether to install the web dashboard, and whether this node should join an existing cluster. Joining an existing cluster requires that cluster's token; the installer prompts for it without echoing it.
 
 See the [getting-started guide](docs/public/getting-started.md) for a walkthrough of deploying your first workload.
 
@@ -43,7 +43,7 @@ cluster
 
 Humans author **YAML job manifests**. Applying a manifest creates or advances a job revision; Trellis then creates runtime **allocations** to satisfy the desired task-group replicas. Allocation **lifecycle** and **health** are separate concepts.
 
-See the [Trellis user model](docs/public/user-model.md) for the canonical vocabulary shared by the CLI, dashboard, docs, examples, and API.
+See the [Trellis user model](docs/public/user-model.md) for the canonical vocabulary shared by `trellisctl`, the dashboard, docs, examples, and API.
 
 ## Design principles
 
@@ -60,11 +60,11 @@ See the [Trellis user model](docs/public/user-model.md) for the canonical vocabu
 ## Capabilities
 
 - YAML job validation, semantic planning, revisioned apply, and rollout watching
-- Named CLI cluster contexts with explicit flag/environment overrides for automation
+- Named `trellisctl` cluster contexts with explicit flag/environment overrides for automation
 - Node registration, heartbeats, draining, and balanced placement
 - Allocation lifecycle management, health checks, restart handling, diagnostics, and filterable runtime queries
 - Rolling and recreate update strategies
-- Container resource limits, dynamic host ports, and persistent local volumes
+- Container resource limits, explicit host-port reservations, and persistent local volumes
 - Built-in DNS discovery for healthy job allocations and optional WireGuard namespace networking
 - Namespace-scoped, write-only secrets with encrypted persistence and memory-backed delivery
 - A Next.js operations dashboard for cluster health, job/allocation diagnostics, node draining, secret management, and opt-in job writes
