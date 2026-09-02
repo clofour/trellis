@@ -136,9 +136,10 @@ type SecretRefSpec struct {
 	Mode   uint32       `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
-// PortSpec reserves the single port used directly by a host-networked task.
+// PortSpec reserves the single user-facing port used directly by a host-networked task.
 type PortSpec struct {
-	Port int `yaml:"port" json:"port"`
+	Port     int `yaml:"port" json:"port"`
+	HostPort int `yaml:"-" json:"-"`
 }
 
 type ResourcesSpec struct {
