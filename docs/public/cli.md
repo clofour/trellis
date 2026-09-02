@@ -147,18 +147,27 @@ Use `--wait` when a script should not continue until the job resource has disapp
 trellisctl jobs delete web --wait --timeout 2m
 ```
 
-## Node maintenance without UUID copying
+## Inspect and maintain nodes without UUID copying
 
-`nodes list` puts the human-meaningful address first and shows a short ID. Drain, undrain, and remove accept any of:
+`nodes list` puts the human-meaningful address first, shows a short ID, and formats CPU/memory for humans. When placement depends on a node's labels or advertised host volumes, inspect that node directly:
+
+```sh
+trellisctl nodes status worker-2
+```
+
+`nodes status` shows the full ID, scheduling state, version, CPU/memory capacity, last heartbeat, labels, and advertised host-volume names. Add `--output json` when automation needs the API representation.
+
+Node references for status, drain, undrain, and remove may be any of:
 
 - the node host, such as `worker-2`
-- the displayed address, such as `worker-2:8128`
+- the displayed address, such as `worker-2:8127`
 - a unique UUID prefix
 - the complete UUID
 
 For example:
 
 ```sh
+trellisctl nodes status worker-2
 trellisctl nodes drain worker-2
 trellisctl nodes undrain worker-2
 trellisctl nodes remove 9cf13a2b
