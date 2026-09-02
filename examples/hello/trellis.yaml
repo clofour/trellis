@@ -1,13 +1,12 @@
+# yaml-language-server: $schema=../../schemas/trellis-job.schema.json
 name: hello
 namespace: default
 task_groups:
-  - name: web
+  - name: app
     count: 1
     tasks:
-      - name: nginx
-        image: docker.io/library/nginx:1.27-alpine
-        env:
-          TUTORIAL_STEP: first
+      - name: tutorial
+        image: ghcr.io/clofour/trellis-tutorial:v1
         resources:
           cpu: 100
           memory: 64MiB
