@@ -161,6 +161,9 @@ export function formatPlanValue(path: string, value: unknown): string {
   if (typeof value === "number" && isDurationPath(path)) {
     return formatNanoseconds(value);
   }
+  if (typeof value === "number" && isMemoryPath(path)) {
+    return formatBytes(value);
+  }
   if (typeof value === "string") return JSON.stringify(value);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value);
@@ -172,6 +175,10 @@ function isDurationPath(path: string) {
     path.endsWith(".interval") ||
     path.endsWith(".timeout")
   );
+}
+
+function isMemoryPath(path: string) {
+  return path.endsWith(".resources.memory");
 }
 
 function formatNanoseconds(value: number): string {
@@ -193,4 +200,21 @@ function formatNanoseconds(value: number): string {
     result += `${amount}${suffix}`;
   }
   return value < 0 ? `-${result}` : result;
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return String(value);
+  if (value === 0) return "0B";
+  const units: Array<[number, string]> = [
+    [2 ** 40, "TiB"],
+    [2 ** 30, "GiB"],
+    [2 ** 20, "MiB"],
+    [2 ** 10, "KiB"],
+  ];
+  for (const [size, suffix] of units) {
+    if (value >= size && value % size === 0) {
+      return `${value / size}${suffix}`;
+    }
+  }
+  return `${value}B`;
 }
