@@ -1,58 +1,467 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job-api.schema.json",
-  "title": "Trellis canonical JSON JobSpec",
-  "description": "Canonical JSON representation accepted by the Trellis API. Human authoring syntaxes must convert quantities and durations before submission.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["name", "namespace", "task_groups"],
-  "properties": {
-    "name": { "$ref": "#/$defs/identifier" },
-    "namespace": { "$ref": "#/$defs/identifier" },
-    "task_groups": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/taskGroup" } }
-  },
   "$defs": {
-    "identifier": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$" },
-    "duration": { "type": "integer", "minimum": 0, "description": "Nanoseconds." },
-    "apiAccess": {
-      "type": "object",
+    "APIAccessSpec": {
       "additionalProperties": false,
-      "required": ["scope", "access"],
       "properties": {
-        "scope": { "type": "string", "enum": ["namespace", "cluster"] },
-        "access": { "type": "string", "enum": ["read", "write"] }
-      }
+        "access": {
+          "enum": [
+            "read",
+            "write"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "namespace",
+            "cluster"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "access"
+      ],
+      "type": "object"
     },
-    "taskGroup": {
-      "type": "object",
+    "ConstraintSpec": {
       "additionalProperties": false,
-      "required": ["name", "count", "tasks"],
       "properties": {
-        "name": { "$ref": "#/$defs/identifier" },
-        "count": { "type": "integer", "minimum": 1 },
-        "runtime": { "type": "string", "enum": ["runc", "runsc", ""] },
-        "api_access": { "$ref": "#/$defs/apiAccess" },
-        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
-        "constraints": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["attribute", "value"], "properties": { "attribute": { "type": "string" }, "value": { "type": "string" } } } },
-        "restart": { "type": "object", "additionalProperties": false, "required": ["max_restarts", "window"], "properties": { "max_restarts": { "type": "integer", "minimum": 0 }, "window": { "$ref": "#/$defs/duration" } } },
-        "update": { "type": "object", "additionalProperties": false, "required": ["strategy"], "properties": { "strategy": { "type": "string", "enum": ["recreate", "rolling", ""] }, "max_parallel": { "type": "integer", "minimum": 0 } } },
-        "tasks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/task" } }
-      }
+        "attribute": {
+          "pattern": "^[a-zA-Z][a-zA-Z0-9._/-]{0,62}$",
+          "type": "string"
+        },
+        "value": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "attribute",
+        "value"
+      ],
+      "type": "object"
     },
-    "task": {
-      "type": "object",
+    "HealthCheckSpec": {
       "additionalProperties": false,
-      "required": ["name", "image"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "http",
+                  "tcp"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "port": {
+                "minimum": 1
+              }
+            },
+            "required": [
+              "port"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "script"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "command"
+            ]
+          }
+        }
+      ],
       "properties": {
-        "name": { "$ref": "#/$defs/identifier" },
-        "image": { "type": "string", "minLength": 1 },
-        "env": { "type": "object", "additionalProperties": { "type": "string" } },
-        "resources": { "type": "object", "additionalProperties": false, "required": ["cpu", "memory"], "properties": { "cpu": { "type": "integer", "minimum": 0 }, "memory": { "type": "integer", "minimum": 0, "description": "Bytes." } } },
-        "networking": { "type": "object", "additionalProperties": false, "properties": { "mode": { "type": "string", "enum": ["", "isolated", "host", "namespace"] }, "ports": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["port"], "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } } } } } },
-        "health_check": { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "type": "string", "enum": ["http", "tcp", "script"] }, "port": { "type": "integer", "minimum": 0, "maximum": 65535 }, "path": { "type": "string" }, "command": { "type": "array", "items": { "type": "string" } }, "interval": { "$ref": "#/$defs/duration" }, "timeout": { "$ref": "#/$defs/duration" }, "threshold": { "type": "integer", "minimum": 0 } } },
-        "volumes": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "path"], "properties": { "name": { "$ref": "#/$defs/identifier" }, "path": { "type": "string" }, "host_volume": { "$ref": "#/$defs/identifier" }, "read_only": { "type": "boolean" } } } },
-        "secrets": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "target"], "properties": { "name": { "$ref": "#/$defs/identifier" }, "target": { "type": "string", "enum": ["env", "file"] }, "env": { "type": "string" }, "path": { "type": "string" }, "mode": { "type": "integer", "minimum": 0 } } } }
-      }
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "interval": {
+          "description": "Nanoseconds.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "threshold": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timeout": {
+          "description": "Nanoseconds.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "enum": [
+            "http",
+            "tcp",
+            "script"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "PortSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "type": "object"
+    },
+    "ResourcesSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memory": {
+          "description": "Bytes.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "RestartPolicySpec": {
+      "additionalProperties": false,
+      "properties": {
+        "max_restarts": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "window": {
+          "description": "Nanoseconds.",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "type": "object"
+    },
+    "SecretRefSpec": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "const": "env"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "env"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "const": "file"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "env": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            0,
+            256,
+            384
+          ],
+          "type": "integer"
+        },
+        "name": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^/run/trellis-secrets/",
+          "type": "string"
+        },
+        "target": {
+          "enum": [
+            "env",
+            "file"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "target"
+      ],
+      "type": "object"
+    },
+    "TaskGroupSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "api_access": {
+          "$ref": "#/$defs/APIAccessSpec"
+        },
+        "constraints": {
+          "items": {
+            "$ref": "#/$defs/ConstraintSpec"
+          },
+          "type": "array"
+        },
+        "count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "labels": {
+          "additionalProperties": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "propertyNames": {
+            "pattern": "^[a-zA-Z][a-zA-Z0-9._/-]{0,62}$"
+          },
+          "type": "object"
+        },
+        "name": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+          "type": "string"
+        },
+        "restart": {
+          "$ref": "#/$defs/RestartPolicySpec"
+        },
+        "runtime": {
+          "enum": [
+            "",
+            "runc",
+            "runsc"
+          ],
+          "type": "string"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/TaskSpec"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "update": {
+          "$ref": "#/$defs/UpdateSpec"
+        }
+      },
+      "required": [
+        "name",
+        "count",
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "TaskNetworkingSpec": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "properties": {
+                "mode": {
+                  "const": "host"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            }
+          },
+          "then": {
+            "properties": {
+              "ports": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "",
+            "isolated",
+            "host",
+            "namespace"
+          ],
+          "type": "string"
+        },
+        "ports": {
+          "items": {
+            "$ref": "#/$defs/PortSpec"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "TaskSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "health_check": {
+          "$ref": "#/$defs/HealthCheckSpec"
+        },
+        "image": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+          "type": "string"
+        },
+        "networking": {
+          "$ref": "#/$defs/TaskNetworkingSpec"
+        },
+        "resources": {
+          "$ref": "#/$defs/ResourcesSpec"
+        },
+        "secrets": {
+          "items": {
+            "$ref": "#/$defs/SecretRefSpec"
+          },
+          "type": "array"
+        },
+        "volumes": {
+          "items": {
+            "$ref": "#/$defs/VolumeSpec"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "image"
+      ],
+      "type": "object"
+    },
+    "UpdateSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "max_parallel": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "strategy": {
+          "enum": [
+            "",
+            "recreate",
+            "rolling"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "VolumeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "host_volume": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^/",
+          "type": "string"
+        },
+        "read_only": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job-api.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Canonical JSON representation accepted by the Trellis API. Human authoring syntaxes must convert quantities and durations before submission.",
+  "properties": {
+    "name": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+      "type": "string"
+    },
+    "namespace": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+      "type": "string"
+    },
+    "task_groups": {
+      "items": {
+        "$ref": "#/$defs/TaskGroupSpec"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "namespace",
+    "task_groups"
+  ],
+  "title": "Trellis canonical JSON JobSpec",
+  "type": "object"
 }
