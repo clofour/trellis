@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOrchestratorStatus } from "@/hooks/use-api";
@@ -70,27 +69,25 @@ export function Sidebar() {
     allowAnyNamespace,
     setNamespace,
   } = useConfig();
-  const [namespaceInput, setNamespaceInput] = useState(namespace);
-
-  useEffect(() => {
-    setNamespaceInput(namespace);
-  }, [namespace]);
 
   const visibleNavigation = navigation.filter(
     (item) => !item.clusterOnly || apiAccess === "cluster",
   );
 
-  const commitNamespace = () => {
-    const candidate = namespaceInput.trim();
+  const commitNamespace = (value: string, input: HTMLInputElement) => {
+    const candidate = value.trim();
     if (!namespacePattern.test(candidate)) {
-      setNamespaceInput(namespace);
+      input.value = namespace;
       return;
     }
     if (!allowAnyNamespace && !namespaces.includes(candidate)) {
-      setNamespaceInput(namespace);
+      input.value = namespace;
       return;
     }
-    if (candidate === namespace) return;
+    if (candidate === namespace) {
+      input.value = namespace;
+      return;
+    }
     setNamespace(candidate);
     router.push("/");
   };
@@ -153,15 +150,16 @@ export function Sidebar() {
           {apiAccess === "cluster" && allowAnyNamespace ? (
             <>
               <input
+                key={namespace}
                 id="namespace-context"
                 list="namespace-context-options"
-                value={namespaceInput}
-                onChange={(event) => setNamespaceInput(event.target.value)}
-                onBlur={commitNamespace}
+                defaultValue={namespace}
+                onBlur={(event) => commitNamespace(event.currentTarget.value, event.currentTarget)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    commitNamespace();
+                    commitNamespace(event.currentTarget.value, event.currentTarget);
+                    event.currentTarget.blur();
                   }
                 }}
                 className="mt-1.5 w-full rounded-md border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-emerald-500/40"
