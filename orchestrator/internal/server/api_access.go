@@ -8,7 +8,7 @@ import (
 	"github.com/clofour/trellis/internal/spec"
 )
 
-func (s *Server) apiAccessToken(ctx context.Context, access *spec.APIAccessSpec, namespace string) (string, error) {
+func (s *Server) apiAccessToken(ctx context.Context, access *spec.APIAccessSpec, namespace, job, taskGroup string) (string, error) {
 	if access == nil {
 		return "", nil
 	}
@@ -18,9 +18,9 @@ func (s *Server) apiAccessToken(ctx context.Context, access *spec.APIAccessSpec,
 
 	scope := auth.AccessScope(access.Scope)
 	level := auth.AccessLevel(access.Access)
-	token, err := s.tokenManager.GetOrCreateToken(ctx, scope, level, namespace)
+	token, err := s.tokenManager.GetOrCreateWorkloadToken(ctx, scope, level, namespace, job, taskGroup)
 	if err != nil {
-		return "", fmt.Errorf("create %s/%s API token: %w", access.Scope, access.Access, err)
+		return "", fmt.Errorf("create %s/%s API token for %s/%s/%s: %w", access.Scope, access.Access, namespace, job, taskGroup, err)
 	}
 	return token, nil
 }
