@@ -2,7 +2,7 @@
 
 The examples form a learning path, not a flat catalog. Start with one conceptually small workload and add operational concerns only after the preceding behavior is familiar. Every `trellis.yaml` uses the same YAML job-manifest schema accepted by the CLI and dashboard, and every manifest is parsed and validated by the test suite.
 
-Complete [Getting Started](../docs/public/getting-started.md) first, or follow the expanded [learning path](../docs/public/learning-path.md). Commands below assume the CLI is connected to the manifest's namespace.
+Complete [Getting Started](../docs/public/getting-started.md) first, or follow the expanded [learning path](../docs/public/learning-path.md). Commands below assume `trellisctl` is connected to the manifest's namespace.
 
 ## Beginner
 
@@ -16,7 +16,7 @@ The first workload deliberately omits ports, health-check settings, secrets, vol
 
 | Order | Example | Adds | Prerequisites |
 | --- | --- | --- | --- |
-| 2 | [`web-service/`](web-service/) | Two replicas, task-level host networking, a dynamic port, HTTP health check, and rolling replacement. | Spare capacity for old/new overlap. |
+| 2 | [`web-service/`](web-service/) | Two replicas, task-level host networking, a fixed host port, HTTP health check, and rolling replacement. | At least two nodes; another compatible node for old/new overlap during a rolling update. |
 | 3 | [`secrets/`](secrets/) | Namespace-scoped secrets delivered as an environment variable and a file. | Shared node secrets-encryption key. |
 | 4 | [`volumes/`](volumes/) | Allocation-local scratch storage, advertised host volumes, and placement constraints. | Prepared node path, label, and volume advertisement. |
 | 5 | [`sidecar/`](sidecar/) | Two tasks deliberately coupled in one placement/scaling/lifecycle unit. | Two schedulable nodes for two fixed host ports; a custom nginx image for useful metrics. |
@@ -28,7 +28,7 @@ These examples teach reusable primitives. Apply one only after reading its READM
 | Example | Composes | Why it is advanced |
 | --- | --- | --- |
 | [`api-access/`](api-access/) | Namespace-scoped API access and a controller loop. | The whole task group receives a credential and must be trusted. |
-| [`deployment-strategies/`](deployment-strategies/) | Rolling, blue/green, and weighted canary releases. | Blue/green and canary routing require an external proxy/controller and release observability. |
+| [`deployment-strategies/`](deployment-strategies/) | Rolling, blue/green, and weighted canary releases. | Blue/green and canary routing require an external proxy/controller, enough nodes for fixed listeners, and release observability. |
 | [`wordpress/`](wordpress/) | Multiple tasks, host networking, secrets, host volumes, health checks, and restart policy. | It is a coupled development stack, not a production topology. |
 | [`patroni/`](patroni/) | WireGuard, runsc, discovery, secrets, local volumes, and rolling replacement. | It is an architecture skeleton that still requires a real DCS, routing, fencing, backups, and failure testing. |
 
@@ -39,12 +39,12 @@ These are compositions of ordinary Trellis primitives, not new resource types. T
 From the repository root:
 
 ```sh
-trellis jobs validate --file examples/hello/trellis.yaml
-trellis jobs diff --file examples/hello/trellis.yaml
-trellis jobs apply --file examples/hello/trellis.yaml --wait
-trellis jobs status hello
-trellis jobs logs hello --tail 100
-trellis jobs delete hello --wait
+trellisctl jobs validate --file examples/hello/trellis.yaml
+trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --file examples/hello/trellis.yaml --wait
+trellisctl jobs status hello
+trellisctl jobs logs hello --tail 100
+trellisctl jobs delete hello --wait
 ```
 
 For a manifest in another namespace, select or create a context for that namespace, or pass `--namespace`. The CLI rejects a mismatch between the effective namespace and the manifest instead of silently applying to a different scope.
