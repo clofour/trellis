@@ -34,7 +34,7 @@ func TestValidate(t *testing.T) {
 	}
 
 	withExtensions := &JobSpec{Namespace: "default", Name: "proxy", TaskGroups: []TaskGroupSpec{{
-		Name: "proxy", Count: 1, APIAccess: true,
+		Name: "proxy", Count: 1, APIAccess: APIAccessNamespace,
 		Labels: map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"},
 		Tasks:  []TaskSpec{{Name: "nginx", Image: "nginx:latest", Networking: &TaskNetworkingSpec{Mode: TaskNetworkHost}}},
 	}}}
