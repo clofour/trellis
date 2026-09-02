@@ -1,9 +1,13 @@
 package spec
 
 import (
+	"reflect"
+
 	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"
 )
+
+var byteSizeType = reflect.TypeOf(ByteSize(0))
 
 // ParseYAML decodes a YAML job specification.
 func ParseYAML(raw []byte) (*JobSpec, error) {
@@ -19,6 +23,7 @@ func ParseYAML(raw []byte) (*JobSpec, error) {
 		WeaklyTypedInput: true,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeDurationHookFunc(),
+			stringToByteSizeHook,
 		),
 		Result:  &job,
 		TagName: "yaml",
@@ -27,4 +32,11 @@ func ParseYAML(raw []byte) (*JobSpec, error) {
 		return nil, err
 	}
 	return job, decoder.Decode(data)
+}
+
+func stringToByteSizeHook(from reflect.Type, to reflect.Type, data any) (any, error) {
+	if from.Kind() != reflect.String || to != byteSizeType {
+		return data, nil
+	}
+	return ParseByteSize(data.(string))
 }
