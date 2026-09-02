@@ -76,11 +76,11 @@ export interface SecretMetadata {
   key_id: string;
 }
 
-// Job spec types. Keep these aligned with orchestrator/internal/spec/types.go.
-// time.Duration is encoded as nanoseconds by Go's JSON encoder; the dashboard
-// editor also accepts manifest-style strings such as "10s" and normalizes them
-// before submission.
+// time.Duration and memory byte counts are numbers in the JSON API. The YAML
+// editor also accepts human forms such as "10s" and "64MiB" and normalizes
+// them before submission.
 export type DurationValue = number | string;
+export type ByteSizeValue = number | string;
 
 export interface JobSpec {
   name: string;
@@ -160,7 +160,7 @@ export interface SecretRefSpec {
 
 export interface ResourcesSpec {
   cpu: number;
-  memory: number;
+  memory: ByteSizeValue;
 }
 
 export interface HealthCheckSpec {
