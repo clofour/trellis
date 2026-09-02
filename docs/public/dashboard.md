@@ -1,8 +1,10 @@
 # Operations dashboard
 
-The `ui/` directory is a Next.js operational dashboard for deployment progress, actionable failures, node maintenance, jobs, allocation diagnostics, and secrets. It follows the same [Trellis user model](user-model.md) and ready/converging/degraded job semantics as the CLI.
+The `ui/` directory is a Next.js operational dashboard for deployment progress, actionable failures, node maintenance, jobs, allocation diagnostics, and secrets. It follows the same [Trellis user model](user-model.md) and ready/converging/degraded job semantics as `trellisctl`.
 
-The Operations page prioritizes what needs attention and what is still changing before presenting resource inventories. Diagnostic links open the relevant allocation events and logs directly. Desired job state remains separate from runtime allocation lifecycle and health. When writes are enabled, job creation/editing uses the same YAML **job manifest** format accepted by `trellisctl jobs apply`; JSON is used only when the dashboard talks to the HTTP API.
+The Operations page prioritizes what needs attention and what is still changing before presenting resource inventories. Diagnostic links open the relevant allocation events and task logs directly. Desired job state remains separate from runtime allocation lifecycle and health. When writes are enabled, job creation/editing uses the same YAML **job manifest** format accepted by `trellisctl jobs apply`; JSON is used only when the dashboard talks to the HTTP API.
+
+The dashboard deliberately stays close to Trellis rather than adding application-platform abstractions. Applying a manifest is a two-step operation: **Review Plan** shows the semantic desired-state changes, then **Apply Manifest** performs the mutation. Changing the YAML after reviewing invalidates the plan. The manifest must explicitly name the active dashboard namespace; a mismatch is rejected rather than silently rewritten.
 
 ## Configure and run
 
@@ -34,6 +36,12 @@ With a **namespace credential**, the context is pinned to `TRELLIS_NAMESPACE` / 
 The setup script deploys the first-party dashboard with `api_access: cluster`, so it receives cluster authorization and can use the namespace selector. A dashboard intended only for its own namespace should instead use `api_access: namespace`.
 
 Read-only mode disables job apply/edit/delete actions, node drain actions, and secret changes in the UI. It does **not** reduce the authority of the underlying bearer token, so continue to protect a read-only dashboard that holds a cluster credential. `TRELLIS_ALLOW_WRITES` is a UI-side guard, not an authorization boundary.
+
+## Manifest and log ergonomics
+
+The editor accepts the same human YAML forms as `trellisctl`: Go-style durations such as `10s` and readable memory such as `64MiB`. Before submission those are normalized to the numeric JSON API representation. Existing numeric API values are formatted back into readable YAML when possible.
+
+Allocation logs are task-specific. An allocation containing one task selects it automatically. For a multi-task group, choose the task whose stream you want to inspect. This mirrors `trellisctl jobs logs JOB --task TASK` and avoids exposing internal runtime container IDs as a user-facing log selector.
 
 ## Cluster connection
 
