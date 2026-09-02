@@ -5,33 +5,52 @@ Operational commands use the vocabulary in the [Trellis user model](user-model.m
 ## Routine workflow
 
 ```sh
-trellis context current
-trellis jobs validate --file trellis.yaml
-trellis jobs diff --file trellis.yaml
-trellis jobs apply --file trellis.yaml --wait
-trellis jobs status NAME
-trellis jobs diagnose NAME
-trellis jobs logs NAME --tail 200
-trellis jobs delete NAME
+trellisctl context current
+trellisctl jobs validate --file trellis.yaml
+trellisctl jobs diff --file trellis.yaml
+trellisctl jobs apply --file trellis.yaml --wait
+trellisctl jobs status NAME
+trellisctl jobs diagnose NAME
+trellisctl jobs logs NAME --tail 200
+trellisctl jobs delete NAME
 ```
 
 Add `--output json` to list/status/secret commands for automation. JSON is the API/automation representation; human-authored jobs remain YAML manifests.
 
+## Add a node
+
+Run the same setup script on the new Debian/Ubuntu machine. When prompted:
+
+1. choose an advertise address reachable by the existing nodes;
+2. answer **yes** to **Join an existing cluster?**;
+3. enter an existing node's `host:8128` address;
+4. enter the existing cluster token when prompted. The token input is not echoed.
+
+The cluster token is the value stored in `/etc/trellis/trellis.env` on an existing node. Treat it as an administrator credential and transfer it over a secure channel rather than placing it in shell history.
+
+After the new daemon starts, verify membership from an existing CLI context:
+
+```sh
+trellisctl nodes list
+```
+
+A joining node must use the existing cluster token; creating a second independent token does not create a shared cluster.
+
 ## Drain and maintenance
 
-`trellis nodes drain NODE` prevents new placement and migrates allocations. `NODE` may be the host/address displayed by `nodes list`, a unique UUID prefix, or a complete UUID. Wait until workloads have healthy replacements before maintenance. `trellis nodes undrain NODE` re-enables scheduling. `nodes remove NODE` permanently removes a node from the cluster and is different from draining.
+`trellisctl nodes drain NODE` prevents new placement and migrates allocations. `NODE` may be the host/address displayed by `nodes list`, a unique UUID prefix, or a complete UUID. Wait until workloads have healthy replacements before maintenance. `trellisctl nodes undrain NODE` re-enables scheduling. `nodes remove NODE` permanently removes a node from the cluster and is different from draining.
 
 ## Advanced control-plane maintenance
 
-Trellis uses Raft internally. If an operator deliberately needs to move control-plane leadership before maintenance, the advanced command `trellis nodes transfer-leadership` requests a transfer to another voter. It is intentionally hidden from normal CLI help because workload operations should not require understanding Raft leadership.
+Trellis uses Raft internally. If an operator deliberately needs to move control-plane leadership before maintenance, the advanced command `trellisctl nodes transfer-leadership` requests a transfer to another voter. It is intentionally hidden from normal CLI help because workload operations should not require understanding Raft leadership.
 
 Preserve quorum: operate an odd number of Raft voters and avoid removing several members together.
 
 ## Backups
 
 ```sh
-trellis backup create --file trellis-backup.json
-trellis backup restore trellis-backup.json
+trellisctl backup create --file trellis-backup.json
+trellisctl backup restore trellis-backup.json
 ```
 
 Backups contain desired jobs and encrypted secret records, not allocations, container images, local volume data, TLS private keys, or the secret encryption key. Restores schedule fresh allocations. Secure and separately back up the 32-byte secrets key configured with `--secrets-key`; encrypted records are unusable without it.
@@ -39,18 +58,18 @@ Backups contain desired jobs and encrypted secret records, not allocations, cont
 ## Secrets
 
 ```sh
-printf %s 'value' | trellis --namespace default secrets set db-password --stdin
-trellis --namespace default secrets describe db-password
-trellis --namespace default secrets delete db-password
+printf %s 'value' | trellisctl --namespace default secrets set db-password --stdin
+trellisctl --namespace default secrets describe db-password
+trellisctl --namespace default secrets delete db-password
 ```
 
 Use `--expected-version N` for compare-and-swap (`0` means create only). Values are capped at 65,536 bytes. Rotation affects newly started allocations, so apply a workload revision or replace the consuming allocations afterward.
 
 ## Observability
 
-The control plane exposes Prometheus metrics at `/metrics`. Job status and allocation events explain lifecycle transitions; logs proxy the node's allocation logs. Monitor leader availability, unhealthy/draining nodes, desired-versus-running/healthy counts, reconciliation latency, retries, and disk capacity for Raft, containerd, and volumes.
+The control plane exposes Prometheus metrics at `/metrics`. Job status and allocation events explain lifecycle transitions; logs proxy per-task allocation logs. Monitor leader availability, unhealthy/draining nodes, desired-versus-running/healthy counts, reconciliation latency, retries, and disk capacity for Raft, containerd, and volumes.
 
-For normal workload diagnosis, start with `jobs status`. `ready`, `converging`, and `degraded` summarize desired-versus-observed state without collapsing allocation lifecycle and health. `jobs diagnose` then surfaces only the allocations that need attention, including reason/message, retry timing, and attempt count. `jobs logs NAME` reads matching allocation logs without requiring a full allocation ID.
+For normal workload diagnosis, start with `jobs status`. `ready`, `converging`, and `degraded` summarize desired-versus-observed state without collapsing allocation lifecycle and health. `jobs diagnose` then surfaces only the allocations that need attention, including reason/message, retry timing, and attempt count. `jobs logs NAME` reads matching task streams without requiring full internal runtime IDs.
 
 ## Networking and TLS
 
