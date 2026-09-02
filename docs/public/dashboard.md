@@ -50,7 +50,7 @@ Selecting read-write mode instead gives the dashboard `cluster/write` and sets `
 
 With namespace scope, the namespace selector is pinned to the credential's namespace. With cluster scope, the selector can switch namespaces subject to `TRELLIS_NAMESPACES` when configured.
 
-Secret management is an administrative mutation surface and therefore requires cluster/write authorization. A read-only dashboard may still show general cluster/job/allocation state without possessing that authority.
+Secret values are never readable through the API. `cluster/read` may list and inspect secret metadata, so the default read-only dashboard can render the Secrets page without holding mutation authority. Creating, rotating, or deleting a secret requires `cluster/write`.
 
 ## Manifest editing
 
