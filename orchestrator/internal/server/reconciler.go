@@ -322,8 +322,9 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 				return fmt.Errorf("create namespace token: %w", err)
 			}
 			request.EnvOverrides = map[string]string{
-				"TRELLIS_TOKEN": token,
-				"TRELLIS_ADDR":  s.serverAddr,
+				"TRELLIS_TOKEN":     token,
+				"TRELLIS_ADDR":      s.serverAddr,
+				"TRELLIS_NAMESPACE": alloc.Namespace,
 			}
 			if caCert, _, caErr := s.ClusterCA(); caErr == nil && caCert != "" {
 				request.EnvOverrides["TRELLIS_CA_CERT"] = caCert
