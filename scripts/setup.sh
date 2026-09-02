@@ -249,7 +249,7 @@ if [ ! -d "$operator_config_home" ]; then
     install -d -m 0700 -o "$operator_user" -g "$operator_group" "$operator_config_home"
 fi
 HOME="$operator_home" XDG_CONFIG_HOME="$operator_config_home" \
-    "${INSTALL_DIR}/trellisctl" --cluster-token "$operator_token" --namespace default context save local --use >/dev/null
+    "${INSTALL_DIR}/trellisctl" --token "$operator_token" --namespace default context save local --use >/dev/null
 if [ "$operator_user" != "root" ]; then
     chown -R "${operator_user}:${operator_group}" "${operator_config_home}/trellis"
 fi
@@ -310,7 +310,7 @@ EOF
     info "Deploying dashboard as ${ui_namespace}/trellis-dashboard..."
     dashboard_applied=false
     for attempt in $(seq 1 30); do
-        if "${INSTALL_DIR}/trellisctl" --cluster-token "$cluster_token" jobs apply --file "$dashboard_manifest" >/dev/null 2>&1; then
+        if "${INSTALL_DIR}/trellisctl" --token "$cluster_token" jobs apply --file "$dashboard_manifest" >/dev/null 2>&1; then
             dashboard_applied=true
             break
         fi
