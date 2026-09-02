@@ -50,15 +50,15 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 }
 
-func TestWorkloadTokenIsStablePerTaskGroup(t *testing.T) {
+func TestWorkloadTokenCarriesWorkloadKind(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewTokenManager(memStore{}, "test")
 
-	token1, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme", "api", "web")
+	token1, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme")
 	if err != nil {
 		t.Fatal(err)
 	}
-	token2, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme", "api", "web")
+	token2, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,20 +69,12 @@ func TestWorkloadTokenIsStablePerTaskGroup(t *testing.T) {
 		t.Fatalf("workload token has unexpected prefix: %q", token1)
 	}
 
-	otherGroup, err := mgr.GetOrCreateWorkloadToken(ctx, AccessNamespace, AccessRead, "acme", "api", "worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if otherGroup == token1 {
-		t.Fatal("different task groups must not share workload credentials")
-	}
-
 	saved, err := mgr.ValidateToken(ctx, token1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved == nil || saved.Subject == nil || saved.Subject.Namespace != "acme" || saved.Subject.Job != "api" || saved.Subject.TaskGroup != "web" {
-		t.Fatalf("unexpected workload subject: %#v", saved)
+	if saved == nil || saved.Kind != CredentialWorkload || saved.Scope != AccessNamespace || saved.Access != AccessRead || saved.Namespace != "acme" {
+		t.Fatalf("unexpected workload principal: %#v", saved)
 	}
 }
 
@@ -90,7 +82,7 @@ func TestPrincipalValidation(t *testing.T) {
 	for _, principal := range []Principal{
 		{Kind: CredentialOperator, Scope: AccessNamespace, Access: AccessRead},
 		{Kind: CredentialOperator, Scope: AccessCluster, Access: AccessWrite, Namespace: "acme"},
-		{Kind: CredentialWorkload, Scope: AccessNamespace, Access: AccessRead, Namespace: "acme"},
+		{Kind: CredentialOperator, Scope: AccessNamespace, Access: AccessRead, Namespace: "acme", Subject: &CredentialSubject{Namespace: "acme", Job: "api", TaskGroup: "web"}},
 		{Kind: CredentialWorkload, Scope: AccessNamespace, Access: AccessRead, Namespace: "other", Subject: &CredentialSubject{Namespace: "acme", Job: "api", TaskGroup: "web"}},
 	} {
 		if err := principal.Validate(); err == nil {
