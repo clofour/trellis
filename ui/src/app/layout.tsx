@@ -9,6 +9,7 @@ import {
   getClusterName,
   getConfiguredNamespaces,
   getDefaultNamespace,
+  hasConfiguredNamespaceAllowlist,
 } from "@/lib/orchestrator";
 import "./globals.css";
 
@@ -36,6 +37,7 @@ export default function RootLayout({
   const clusterName = getClusterName();
   const namespaces = getConfiguredNamespaces();
   const defaultNamespace = getDefaultNamespace();
+  const allowAnyNamespace = !hasConfiguredNamespaceAllowlist();
   return (
     <html
       lang="en"
@@ -47,6 +49,7 @@ export default function RootLayout({
           clusterName={clusterName}
           defaultNamespace={defaultNamespace}
           namespaces={namespaces}
+          allowAnyNamespace={allowAnyNamespace}
         >
           <Sidebar />
           <main className="flex-1 overflow-y-auto">
