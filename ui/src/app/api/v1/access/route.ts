@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
-import { detectDashboardAPIAccess } from "@/lib/orchestrator";
+import { getDashboardCredentialInfo } from "@/lib/orchestrator";
 
 export async function GET() {
-  return NextResponse.json({ api_access: await detectDashboardAPIAccess() });
+  try {
+    return NextResponse.json(await getDashboardCredentialInfo());
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to inspect dashboard credential" },
+      { status: 502 },
+    );
+  }
 }
