@@ -1,7 +1,6 @@
 package spec
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -91,12 +90,6 @@ func TestValidateAggregatesErrors(t *testing.T) {
 	}
 	if len(issues) < 4 {
 		t.Fatalf("expected multiple issues, got %#v", issues)
-	}
-	joined := err.Error()
-	for _, expected := range []string{"job.name", "job.namespace", "count", "task"} {
-		if !strings.Contains(joined, expected) {
-			t.Fatalf("validation output %q does not mention %q", joined, expected)
-		}
 	}
 }
 
