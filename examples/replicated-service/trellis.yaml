@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schemas/trellis-job.schema.json
+name: replicated-service
+namespace: default
+task_groups:
+  - name: web
+    count: 2
+    tasks:
+      - name: tutorial
+        image: ghcr.io/clofour/trellis-tutorial:v1
+        networking:
+          mode: host
+          ports:
+            - port: 8080
+        resources:
+          cpu: 100
+          memory: 64MiB
+        health_check:
+          type: http
+          port: 8080
+          path: /health
+          interval: 5s
+          timeout: 2s
+          threshold: 2
