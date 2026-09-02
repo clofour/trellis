@@ -62,6 +62,8 @@ func TestPrintNodeStatusShowsPlacementMetadata(t *testing.T) {
 		LastHeartbeat: time.Date(2026, 9, 2, 15, 0, 0, 0, time.UTC),
 		CPU:           4000,
 		Memory:        8 << 30,
+		OS:            "linux",
+		Arch:          "amd64",
 		Labels:        map[string]string{"zone": "a", "storage": "fast"},
 		Volumes:       []string{"data", "cache"},
 		Version:       "v0.1.0",
@@ -73,6 +75,7 @@ func TestPrintNodeStatusShowsPlacementMetadata(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"Node: node-a:8128",
+		"Platform: linux/amd64",
 		"CPU: 4000m",
 		"Memory: 8.0 GiB",
 		"  storage=fast",
