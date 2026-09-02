@@ -58,6 +58,20 @@ func TestPlanRejectsAPIAccessAboveCallerAuthority(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsAPIAccessAboveCallerAuthority(t *testing.T) {
+	body := `{"spec":{"name":"demo","namespace":"team","task_groups":[{"name":"web","count":1,"api_access":{"scope":"cluster","access":"write"},"tasks":[{"name":"app","image":"example.invalid/app:1"}]}]}}`
+	control := &Server{}
+	e := echo.New()
+	NewHandler(control).Register(e)
+
+	req := scopedRequest(t, http.MethodPost, "/v1/jobs", body, auth.AccessNamespace, auth.AccessWrite, "team")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
 func TestClusterReadCanReadSecretMetadataButCannotMutateSecrets(t *testing.T) {
 	control := &Server{}
 	e := echo.New()
