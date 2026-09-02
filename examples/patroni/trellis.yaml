@@ -4,7 +4,9 @@ task_groups:
   - name: postgres
     count: 3
     runtime: runsc
-    api_access: namespace
+    api_access:
+      scope: namespace
+      access: read
     labels:
       service: patroni
       role: database
