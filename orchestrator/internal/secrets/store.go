@@ -52,7 +52,7 @@ type record struct {
 
 // Store encrypts secret values before persisting them in state storage.
 type Store struct {
-	state   state.StateStore
+	state   state.Store
 	cluster string
 	keyID   string
 	aead    cipher.AEAD
@@ -60,7 +60,7 @@ type Store struct {
 }
 
 // NewStore configures AES-256-GCM encryption. key must contain exactly 32 bytes.
-func NewStore(store state.StateStore, cluster, keyID string, key []byte) (*Store, error) {
+func NewStore(store state.Store, cluster, keyID string, key []byte) (*Store, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("secrets key must be exactly 32 bytes")
 	}

@@ -40,7 +40,7 @@ type ClusterJoiner interface {
 	LeadershipTransfer() error
 }
 
-type desiredStateStore interface {
+type desiredStore interface {
 	BackupDesired(cluster string) (*state.DesiredSnapshot, error)
 	RestoreDesired(cluster string, snapshot *state.DesiredSnapshot) error
 }
@@ -62,7 +62,7 @@ type Server struct {
 	serverAddr   string
 	clusterName  string
 	joiner       ClusterJoiner
-	backupStore  desiredStateStore
+	backupStore  desiredStore
 	clientTLS    *tls.Config
 	// Locking contract:
 	//   - mu protects the in-memory cluster, node, job, allocation, epoch, and
@@ -148,7 +148,7 @@ func (s *Server) AllocationLogsForNamespace(ctx context.Context, namespace, id s
 	s.mu.RLock()
 	var found *Allocation
 	for _, alloc := range s.allocations {
-		if alloc.AllocationID() == id && alloc.Namespace == namespace {
+		if alloc.ID == id && alloc.Namespace == namespace {
 			found = alloc
 			break
 		}
@@ -240,42 +240,21 @@ type Job struct {
 	ContentHashes map[string]string `json:"content_hashes,omitempty"`
 }
 
-// AllocationStatus is the legacy allocation state representation.
-type AllocationStatus string
-
-const (
-	// AllocationStatusPending indicates that an allocation awaits execution.
-	AllocationStatusPending AllocationStatus = "pending"
-	// AllocationStatusHealthy indicates that an allocation passed health checks.
-	AllocationStatusHealthy AllocationStatus = "healthy"
-	// AllocationStatusUnhealthy indicates that an allocation failed health checks.
-	AllocationStatusUnhealthy AllocationStatus = "unhealthy"
-)
-
 // Allocation contains desired and observed allocation state.
 type Allocation struct {
 	mu            sync.Mutex
 	Namespace     string
 	JobName       string
 	TaskGroupName string
-	// ID is the durable scheduler identity. Name is retained for decoding state
-	// written before allocation IDs were explicit.
-	ID          string `json:"allocation_id,omitempty"`
-	Name        string `json:"name,omitempty"`
-	Generation  uint64 `json:"generation"`
-	JobRevision int    `json:"job_revision"`
-	Tasks       []spec.TaskSpec
-	// Task is retained only to reload allocations written by older versions.
-	Task *spec.TaskSpec `json:",omitempty"`
-	// Status is a compatibility projection for old clients and old persisted
-	// records. New code makes decisions from Phase and Health.
-	Status AllocationStatus `json:"status,omitempty"`
-	Phase  lifecycle.Phase  `json:"phase,omitempty"`
-	Health lifecycle.Health `json:"health,omitempty"`
+	ID            string `json:"allocation_id"`
+	Generation    uint64 `json:"generation"`
+	JobRevision   int    `json:"job_revision"`
+	Tasks         []spec.TaskSpec
+	Phase         lifecycle.Phase  `json:"phase"`
+	Health        lifecycle.Health `json:"health"`
 	lifecycle.Diagnostic
-	Node     *Node
-	Revision int               `json:"revision,omitempty"`
-	Ports    []api.PortMapping `json:"ports,omitempty"`
+	Node  *Node
+	Ports []api.PortMapping `json:"ports,omitempty"`
 	// Draining marks an allocation whose job revision is superseded under
 	// a rolling update strategy. Draining allocations are not restarted on
 	// failure and are not counted toward the desired count.
@@ -285,48 +264,8 @@ type Allocation struct {
 	Events *lifecycle.RingBuffer `json:"-"`
 }
 
-// AllocationID returns the stable allocation identifier.
-func (a *Allocation) AllocationID() string {
-	if a.ID != "" {
-		return a.ID
-	}
-	return a.Name
-}
-
-func (a *Allocation) normalize(now time.Time) {
-	if a.ID == "" {
-		a.ID = a.Name
-	}
-	if a.Name == "" {
-		a.Name = a.ID
-	}
-	if a.Generation == 0 {
-		a.Generation = 1
-	}
-	if a.JobRevision == 0 {
-		a.JobRevision = a.Revision
-	}
-	if a.Revision == 0 {
-		a.Revision = a.JobRevision
-	}
-	if !a.Phase.Valid() {
-		a.Phase, a.Health = lifecycle.Legacy(string(a.Status))
-	}
-	if !a.Health.Valid() {
-		a.Health = lifecycle.HealthUnknown
-	}
-	if a.CreatedAt.IsZero() {
-		a.CreatedAt = now
-	}
-	if a.TransitionedAt.IsZero() {
-		a.TransitionedAt = a.CreatedAt
-	}
-	a.Status = AllocationStatus(lifecycle.CompatibilityStatus(a.Phase, a.Health))
-}
-
 // Transition records a validated allocation phase change.
 func (a *Allocation) Transition(to lifecycle.Phase, now time.Time, reason, message string) error {
-	a.normalize(now)
 	if err := lifecycle.Transition(a.Phase, to); err != nil {
 		return err
 	}
@@ -339,7 +278,6 @@ func (a *Allocation) Transition(to lifecycle.Phase, now time.Time, reason, messa
 		a.TransitionedAt = now
 	}
 	a.Reason, a.Message = reason, message
-	a.Status = AllocationStatus(lifecycle.CompatibilityStatus(a.Phase, a.Health))
 	return nil
 }
 
@@ -349,41 +287,11 @@ func (a *Allocation) SetHealth(health lifecycle.Health) error {
 		return fmt.Errorf("invalid allocation health %q", health)
 	}
 	a.Health = health
-	a.Status = AllocationStatus(lifecycle.CompatibilityStatus(a.Phase, health))
-	return nil
-}
-
-// UnmarshalJSON decodes allocation state with legacy compatibility.
-func (a *Allocation) UnmarshalJSON(data []byte) error {
-	type plain Allocation
-	var decoded plain
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	// Assign fields individually to avoid copying the sync.Mutex.
-	a.Namespace = decoded.Namespace
-	a.JobName = decoded.JobName
-	a.TaskGroupName = decoded.TaskGroupName
-	a.ID = decoded.ID
-	a.Name = decoded.Name
-	a.Generation = decoded.Generation
-	a.JobRevision = decoded.JobRevision
-	a.Tasks = decoded.Tasks
-	a.Task = decoded.Task
-	a.Status = decoded.Status
-	a.Phase = decoded.Phase
-	a.Health = decoded.Health
-	a.Diagnostic = decoded.Diagnostic
-	a.Node = decoded.Node
-	a.Revision = decoded.Revision
-	a.Ports = decoded.Ports
-	a.Draining = decoded.Draining
-	a.normalize(time.Now().UTC())
 	return nil
 }
 
 // NewServer constructs an orchestrator server.
-func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController, store state.StateStore, cluster, serverAddr string) *Server {
+func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateController, store state.Store, cluster, serverAddr string) *Server {
 	pool := netip.MustParsePrefix("10.64.0.0/10")
 	s := &Server{
 		log:          log.With("component", "server"),
@@ -399,7 +307,7 @@ func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateCont
 		clusterName:  cluster,
 		now:          time.Now,
 	}
-	s.backupStore, _ = store.(desiredStateStore)
+	s.backupStore, _ = store.(desiredStore)
 	return s
 }
 
@@ -587,7 +495,7 @@ func (s *Server) RegisterNode(ctx context.Context, nodeRegistration *NodeRegistr
 }
 
 // Heartbeat records a node heartbeat and allocation state.
-func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus, version string, volumes ...[]string) error {
+func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.AllocationStatus, version string, volumes []string) error {
 	s.mu.Lock()
 	node, ok := s.nodes[nodeID]
 	if !ok {
@@ -600,9 +508,7 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	}
 	node.LastHeartbeat = time.Now()
 	node.Version = version
-	if len(volumes) != 0 {
-		node.Volumes = append([]string(nil), volumes[0]...)
-	}
+	node.Volumes = append([]string(nil), volumes...)
 	owned := make([]*Allocation, 0)
 	for _, allocation := range s.allocations {
 		if allocation.Node == node {
@@ -623,10 +529,10 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	}
 	statuses := make(map[string]statusInfo, len(actual))
 	for _, a := range actual {
-		phase, health := a.Phase, a.Health
-		if !phase.Valid() || !health.Valid() {
-			phase, health = lifecycle.Legacy(a.Status)
+		if !a.Phase.Valid() || !a.Health.Valid() {
+			return fmt.Errorf("invalid allocation state for %s: phase=%q health=%q", a.ID, a.Phase, a.Health)
 		}
+		phase, health := a.Phase, a.Health
 		info := statuses[a.ID]
 		if info.Tasks == 0 {
 			info.Generation, info.Phase, info.Health = a.Generation, phase, health
@@ -649,9 +555,8 @@ func (s *Server) Heartbeat(ctx context.Context, nodeID uuid.UUID, actual []api.A
 	var changed []*Allocation
 	for _, a := range owned {
 		a.mu.Lock()
-		a.normalize(time.Now().UTC())
-		info, ok := statuses[a.AllocationID()]
-		if !ok || (info.Generation != 0 && info.Generation != a.Generation) {
+		info, ok := statuses[a.ID]
+		if !ok || info.Generation != a.Generation {
 			a.mu.Unlock()
 			continue // absence is not proof of loss or failure
 		}
@@ -688,7 +593,7 @@ func (s *Server) HeartbeatResponse(nodeID uuid.UUID) api.HeartbeatResponse {
 	for _, allocation := range allocations {
 		allocation.mu.Lock()
 		if allocation.Node != nil && allocation.Node.ID == nodeID && allocation.Phase != lifecycle.PhaseStopped && allocation.Phase != lifecycle.PhaseFailed && allocation.Phase != lifecycle.PhaseLost {
-			response.Desired = append(response.Desired, api.DesiredAllocation{ID: allocation.AllocationID(), Generation: allocation.Generation, Draining: allocation.Draining})
+			response.Desired = append(response.Desired, api.DesiredAllocation{ID: allocation.ID, Generation: allocation.Generation, Draining: allocation.Draining})
 		}
 		allocation.mu.Unlock()
 	}
@@ -793,7 +698,6 @@ func (s *Server) Reload(ctx context.Context) error {
 	}
 	allocations := make([]*Allocation, 0, len(allocationMap))
 	for _, allocation := range allocationMap {
-		allocation.normalize(time.Now().UTC())
 		if allocation.Node != nil {
 			allocation.Node = nodes[allocation.Node.ID]
 		}
@@ -875,8 +779,7 @@ func (s *Server) ListJobs(namespace string) api.JobListResponse {
 				a.mu.Unlock()
 				continue
 			}
-			a.normalize(time.Now().UTC())
-			ar := api.AllocationResponse{ID: a.AllocationID(), Group: a.TaskGroupName, Status: string(a.Status), Phase: a.Phase, Health: a.Health, Draining: a.Draining, Generation: a.Generation, JobRevision: a.JobRevision, CreatedAt: a.CreatedAt, LastTransitionAt: a.TransitionedAt, Reason: a.Reason, Message: a.Message, Attempt: a.Attempt, NextRetryAt: a.NextRetryAt}
+			ar := api.AllocationResponse{ID: a.ID, Group: a.TaskGroupName, Phase: a.Phase, Health: a.Health, Draining: a.Draining, Generation: a.Generation, JobRevision: a.JobRevision, CreatedAt: a.CreatedAt, LastTransitionAt: a.TransitionedAt, Reason: a.Reason, Message: a.Message, Attempt: a.Attempt, NextRetryAt: a.NextRetryAt}
 			if a.Node != nil {
 				ar.NodeID = a.Node.ID
 			}
@@ -913,8 +816,7 @@ func (s *Server) GetJob(namespace, name string) (*api.JobStatusResponse, bool) {
 			a.mu.Unlock()
 			continue
 		}
-		a.normalize(time.Now().UTC())
-		ar := api.AllocationResponse{ID: a.AllocationID(), Group: a.TaskGroupName, Status: string(a.Status), Phase: a.Phase, Health: a.Health, Draining: a.Draining, Generation: a.Generation, JobRevision: a.JobRevision, CreatedAt: a.CreatedAt, LastTransitionAt: a.TransitionedAt, Reason: a.Reason, Message: a.Message, Attempt: a.Attempt, NextRetryAt: a.NextRetryAt}
+		ar := api.AllocationResponse{ID: a.ID, Group: a.TaskGroupName, Phase: a.Phase, Health: a.Health, Draining: a.Draining, Generation: a.Generation, JobRevision: a.JobRevision, CreatedAt: a.CreatedAt, LastTransitionAt: a.TransitionedAt, Reason: a.Reason, Message: a.Message, Attempt: a.Attempt, NextRetryAt: a.NextRetryAt}
 		if a.Node != nil {
 			ar.NodeID = a.Node.ID
 		}
@@ -989,7 +891,6 @@ func (s *Server) refreshCatalog() {
 	namespaced := make(map[string][]catalog.ServiceInstance)
 	for _, a := range s.allocations {
 		a.mu.Lock()
-		a.normalize(time.Now().UTC())
 		if a.Phase != lifecycle.PhaseRunning || a.Health != lifecycle.HealthHealthy {
 			a.mu.Unlock()
 			continue
@@ -1009,7 +910,7 @@ func (s *Server) refreshCatalog() {
 			address = a.Node.Host
 		}
 		namespaced[a.Namespace] = append(namespaced[a.Namespace], catalog.ServiceInstance{
-			ID:      a.Name,
+			ID:      a.ID,
 			Job:     a.JobName,
 			Group:   a.TaskGroupName,
 			Address: address,

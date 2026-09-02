@@ -34,14 +34,14 @@ func RegisterMetrics(s *Server, reg prometheus.Registerer) *Metrics {
 type metricsCollector struct {
 	server *Server
 
-	allocationsDesc         *prometheus.Desc
-	nodesDesc               *prometheus.Desc
-	jobsDesc                *prometheus.Desc
-	nodeCPUCapacityDesc     *prometheus.Desc
-	nodeMemCapacityDesc     *prometheus.Desc
-	nodeCPUAllocatedDesc    *prometheus.Desc
-	nodeMemAllocatedDesc    *prometheus.Desc
-	nodeHeartbeatAgeDesc    *prometheus.Desc
+	allocationsDesc      *prometheus.Desc
+	nodesDesc            *prometheus.Desc
+	jobsDesc             *prometheus.Desc
+	nodeCPUCapacityDesc  *prometheus.Desc
+	nodeMemCapacityDesc  *prometheus.Desc
+	nodeCPUAllocatedDesc *prometheus.Desc
+	nodeMemAllocatedDesc *prometheus.Desc
+	nodeHeartbeatAgeDesc *prometheus.Desc
 }
 
 func newDescriptors() (

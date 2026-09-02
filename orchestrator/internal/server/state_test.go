@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/clofour/trellis/internal/lifecycle"
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
 )
@@ -26,7 +27,7 @@ func (m memoryStore) Put(_ context.Context, key string, value []byte) error {
 }
 func (m memoryStore) Delete(_ context.Context, key string) error { delete(m, key); return nil }
 
-var _ state.StateStore = memoryStore{}
+var _ state.Store = memoryStore{}
 
 func TestStateControllerRoundTripsDurableLeaderState(t *testing.T) {
 	ctx := context.Background()
@@ -42,7 +43,10 @@ func TestStateControllerRoundTripsDurableLeaderState(t *testing.T) {
 	if jobs["web"] == nil || jobs["web"].Revision != 3 {
 		t.Fatalf("unexpected jobs: %#v", jobs)
 	}
-	allocation := &Allocation{Name: "web-1", JobName: "web", Revision: 3}
+	allocation := &Allocation{ID: "web-1", JobName: "web", JobRevision: 3,
+		Generation: 1,
+		Phase:      lifecycle.PhasePlaced,
+		Health:     lifecycle.HealthUnknown}
 	if err := controller.PutAllocation(ctx, allocation); err != nil {
 		t.Fatal(err)
 	}

@@ -21,12 +21,12 @@ type TokenScope struct {
 
 // TokenManager creates and validates persisted namespace tokens.
 type TokenManager struct {
-	store   state.StateStore
+	store   state.Store
 	cluster string
 }
 
 // NewTokenManager creates a token manager backed by state storage.
-func NewTokenManager(store state.StateStore, cluster string) *TokenManager {
+func NewTokenManager(store state.Store, cluster string) *TokenManager {
 	return &TokenManager{store: store, cluster: cluster}
 }
 

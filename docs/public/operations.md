@@ -23,7 +23,7 @@ Add `--output json` to list/status/secret commands for automation. JSON is the A
 
 ## Advanced control-plane maintenance
 
-Trellis uses Raft internally. If an operator deliberately needs to move control-plane leadership before maintenance, the compatibility/advanced command `trellis nodes transfer-leadership` requests a transfer to another voter. It is intentionally hidden from normal CLI help because workload operations should not require understanding Raft leadership.
+Trellis uses Raft internally. If an operator deliberately needs to move control-plane leadership before maintenance, the advanced command `trellis nodes transfer-leadership` requests a transfer to another voter. It is intentionally hidden from normal CLI help because workload operations should not require understanding Raft leadership.
 
 Preserve quorum: operate an odd number of Raft voters and avoid removing several members together.
 

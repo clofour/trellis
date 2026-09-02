@@ -46,13 +46,11 @@ func TestReconcileRecreateStopsOldAllocations(t *testing.T) {
 	now := s.now()
 	for i := 0; i < 2; i++ {
 		a := &Allocation{
-			ID: "alloc-" + string(rune('a'+i)), Name: "alloc-" + string(rune('a'+i)),
+			ID:        "alloc-" + string(rune('a'+i)),
 			Namespace: "default", JobName: "web", TaskGroupName: "api",
 			Tasks: jobSpec.TaskGroups[0].Tasks, Node: node, Generation: 1,
 			JobRevision: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy,
-			Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
-		}
-		a.normalize(now)
+			Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 		s.allocations = append(s.allocations, a)
 	}
 
@@ -72,7 +70,7 @@ func TestReconcileRecreateStopsOldAllocations(t *testing.T) {
 	for _, a := range s.allocations {
 		a.mu.Lock()
 		if a.JobRevision == 1 && a.Phase != lifecycle.PhaseStopped && a.Phase != lifecycle.PhaseStopping {
-			t.Errorf("old allocation %s still in phase %s", a.Name, a.Phase)
+			t.Errorf("old allocation %s still in phase %s", a.ID, a.Phase)
 		}
 		a.mu.Unlock()
 	}
@@ -99,13 +97,11 @@ func TestReconcileRollingDrainsOldAllocations(t *testing.T) {
 	now := s.now()
 	for i := 0; i < 2; i++ {
 		a := &Allocation{
-			ID: "alloc-" + string(rune('a'+i)), Name: "alloc-" + string(rune('a'+i)),
+			ID:        "alloc-" + string(rune('a'+i)),
 			Namespace: "default", JobName: "web", TaskGroupName: "api",
 			Tasks: jobSpec.TaskGroups[0].Tasks, Node: node, Generation: 1,
 			JobRevision: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy,
-			Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
-		}
-		a.normalize(now)
+			Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 		s.allocations = append(s.allocations, a)
 	}
 
@@ -128,10 +124,10 @@ func TestReconcileRollingDrainsOldAllocations(t *testing.T) {
 		a.mu.Lock()
 		if a.JobRevision == 1 {
 			if !a.Draining {
-				t.Errorf("old allocation %s not marked as draining", a.Name)
+				t.Errorf("old allocation %s not marked as draining", a.ID)
 			}
 			if a.Phase == lifecycle.PhaseStopped || a.Phase == lifecycle.PhaseStopping {
-				t.Errorf("old allocation %s was stopped immediately under rolling strategy", a.Name)
+				t.Errorf("old allocation %s was stopped immediately under rolling strategy", a.ID)
 			}
 			drainingCount++
 		}
@@ -169,25 +165,21 @@ func TestReconcileRollingStopsDrainingAsNewBecomeHealthy(t *testing.T) {
 	now := s.now()
 	makeDraining := func(id string) *Allocation {
 		a := &Allocation{
-			ID: id, Name: id,
+			ID:        id,
 			Namespace: "default", JobName: "web", TaskGroupName: "api",
 			Tasks: []spec.TaskSpec{{Name: "server", Image: "app:v1"}}, Node: node, Generation: 1,
 			JobRevision: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Draining: true,
-			Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
-		}
-		a.normalize(now)
+			Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 		return a
 	}
 	drainingA := makeDraining("alloc-old-a")
 	drainingB := makeDraining("alloc-old-b")
 	healthy := &Allocation{
-		ID: "alloc-new", Name: "alloc-new",
+		ID:        "alloc-new",
 		Namespace: "default", JobName: "web", TaskGroupName: "api",
 		Tasks: newSpec.TaskGroups[0].Tasks, Node: node, Generation: 1,
 		JobRevision: 2, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy,
-		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
-	}
-	healthy.normalize(now)
+		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 	s.allocations = []*Allocation{drainingA, drainingB, healthy}
 
 	s.Reconcile(context.Background())
@@ -226,22 +218,18 @@ func TestReconcileRollingDoesNotStopDrainingUntilNewHealthy(t *testing.T) {
 
 	now := s.now()
 	draining := &Allocation{
-		ID: "alloc-old", Name: "alloc-old",
+		ID:        "alloc-old",
 		Namespace: "default", JobName: "web", TaskGroupName: "api",
 		Tasks: []spec.TaskSpec{{Name: "server", Image: "app:v1"}}, Node: node, Generation: 1,
 		JobRevision: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Draining: true,
-		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
-	}
-	draining.normalize(now)
+		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 	// New allocation is still starting, not yet healthy.
 	starting := &Allocation{
-		ID: "alloc-new", Name: "alloc-new",
+		ID:        "alloc-new",
 		Namespace: "default", JobName: "web", TaskGroupName: "api",
 		Tasks: newSpec.TaskGroups[0].Tasks, Node: node, Generation: 1,
 		JobRevision: 2, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthUnknown,
-		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now},
-	}
-	starting.normalize(now)
+		Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 	s.allocations = []*Allocation{draining, starting}
 
 	s.Reconcile(context.Background())

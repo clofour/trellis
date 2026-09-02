@@ -139,7 +139,7 @@ func newContextSaveCmd() *cobra.Command {
 		Use:   "save NAME",
 		Args:  cobra.ExactArgs(1),
 		Short: "Save the effective connection as a named context",
-		Long: "Save the currently effective address, token, namespace, and TLS configuration. Combine this with global flags for first-time setup, for example:\n\n  trellis --server-addr cluster.example:8128 --cluster-token TOKEN --namespace default context save production --use",
+		Long:  "Save the currently effective address, token, namespace, and TLS configuration. Combine this with global flags for first-time setup, for example:\n\n  trellis --server-addr cluster.example:8128 --cluster-token TOKEN --namespace default context save production --use",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if err := validateContextName(name); err != nil {

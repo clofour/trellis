@@ -17,11 +17,6 @@ export interface PortMapping {
   container_port: number;
 }
 
-export type AllocationStatus =
-  | AllocationPhase
-  | "pending"
-  | "healthy"
-  | "unhealthy";
 export type AllocationPhase =
   | "placed"
   | "starting"
@@ -36,13 +31,11 @@ export interface Allocation {
   id: string;
   job?: string;
   group: string;
-  task: string;
   namespace?: string;
   node_id: string;
   labels?: Record<string, string>;
   address?: string;
   ports?: PortMapping[];
-  status: AllocationStatus;
   phase: AllocationPhase;
   health: AllocationHealth;
   draining?: boolean;

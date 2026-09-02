@@ -185,7 +185,7 @@ export function humanizeReason(reason: string): string {
 
 function allocationDiagnostic(allocation?: Allocation): string | null {
   if (!allocation) return null;
-  const identity = `${allocation.group}/${allocation.task || "*"}`;
+  const identity = allocation.group;
   if (allocation.message) return `${identity}: ${allocation.message}`;
   if (allocation.reason) return `${identity}: ${humanizeReason(allocation.reason)}`;
   if (allocation.next_retry_at) return `${identity}: a retry is scheduled.`;

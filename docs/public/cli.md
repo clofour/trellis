@@ -40,13 +40,12 @@ Existing flat config files remain valid. Effective connection precedence is:
 
 ```text
 local node run file
-< legacy flat config values
 < selected named context
 < TRELLIS_* environment variables
 < explicit command-line flags
 ```
 
-The selected context itself comes from `current_context`, then `TRELLIS_CONTEXT`, then the explicit `--context` flag. This preserves script compatibility while making named contexts the convenient interactive path.
+The selected context itself comes from `current_context`, then `TRELLIS_CONTEXT`, then the explicit `--context` flag.
 
 ## Validate and plan a manifest
 
@@ -149,8 +148,6 @@ Use `--wait` when a script should not continue until the job resource has disapp
 ```sh
 trellis jobs delete web --wait --timeout 2m
 ```
-
-`jobs destroy` remains an alias for compatibility; documentation uses `delete`.
 
 ## Node maintenance without UUID copying
 

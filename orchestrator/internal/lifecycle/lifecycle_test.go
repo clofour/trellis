@@ -30,38 +30,3 @@ func TestTransitionRejectsUnknownPhases(t *testing.T) {
 		}
 	}
 }
-
-func TestLegacyStatus(t *testing.T) {
-	tests := []struct {
-		status string
-		phase  Phase
-		health Health
-	}{
-		{"healthy", PhaseRunning, HealthHealthy}, {"unhealthy", PhaseRunning, HealthUnhealthy},
-		{"running", PhaseRunning, HealthUnknown}, {"stopped", PhaseStopped, HealthUnknown},
-		{"failed", PhaseFailed, HealthUnknown}, {"lost", PhaseLost, HealthUnknown},
-		{"pending", PhasePlaced, HealthUnknown}, {"unknown", PhasePlaced, HealthUnknown},
-	}
-	for _, test := range tests {
-		phase, health := Legacy(test.status)
-		if phase != test.phase || health != test.health {
-			t.Errorf("Legacy(%q) = %s/%s, want %s/%s", test.status, phase, health, test.phase, test.health)
-		}
-	}
-}
-
-func TestCompatibilityStatus(t *testing.T) {
-	tests := []struct {
-		phase  Phase
-		health Health
-		want   string
-	}{
-		{PhaseRunning, HealthHealthy, "healthy"}, {PhaseRunning, HealthUnhealthy, "unhealthy"},
-		{PhaseRunning, HealthUnknown, "running"}, {PhaseStopped, HealthHealthy, "stopped"},
-	}
-	for _, test := range tests {
-		if got := CompatibilityStatus(test.phase, test.health); got != test.want {
-			t.Errorf("CompatibilityStatus(%q, %q) = %q, want %q", test.phase, test.health, got, test.want)
-		}
-	}
-}

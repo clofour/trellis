@@ -40,12 +40,6 @@ type contextFileConfig struct {
 type fileConfig struct {
 	CurrentContext string                       `yaml:"current_context,omitempty"`
 	Contexts       map[string]contextFileConfig `yaml:"contexts,omitempty"`
-
-	// Legacy flat fields remain supported as defaults beneath a selected context.
-	ServerAddr   *string `yaml:"server_addr,omitempty"`
-	ClusterToken *string `yaml:"cluster_token,omitempty"`
-	Namespace    *string `yaml:"namespace,omitempty"`
-	CACert       *string `yaml:"ca_cert,omitempty"`
 }
 
 func main() {
@@ -134,27 +128,14 @@ func loadConfig(cmd *cobra.Command) error {
 		fmt.Fprintf(os.Stderr, "warning: could not read %s: %v\n", localconfig.DefaultPath, err)
 	}
 
-	// 2. User config file. Legacy flat values are defaults; a selected named
-	// context overlays them before environment variables and explicit flags.
+	// 2. User config file. The selected named context is applied before
+	// environment variables and explicit flags.
 	cfgPath, err := userConfigPath()
 	if err != nil {
 		return err
 	}
 	file, err := readUserConfig(cfgPath)
 	if err == nil {
-		if file.ServerAddr != nil {
-			merged.ServerAddr = *file.ServerAddr
-		}
-		if file.ClusterToken != nil {
-			merged.ClusterToken = *file.ClusterToken
-		}
-		if file.Namespace != nil {
-			merged.Namespace = *file.Namespace
-		}
-		if file.CACert != nil {
-			merged.CACertPEM = *file.CACert
-		}
-
 		selected := file.CurrentContext
 		if value, ok := os.LookupEnv("TRELLIS_CONTEXT"); ok {
 			selected = value

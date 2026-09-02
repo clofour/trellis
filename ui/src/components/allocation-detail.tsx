@@ -62,12 +62,12 @@ export function AllocationDetail({
             <h3 className="mb-3 text-sm font-medium text-foreground">Current state</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Field label="Lifecycle">
-                <StatusBadge status={allocation.phase ?? allocation.status} />
+                <StatusBadge status={allocation.phase} />
               </Field>
               <Field label="Health">
-                <StatusBadge status={allocation.health ?? "unknown"} />
+                <StatusBadge status={allocation.health} />
               </Field>
-              <Field label="Generation" value={String(allocation.generation ?? 1)} />
+              <Field label="Generation" value={String(allocation.generation)} />
               <Field label="Attempt" value={String(allocation.attempt ?? 0)} />
             </div>
           </section>
@@ -95,7 +95,6 @@ export function AllocationDetail({
             <h3 className="mb-3 text-sm font-medium text-foreground">Placement</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Task group" value={allocation.group} />
-              <Field label="Task" value={allocation.task || "—"} />
               <Field label="Node" value={allocation.node_id || "—"} mono />
               <Field label="Address" value={allocation.address || "—"} mono />
               <Field label="Job revision" value={String(allocation.job_revision ?? "—")} />

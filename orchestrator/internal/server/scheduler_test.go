@@ -39,8 +39,8 @@ func TestScheduleRespectsResourcesAndDrainingNodes(t *testing.T) {
 	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, CPU: 1000, Memory: 1024}
 	b := &Node{ID: uuid.New(), Status: NodeStatusHealthy, CPU: 2000, Memory: 2048}
 	draining := &Node{ID: uuid.New(), Status: NodeStatusDraining, CPU: 10000, Memory: 10000}
-	task := &spec.TaskSpec{Resources: &spec.ResourcesSpec{CPU: 750, Memory: 700}}
-	placements := Schedule(&PlacementIntent{Count: 4, Nodes: []*Node{a, b, draining}, Task: task})
+	tasks := []spec.TaskSpec{{Resources: &spec.ResourcesSpec{CPU: 750, Memory: 700}}}
+	placements := Schedule(&PlacementIntent{Count: 4, Nodes: []*Node{a, b, draining}, Tasks: tasks})
 	if len(placements) != 3 {
 		t.Fatalf("got %d placements, want 3", len(placements))
 	}
