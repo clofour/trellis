@@ -8,7 +8,7 @@ Use [Getting Started](getting-started.md) and the [learning path](learning-path.
 
 **Outcome:** expose one stable service endpoint while replicas scale, move between nodes, and roll to new revisions.
 
-Give the serving task group a routing label, expose the application through a dynamic host port, and define a meaningful health check:
+Give the serving task group a routing label, expose the application on a fixed host-network port, and define a meaningful health check:
 
 ```yaml
 labels:
@@ -20,13 +20,15 @@ tasks:
     networking:
       mode: host
       ports:
-        - host_port: 0
+        - host_port: 8080
           container_port: 8080
     health_check:
       type: http
       port: 8080
       path: /ready
 ```
+
+Host networking is intentionally literal: Trellis reserves port 8080 on the selected node, and the application itself must listen on 8080. There is no built-in NAT or host-to-container port translation. Replicas that reserve the same port therefore need different nodes, and rolling updates need additional compatible nodes while old and new allocations overlap.
 
 Run a trusted controller with `api_access: namespace`. It should query allocations by label, include only healthy endpoints, render or update the upstream set, and preserve its last known-good routing state through temporary control-plane failures. Namespace mode grants access only to the controller job's own namespace, which is sufficient for a namespace-local ingress controller. The bundled `trellis-proxy-sync` implements this polling pattern. When an allocation exposes more than one port, select the intended application port explicitly with `-container-port` rather than depending on mapping order.
 
@@ -55,7 +57,7 @@ group.job.namespace.trellis
 
 Use DNS for locating healthy service instances, not for leader election, distributed locking, or application consensus. Namespace discovery is an availability mechanism; applications that require a single writer or elected primary still need their own coordination protocol.
 
-Use `host` networking instead when a task deliberately needs the node network or host-port exposure. Leave networking omitted for work that needs no external routes. Networking is selected per task, so colocated tasks do not need to share the same exposure model.
+Use `host` networking instead when a task deliberately needs the node network or a fixed host-port listener. Leave networking omitted for work that needs no external routes. Networking is selected per task, so colocated tasks do not need to share the same exposure model.
 
 ## Choose task-group boundaries deliberately
 
@@ -136,7 +138,7 @@ update:
 
 Rolling replacement marks old-revision allocations as draining, starts bounded replacement capacity, and removes old allocations as healthy replacements become available. `max_parallel` limits not-yet-healthy replacements in flight; it is not a percentage.
 
-Rolling updates require spare schedulable capacity and a useful health check. Recreate updates avoid overlap but can reduce or eliminate service capacity during replacement. In either case, inspect the diff before applying and treat rollback as another desired-state revision: restore the earlier image/configuration and apply it again.
+Rolling updates require spare schedulable capacity and a useful health check. If the group reserves a fixed host port, spare capacity also means another node where that port is available. Recreate updates avoid overlap but can reduce or eliminate service capacity during replacement. In either case, inspect the diff before applying and treat rollback as another desired-state revision: restore the earlier image/configuration and apply it again.
 
 ## Switch complete releases with blue/green routing
 
@@ -144,7 +146,7 @@ Rolling updates require spare schedulable capacity and a useful health check. Re
 
 Trellis has no blue/green resource type. Run the two releases as independently named jobs or otherwise independent routing targets. Give each release a distinct discovery label, validate the inactive release, then change the external routing controller from the old label to the new one.
 
-Keep the old release alive for an observation window so rollback is a routing change rather than another deployment. Because both releases coexist, budget roughly double workload capacity during the overlap. Shared databases, queues, and message formats must remain compatible with every revision that can run at the same time.
+Keep the old release alive for an observation window so rollback is a routing change rather than another deployment. Because both releases coexist, budget roughly double workload capacity during the overlap. If both releases reserve the same host port, they also require distinct nodes for every simultaneous allocation. Shared databases, queues, and message formats must remain compatible with every revision that can run at the same time.
 
 Store and review the routing switch like application code. Trellis maintains the workloads; the proxy or external load balancer owns which release receives production traffic.
 
