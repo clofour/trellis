@@ -29,11 +29,11 @@ task_groups:
         networking:
           mode: host
           ports:
-            - host_port: 0
+            - host_port: 80
               container_port: 80
         resources:
           cpu: 100
-          memory: 67108864
+          memory: 64MiB
         health_check:
           type: http
           port: 80
@@ -42,6 +42,8 @@ task_groups:
           timeout: 2s
           threshold: 2
 ```
+
+Because the sample uses host networking and reserves port 80, its two replicas must run on different nodes. A rolling replacement also needs another compatible node with port 80 available while old and new allocations overlap.
 
 Validate locally with `trellisctl jobs validate --file trellis.yaml`, preview with `trellisctl jobs diff --file trellis.yaml`, and apply with `trellisctl jobs apply --file trellis.yaml`. The dashboard's **Apply Manifest** editor accepts the same YAML.
 
@@ -81,8 +83,6 @@ Both enabled modes inject `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPAC
 
 `api_access` is a task-group privilege boundary: every task in the group can read the credential. Do not colocate untrusted sidecars with an API-enabled controller. Prefer `namespace`; choose `cluster` only when the workload genuinely performs node, backup, secret-administration, cross-namespace, Raft, or other administrator operations.
 
-For compatibility with older manifests and API clients, boolean `true` is read as `namespace` and `false` as disabled. New manifests should always use the explicit string modes.
-
 `restart.max_restarts` is zero or greater and `restart.window` is a positive Go-style duration such as `5m`. Once the allowed failures in that window are exhausted, the allocation remains failed for operator diagnosis.
 
 `update.strategy` is `recreate` (the default) or `rolling`. For rolling updates, `max_parallel` limits how many not-yet-healthy replacements may be in flight; zero uses the effective default of one.
@@ -96,8 +96,8 @@ Task groups are the unit of placement, scaling, updates, restart behavior, and d
 | `name` | Yes | Task identifier, unique within the group. |
 | `image` | Yes | Pullable OCI image reference. Pin a version or digest for reproducible deployment. |
 | `env` | No | Literal environment-variable map. Do not place credentials here. |
-| `networking` | No | Network mode and, for host mode, optional host-port mappings. |
-| `resources` | No | CPU in millicores and memory in bytes; values cannot be negative. |
+| `networking` | No | Network mode and, for host mode, optional host-port reservations. |
+| `resources` | No | CPU in millicores and memory as a byte count or readable size; values cannot be negative. |
 | `volumes` | No | Allocation-local or advertised host-volume mounts. |
 | `secrets` | No | References to namespace secrets delivered as environment variables or files. |
 | `health_check` | No | HTTP, TCP, or script readiness/health observation. |
@@ -108,7 +108,7 @@ Task groups are the unit of placement, scaling, updates, restart behavior, and d
 networking:
   mode: host
   ports:
-    - host_port: 0
+    - host_port: 8080
       container_port: 8080
 ```
 
@@ -118,17 +118,17 @@ networking:
 - `host`: join the node network namespace directly;
 - `wireguard`: join the namespace WireGuard mesh in a private container network namespace.
 
-Port mappings are valid only with `mode: host`. `container_port` must be 1–65535. `host_port: 0` requests a free port; a nonzero host port reserves that exact node port. WireGuard must be enabled on the nodes before a task requests `wireguard` mode.
+Port declarations are valid only with `mode: host`. Host networking has no Trellis NAT or port-forwarding layer: `host_port` is the node port Trellis reserves, `container_port` describes the same port used by the process, and the two values must match. Both must be 1–65535. The task itself must listen on that port. A fixed port can be used only once per node, so replicas that reserve the same port need distinct nodes. WireGuard must be enabled on the nodes before a task requests `wireguard` mode.
 
 ### Resources
 
 ```yaml
 resources:
   cpu: 250
-  memory: 268435456
+  memory: 256MiB
 ```
 
-CPU is expressed in millicores and memory in bytes. The scheduler multiplies each task request by its group count when considering desired capacity.
+CPU is expressed in millicores. Memory accepts a raw byte count or a readable binary/decimal size such as `256MiB`, `1GiB`, or `500MB`; the JSON API represents memory as bytes. The scheduler multiplies each task request by its group count when considering desired capacity.
 
 ### Volumes
 
