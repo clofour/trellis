@@ -7,3 +7,9 @@ new = "remove_line(path, '\\ta.Status = AllocationStatus(lifecycle.Compatibility
 if text.count(old) != 1:
     raise RuntimeError('expected cleanup transform line not found')
 path.write_text(text.replace(old, new))
+
+# Removing APIAccessMode.UnmarshalJSON makes fmt unused in this file.
+types = Path('orchestrator/internal/spec/types.go')
+types_text = types.read_text()
+types_text = types_text.replace('\t"fmt"\n', '')
+types.write_text(types_text)
