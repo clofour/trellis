@@ -28,7 +28,7 @@ tasks:
       path: /ready
 ```
 
-Run a trusted controller with `api_access: true`. It should query allocations by label, include only healthy endpoints, render or update the upstream set, and preserve its last known-good routing state through temporary control-plane failures. The bundled `trellis-proxy-sync` implements this polling pattern. When an allocation exposes more than one port, select the intended application port explicitly with `-container-port` rather than depending on mapping order.
+Run a trusted controller with `api_access: namespace`. It should query allocations by label, include only healthy endpoints, render or update the upstream set, and preserve its last known-good routing state through temporary control-plane failures. Namespace mode grants access only to the controller job's own namespace, which is sufficient for a namespace-local ingress controller. The bundled `trellis-proxy-sync` implements this polling pattern. When an allocation exposes more than one port, select the intended application port explicitly with `-container-port` rather than depending on mapping order.
 
 Keep the public listener itself stable: place it deliberately or put an external load balancer in front of it. The routing controller is ordinary workload code, so make its retries, timeouts, reload behavior, and credential handling explicit. Trellis discovers endpoints; it does not make the proxy highly available for you.
 
@@ -228,20 +228,30 @@ Pair persistent local storage with deliberate node preparation, ownership, backu
 
 ## Let a trusted workload automate its namespace
 
-**Outcome:** allow an in-cluster controller to inspect jobs and allocations without embedding a cluster-administrator token.
+**Outcome:** allow an in-cluster controller to inspect and reconcile resources in the namespace that contains the controller job.
 
-Set `api_access: true` on the controller's task group. Trellis injects:
+Set `api_access: namespace` on the controller's task group. Namespace mode cannot name or select some other namespace: Trellis creates a persistent bearer token restricted to the **job's own namespace**. It injects:
 
 - `TRELLIS_ADDR` — control-plane address;
-- `TRELLIS_TOKEN` — persistent namespace-scoped bearer token;
-- `TRELLIS_NAMESPACE` — namespace to send with scoped requests;
+- `TRELLIS_TOKEN` — bearer token restricted to the job namespace;
+- `TRELLIS_NAMESPACE` — that same job namespace, for request scoping;
 - `TRELLIS_CA_CERT` — cluster CA PEM when TLS is configured.
 
 Use a namespace-aware client and verify TLS with the injected CA. Treat an address without an explicit scheme as HTTPS, matching first-party Trellis client behavior. Raw HTTP clients should send both Bearer authentication and `X-Trellis-Namespace`.
 
 Every task in the group receives the injected environment, so use only reviewed images in an API-enabled group. Controllers should set request deadlines, retry transient failures with backoff, tolerate resources changing between reads, avoid leaking credentials into logs or metrics, and preserve useful last-known-good state through temporary API outages.
 
-Prefer read-only reconciliation loops unless mutation is genuinely required. Namespace API access is intentionally narrower than cluster administration.
+Prefer this mode for proxies, discovery controllers, and automation that does not need cluster administration. Changing `TRELLIS_NAMESPACE` or the request header cannot broaden the token beyond the job namespace.
+
+## Give a trusted operator workload cluster API access
+
+**Outcome:** let a workload perform administrative or cross-namespace operations that a namespace controller cannot perform.
+
+Set `api_access: cluster` only on a fully trusted task group. Trellis injects the cluster administrator token in `TRELLIS_TOKEN`. It also sets `TRELLIS_NAMESPACE` to the job's namespace as a conservative default for clients that automatically send a namespace header, but that value is **not** an authorization boundary for a cluster token.
+
+Cluster mode is appropriate for an operator surface that genuinely needs node maintenance, backups, secret administration, cross-namespace operations, Raft controls, or equivalent administrator APIs. It is not a shortcut for giving an ordinary application access to another namespace.
+
+Treat compromise of any task in the group as compromise of the cluster credential. Pin and review images, avoid unrelated sidecars, keep the token out of logs/metrics/browser code, and prefer `namespace` whenever it can express the controller's job.
 
 ## Run application-managed replicated state without confusing scheduling with consensus
 
@@ -270,7 +280,8 @@ Before treating such a deployment as highly available, test node loss, leader lo
 | Specialized-node placement | Hard constraints | Unsatisfied requirements leave work pending |
 | Credential delivery and rotation | Versioned namespace secret | Running allocations need replacement for new values |
 | Persistent node-local data | Advertised host volume | No built-in replication, movement, or backup |
-| In-cluster automation | Namespace-scoped API access | Workload becomes a credential holder |
+| Namespace-local automation | `api_access: namespace` | Every task in the group becomes a namespace credential holder |
+| Administrative/cross-namespace automation | `api_access: cluster` | Every task in the group becomes a cluster administrator |
 | Replicated stateful service | Trellis lifecycle plus application-native HA | Application remains responsible for consensus and data safety |
 
 Concrete manifests live in the [examples index](../../examples/README.md); use them to see syntax after choosing the pattern here.
