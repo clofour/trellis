@@ -51,6 +51,9 @@ func Validate(spec *JobSpec) error {
 		if !group.Runtime.Valid() {
 			return fmt.Errorf("task group %q: unsupported runtime %q", group.Name, group.Runtime)
 		}
+		if !group.APIAccess.Valid() {
+			return fmt.Errorf("task group %q: api_access must be namespace or cluster", group.Name)
+		}
 		if group.Restart != nil {
 			if group.Restart.MaxRestarts < 0 {
 				return fmt.Errorf("task group %q: restart max_restarts must be at least 0", group.Name)

@@ -1,139 +1,67 @@
 # Cookbook
 
-This cookbook starts with an operational outcome and shows the Trellis pattern that achieves it. It is not an example index: each recipe explains the moving pieces, why they work, and the tradeoffs to preserve when adapting the pattern.
+This cookbook starts with an operational outcome and explains the reusable Trellis pattern that achieves it. It is not an example index and does not define new resource types. Each recipe composes the primitives in the [job manifest reference](job-specification.md), explains why the composition works, and calls out the tradeoffs that should survive when you adapt it.
 
-All manifests use the schema in the [job manifest reference](job-specification.md). Commands assume a selected context or explicit connection variables as described in [Getting Started](getting-started.md) and [CLI workflows](cli.md).
+Use [Getting Started](getting-started.md) and the [learning path](learning-path.md) to learn Trellis in order. Use this page after you understand jobs, task groups, tasks, allocations, health, and namespaces.
 
-## Put a reverse proxy in front of dynamic allocations
+## Put stable ingress in front of changing allocations
 
-**Outcome:** expose a stable HTTP endpoint even though allocation addresses change during scaling, rescheduling, and deployment.
+**Outcome:** expose one stable service endpoint while replicas scale, move between nodes, and roll to new revisions.
 
-1. Give every backend task group a routing label and a dynamically allocated host port:
-
-   ```yaml
-   labels:
-     route: storefront
-   tasks:
-     - name: web
-       image: registry.example.com/storefront:2026-08-31
-       networking:
-         mode: host
-         ports:
-           - host_port: 0
-             container_port: 8080
-       health_check:
-         type: http
-         port: 8080
-         path: /healthz
-   ```
-
-2. Run a trusted proxy controller with `api_access: true`. The bundled `trellis-proxy-sync` polls allocations matching `route:storefront`, excludes endpoints that are not healthy, renders a Go template, and optionally reloads the proxy.
-3. Keep the public listener on a stable node or external load balancer. The controller should update only the upstream block; it should not expose its namespace token.
-
-A minimal nginx template looks like this:
-
-```nginx
-upstream storefront {
-{{- range .Upstreams }}
-    server {{ .Address }}:{{ .Port }} weight={{ .Weight }};
-{{- end }}
-}
-server {
-    listen 80;
-    location / { proxy_pass http://storefront; }
-}
-```
-
-Start the synchronizer inside the proxy image:
-
-```sh
-trellis-proxy-sync \
-  -label route:storefront \
-  -template /etc/nginx/upstreams.conf.tmpl \
-  -output /etc/nginx/conf.d/default.conf \
-  -reload-cmd 'nginx -s reload'
-```
-
-Use a narrow namespace and trusted image because `api_access` injects an API credential. Health checks are essential: without them, the proxy cannot distinguish a newly started but unready backend. During a control-plane interruption the last rendered configuration remains in place, so choose proxy timeouts and retry behavior accordingly.
-
-## Perform a rolling update
-
-**Outcome:** replace replicas gradually while retaining healthy service capacity.
-
-Configure multiple replicas, a meaningful health check, and a rolling strategy:
+Give the serving task group a routing label, expose the application through a dynamic host port, and define a meaningful health check:
 
 ```yaml
-count: 3
-update:
-  strategy: rolling
-  max_parallel: 1
+labels:
+  route: web
+
 tasks:
-  - name: web
-    image: registry.example.com/storefront:v2
+  - name: app
+    image: registry.example.com/app:v1
+    networking:
+      mode: host
+      ports:
+        - host_port: 0
+          container_port: 8080
     health_check:
       type: http
       port: 8080
       path: /ready
-      interval: 5s
-      timeout: 2s
-      threshold: 2
 ```
 
-Apply the changed manifest with `trellis jobs apply --file trellis.yaml`. Trellis marks old-revision allocations as draining, starts at most `max_parallel` replacements that are not yet healthy, and stops old allocations as healthy replacements make them surplus.
+Run a trusted controller with `api_access: namespace`. It should query allocations by label, include only healthy endpoints, render or update the upstream set, and preserve its last known-good routing state through temporary control-plane failures. Namespace mode grants access only to the controller job's own namespace, which is sufficient for a namespace-local ingress controller. The bundled `trellis-proxy-sync` implements this polling pattern. When an allocation exposes more than one port, select the intended application port explicitly with `-container-port` rather than depending on mapping order.
 
-This pattern needs spare cluster capacity because old and new allocations overlap. `max_parallel` limits concurrency, not a percentage of replicas. A weak readiness check can promote a broken release; a check that depends on an unavailable downstream can stall the rollout. Inspect progress with `trellis jobs status NAME` and allocation events. To roll back, restore the earlier image/configuration and apply again as a new revision.
+Keep the public listener itself stable: place it deliberately or put an external load balancer in front of it. The routing controller is ordinary workload code, so make its retries, timeouts, reload behavior, and credential handling explicit. Trellis discovers endpoints; it does not make the proxy highly available for you.
 
-A complete starting manifest is available at [`examples/deployment-strategies/rolling.yaml`](../../examples/deployment-strategies/rolling.yaml).
+## Connect services privately inside a namespace
 
-## Switch releases with blue/green deployment
+**Outcome:** let services communicate across nodes without exposing their application ports on the node network.
 
-**Outcome:** validate a complete new release before moving production traffic, with a fast routing rollback.
-
-Trellis has no `blue_green` strategy keyword. Model blue and green as two independently named jobs:
-
-1. Deploy `storefront-blue` with `route: storefront-blue` and leave the production proxy on that label.
-2. Deploy `storefront-green` with `route: storefront-green`.
-3. Exercise green directly, including its health, migrations, and external dependencies.
-4. Change the proxy synchronizer's label from `route:storefront-blue` to `route:storefront-green` and reload it.
-5. Keep blue temporarily for rollback; delete it only after the observation window.
-
-The separate job names prevent one apply from replacing the other color. They also double capacity during the overlap. Database changes must be backward-compatible with both colors until blue is retired. Routing state lives in the proxy configuration, not in the Trellis scheduler, so store and review that change like application code.
-
-See [`blue.yaml`](../../examples/deployment-strategies/blue.yaml) and [`green.yaml`](../../examples/deployment-strategies/green.yaml) for the two-job shape.
-
-## Send a small share of traffic to a canary
-
-**Outcome:** expose a new release to limited traffic while the stable release continues serving most requests.
-
-Run stable and canary as separate jobs with the same route label and different weights:
+Use `networking.mode: wireguard` for tasks that should join the namespace's private mesh:
 
 ```yaml
-# stable task-group labels
-labels:
-  route: storefront-weighted
-  track: stable
-  trellis/weight: "100"
+runtime: runsc
+tasks:
+  - name: api
+    image: registry.example.com/api:v1
+    networking:
+      mode: wireguard
 ```
 
-```yaml
-# canary task-group labels
-labels:
-  route: storefront-weighted
-  track: canary
-  trellis/weight: "5"
+Enable and configure WireGuard consistently on every node that may run the workload. Healthy allocation endpoints enter Trellis discovery, and DNS names follow the shape:
+
+```text
+group.job.namespace.trellis
 ```
 
-Point `trellis-proxy-sync` at `route:storefront-weighted`. It passes each positive `trellis/weight` value to the proxy template. Start with one canary replica, compare error rate/latency/business metrics by `track`, then increase its weight or replica count. Delete the canary job to remove it from discovery; promote it by deploying the new version as stable and retiring the old stable release.
+Use DNS for locating healthy service instances, not for leader election, distributed locking, or application consensus. Namespace discovery is an availability mechanism; applications that require a single writer or elected primary still need their own coordination protocol.
 
-Weights are per discovered allocation. Four stable allocations at weight 100 and one canary at weight 5 do **not** yield the same percentage as one stable allocation at weight 100 and one canary at weight 5. Calculate the effective pool and confirm how the chosen proxy interprets weights. Sticky sessions and long-lived connections further affect observed traffic share.
+Use `host` networking instead when a task deliberately needs the node network or host-port exposure. Leave networking omitted for work that needs no external routes. Networking is selected per task, so colocated tasks do not need to share the same exposure model.
 
-See [`stable.yaml`](../../examples/deployment-strategies/stable.yaml) and [`canary.yaml`](../../examples/deployment-strategies/canary.yaml).
+## Choose task-group boundaries deliberately
 
-## Run a sidecar beside every application replica
+**Outcome:** couple only the containers that must share placement, scaling, update, restart, and drain behavior.
 
-**Outcome:** colocate a helper—metrics exporter, log forwarder, local proxy, or configuration watcher—with each application replica.
-
-Put both tasks in the same task group. Trellis places and scales the group as a unit, so `count: 3` produces three allocations containing both tasks:
+Put tightly related processes in one task group when each replica should contain all of them—for example an application plus a local metrics exporter or proxy:
 
 ```yaml
 task_groups:
@@ -142,105 +70,220 @@ task_groups:
     tasks:
       - name: app
         image: registry.example.com/app:v1
-      - name: metrics
-        image: registry.example.com/exporter:v1
+      - name: helper
+        image: registry.example.com/helper:v1
 ```
 
-Use loopback only when the selected network mode and runtime configuration make it appropriate; otherwise communicate through declared endpoints. Give the helper its own resource request and health check when its readiness matters. A failing task can affect the allocation's lifecycle, so do not colocate unrelated services merely to reduce manifest count.
+`count: 3` creates three allocations and therefore three copies of both tasks. Give every task its own resources and health check when relevant.
 
-The [`sidecar` manifest](../../examples/sidecar/trellis.yaml) expands this pattern with ports, health checks, and resource reservations.
+Do not use a task group merely as a manifest-organizing device. If two components must scale independently, be updated independently, survive each other's failures, or run on different classes of nodes, separate them into different task groups or jobs. Task-group boundaries are lifecycle boundaries.
 
-## Rotate a credential without placing it in a manifest
+## Gate service readiness on application health
 
-**Outcome:** deliver credentials to containers while keeping plaintext out of Git and job manifests.
+**Outcome:** keep a process out of routing and rollout decisions until it can actually serve useful work.
 
-Create the value through standard input or a protected file:
-
-```sh
-printf %s "$NEW_PASSWORD" | \
-  trellis --namespace payments secrets set database-password --stdin
-```
-
-Reference only the secret name. Prefer a file target when the application supports it:
+Use a health check that represents readiness rather than mere process existence:
 
 ```yaml
-secrets:
-  - name: database-password
-    target: file
-    path: /run/trellis-secrets/database-password
-    mode: 256 # decimal representation of 0400
+health_check:
+  type: http
+  port: 8080
+  path: /ready
+  interval: 5s
+  timeout: 2s
+  threshold: 2
 ```
 
-For safe concurrent rotation, read the metadata version and write with `--expected-version N`. Secret updates affect allocations started afterward; existing containers retain their delivered value. Apply a workload revision or otherwise replace consumers in an order compatible with the old and new credential. Deleting metadata also does not erase values already delivered to running containers.
+HTTP and TCP checks are appropriate when readiness is externally observable. Script checks are useful when readiness depends on an in-container condition or when the task is not reachable through a host port.
 
-Keep the node's 32-byte secrets encryption key outside the Trellis data directory and back it up separately. A desired-state backup contains encrypted records but cannot recover them without that key. The full environment/file mapping pattern is in [`examples/secrets/trellis.yaml`](../../examples/secrets/trellis.yaml).
+A check should be strong enough to reject an unusable instance but not so broad that an unrelated downstream outage marks every replica unhealthy. This matters especially for rolling updates and health-filtered discovery. A task without an explicit check is treated as healthy once running, which is convenient for simple workloads but weaker than application-aware readiness.
 
-## Keep data across allocation replacement
+## Restart transiently failing tasks without hiding persistent failure
 
-**Outcome:** retain application data when a container or allocation is recreated.
+**Outcome:** recover automatically from occasional process failures while eventually surfacing a broken workload for diagnosis.
 
-Use `host_volume` to require operator-provisioned node storage:
+Configure the restart policy on the task group:
+
+```yaml
+restart:
+  max_restarts: 3
+  window: 5m
+```
+
+The group-level policy applies to the tasks in each allocation. Use a small bounded retry budget for failures that are plausibly transient. Once the allowed failures in the window are exhausted, the allocation remains failed so an operator can inspect its reason, message, attempts, events, and logs instead of entering an unlimited crash loop.
+
+Do not treat restart policy as a substitute for readiness checks or correct dependencies. Repeated startup failures usually indicate a bad revision, missing secret, unavailable volume, invalid configuration, or application defect; use `trellisctl jobs diagnose NAME` after the retry budget is exhausted.
+
+## Choose between recreate and rolling replacement
+
+**Outcome:** make update behavior match the workload's overlap and availability requirements.
+
+Use the default `recreate` strategy when old and new instances must not overlap, temporary reduced capacity is acceptable, or the workload cannot safely run two revisions simultaneously:
+
+```yaml
+update:
+  strategy: recreate
+```
+
+Use `rolling` when service availability matters and old and new revisions may coexist:
+
+```yaml
+count: 3
+update:
+  strategy: rolling
+  max_parallel: 1
+```
+
+Rolling replacement marks old-revision allocations as draining, starts bounded replacement capacity, and removes old allocations as healthy replacements become available. `max_parallel` limits not-yet-healthy replacements in flight; it is not a percentage.
+
+Rolling updates require spare schedulable capacity and a useful health check. Recreate updates avoid overlap but can reduce or eliminate service capacity during replacement. In either case, inspect the diff before applying and treat rollback as another desired-state revision: restore the earlier image/configuration and apply it again.
+
+## Switch complete releases with blue/green routing
+
+**Outcome:** validate a full new release before moving production traffic, while keeping a fast route-only rollback.
+
+Trellis has no blue/green resource type. Run the two releases as independently named jobs or otherwise independent routing targets. Give each release a distinct discovery label, validate the inactive release, then change the external routing controller from the old label to the new one.
+
+Keep the old release alive for an observation window so rollback is a routing change rather than another deployment. Because both releases coexist, budget roughly double workload capacity during the overlap. Shared databases, queues, and message formats must remain compatible with every revision that can run at the same time.
+
+Store and review the routing switch like application code. Trellis maintains the workloads; the proxy or external load balancer owns which release receives production traffic.
+
+## Expose a canary to a bounded share of traffic
+
+**Outcome:** send limited real traffic to a new release while the stable release continues serving most requests.
+
+Run stable and canary as separate jobs or independently routable groups. Give them the same route label and distinct release metadata. With the bundled proxy synchronizer, `trellis/weight` can be passed through to a proxy template:
+
+```yaml
+labels:
+  route: web
+  track: canary
+  trellis/weight: "5"
+```
+
+Start with little canary capacity and low effective routing weight. Compare errors, latency, saturation, and application-specific success metrics by release track before increasing exposure.
+
+Weights are attached to discovered allocations. Replica count therefore changes aggregate weight: four stable allocations at weight 100 and one canary at weight 5 produce an aggregate 400:5 pool, not 100:5. Sticky sessions and long-lived connections can further change observed traffic share. Calculate the effective pool rather than treating one label value as a percentage.
+
+## Isolate independent tenants or environments with namespaces
+
+**Outcome:** keep workloads, discovery, secrets, and scoped API credentials separated even when they share one cluster.
+
+Use different namespaces when two sets of workloads should not share the same authorization and discovery boundary. A namespace is not just a prefix for job names: it is Trellis's tenant, workload-isolation, discovery, and namespace-token boundary.
+
+Keep related services that need private discovery in the same namespace. Put unrelated tenants, trust domains, or environments in different namespaces. Create CLI contexts that select the intended namespace so routine commands do not depend on remembering `--namespace` every time.
+
+Do not emulate namespaces with job-name prefixes or labels. Labels are useful for selection and routing; they are not an authorization boundary.
+
+## Place workloads only on compatible nodes
+
+**Outcome:** schedule a task group only where its runtime, architecture, hardware, locality, or operator-managed dependency is available.
+
+Use task-group constraints for exact matches against `os`, `arch`, or node labels:
 
 ```yaml
 constraints:
+  - attribute: arch
+    value: amd64
   - attribute: storage
     value: fast
-tasks:
-  - name: database
-    image: registry.example.com/database:v1
-    volumes:
-      - name: data
-        path: /var/lib/database
-        host_volume: database-data
 ```
 
-Provision matching nodes with the `storage=fast` label and advertise the `database-data` volume name. The scheduler excludes every node that lacks it. An unnamed volume is allocation-local scratch space and should not hold irreplaceable state.
+Treat node labels as declared capabilities rather than arbitrary decoration. Apply a label only when every node carrying it really satisfies the implied contract.
 
-A host volume is a placement capability, not distributed storage: Trellis does not replicate, snapshot, or restore its contents. If several nodes advertise the same name, each may still contain unrelated local data. Pair the pattern with application replication or an external storage system, backups, restore drills, and deliberate node constraints. See [`examples/volumes/trellis.yaml`](../../examples/volumes/trellis.yaml).
+Constraints are hard filters: if no healthy non-draining node satisfies them and has enough capacity, the workload remains pending. Do not over-constrain ordinary replicas when soft scheduler spreading is sufficient. Use constraints for requirements; let the scheduler choose among equivalent nodes.
 
-## Let a workload discover its namespace
+## Rotate a credential without storing plaintext in the manifest
 
-**Outcome:** allow a trusted controller, proxy, or automation task to query jobs and allocations without embedding a cluster administrator token.
+**Outcome:** deliver credentials to containers while keeping plaintext out of Git and job YAML.
 
-Set `api_access: true` on its task group. Trellis injects `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE`. Call the API with both authentication and namespace scope:
+Create or update the namespace secret separately from the workload:
 
 ```sh
-curl --fail --silent --show-error \
-  -H "Authorization: Bearer $TRELLIS_TOKEN" \
-  -H "X-Trellis-Namespace: $TRELLIS_NAMESPACE" \
-  "http://$TRELLIS_ADDR/v1/allocations?label=route:storefront"
+printf %s "$NEW_VALUE" | trellisctl --namespace payments secrets set service-credential --stdin
 ```
 
-Treat all tasks in that group as holders of the credential. Do not print the environment, send the token to a browser, or enable API access on third-party images without review. Make controllers tolerate retries, non-2xx responses, and eventual reconciliation. The helper in [`examples/api-access/list-jobs.sh`](../../examples/api-access/list-jobs.sh) demonstrates the request shape.
+Reference only the secret name from the task and choose environment or file delivery according to the application's interface. Prefer a file when the application supports it and a credential does not need to appear in the process environment.
 
-## Assemble a small stateful web stack
+For concurrent automation, read secret metadata and update with `--expected-version N`. A secret update affects allocations started afterward; Trellis does not mutate the environment or filesystem of an already-running container. Rotate consumers by replacing allocations in an order compatible with both the old and new credential.
 
-**Outcome:** colocate a web application and its database for a compact development or demonstration deployment.
+Back up the secrets-encryption key separately from desired-state backups. Encrypted secret records are not recoverable without that key.
 
-Place both tasks in one group, explicitly give both tasks host networking so they can communicate over node loopback, inject database passwords from Trellis secrets, attach separate host volumes, and put the public route label only on the group. The [`WordPress manifest`](../../examples/wordpress/trellis.yaml) demonstrates that composition.
+## Keep scratch data separate from persistent local data
 
-This trades simplicity for coupled placement, scaling, updates, and failure. Scaling the group also creates another database, which is usually incorrect. For production, separate the database behind its own replication/failover design or use a managed service; then scale only stateless web replicas.
+**Outcome:** make it explicit which data may disappear with an allocation and which data must survive allocation replacement on a node.
 
-## Schedule a replicated database without confusing scheduling with consensus
+Use an ordinary volume without `host_volume` for allocation-local scratch data. Use an advertised `host_volume` when the data must live at an operator-managed node path:
 
-**Outcome:** place and monitor several database members while leaving replication and leader election to the database system.
+```yaml
+volumes:
+  - name: data
+    path: /var/lib/app
+    host_volume: app-data
+```
 
-A task group with `count: 3`, host-volume requirements, anti-concentration from normal scheduling, API discovery, and a database-native health endpoint provides the container layer. Patroni still needs a supported distributed configuration store, unique member identity, PostgreSQL replication, fencing, backups, and recovery procedures. Trellis service discovery is not Patroni consensus.
+A host-volume name is a scheduling capability. Trellis places the allocation only on nodes advertising that name, but it does not create, replicate, snapshot, move, or restore the underlying bytes. Two nodes advertising the same volume name may still contain unrelated data.
 
-The [`Patroni example`](../../examples/patroni/) deliberately documents the remaining operator work. Use it as an architecture skeleton, not a turnkey HA database.
+Pair persistent local storage with deliberate node preparation, ownership, backups, restore drills, and—where availability matters—application replication or an external storage system. Do not assume rescheduling to another compatible node implies the same data is present there.
+
+## Let a trusted workload automate its namespace
+
+**Outcome:** allow an in-cluster controller to inspect and reconcile resources in the namespace that contains the controller job.
+
+Set `api_access: namespace` on the controller's task group. Namespace mode cannot name or select some other namespace: Trellis creates a persistent bearer token restricted to the **job's own namespace**. It injects:
+
+- `TRELLIS_ADDR` — control-plane address;
+- `TRELLIS_TOKEN` — bearer token restricted to the job namespace;
+- `TRELLIS_NAMESPACE` — that same job namespace, for request scoping;
+- `TRELLIS_CA_CERT` — cluster CA PEM when TLS is configured.
+
+Use a namespace-aware client and verify TLS with the injected CA. Treat an address without an explicit scheme as HTTPS, matching first-party Trellis client behavior. Raw HTTP clients should send both Bearer authentication and `X-Trellis-Namespace`.
+
+Every task in the group receives the injected environment, so use only reviewed images in an API-enabled group. Controllers should set request deadlines, retry transient failures with backoff, tolerate resources changing between reads, avoid leaking credentials into logs or metrics, and preserve useful last-known-good state through temporary API outages.
+
+Prefer this mode for proxies, discovery controllers, and automation that does not need cluster administration. Changing `TRELLIS_NAMESPACE` or the request header cannot broaden the token beyond the job namespace.
+
+## Give a trusted operator workload cluster API access
+
+**Outcome:** let a workload perform administrative or cross-namespace operations that a namespace controller cannot perform.
+
+Set `api_access: cluster` only on a fully trusted task group. Trellis injects the cluster administrator token in `TRELLIS_TOKEN`. It also sets `TRELLIS_NAMESPACE` to the job's namespace as a conservative default for clients that automatically send a namespace header, but that value is **not** an authorization boundary for a cluster token.
+
+Cluster mode is appropriate for an operator surface that genuinely needs node maintenance, backups, secret administration, cross-namespace operations, Raft controls, or equivalent administrator APIs. It is not a shortcut for giving an ordinary application access to another namespace.
+
+Treat compromise of any task in the group as compromise of the cluster credential. Pin and review images, avoid unrelated sidecars, keep the token out of logs/metrics/browser code, and prefer `namespace` whenever it can express the controller's job.
+
+## Run application-managed replicated state without confusing scheduling with consensus
+
+**Outcome:** let Trellis place and operate replicated stateful members while the application remains responsible for data correctness and leadership.
+
+Use Trellis for the container layer: replica count, placement constraints, network attachment, secret delivery, host-volume requirements, restart policy, health observation, and discovery. Use the stateful system's native mechanisms for replication, leader election or consensus, fencing, membership changes, backups, and recovery.
+
+Do not infer a primary from Trellis scheduling order or health status. Scheduler replica spreading improves failure distribution but is not a consensus algorithm. Trellis discovery tells members where healthy allocations are; it does not decide which member may accept writes.
+
+Before treating such a deployment as highly available, test node loss, leader loss, stale members, replacement onto a node with different local data, restore from backup, and network partitions. If the storage layer is network-backed, verify that the application's own failover model safely controls which member mounts or writes the data.
 
 ## Choose the right pattern
 
 | Desired outcome | Pattern | Primary tradeoff |
 |---|---|---|
-| Stable ingress for changing replicas | Label-driven reverse proxy | Trusted API-aware controller required |
-| Gradual in-place replacement | Rolling update | Requires spare capacity and reliable readiness |
-| Instant route switch and rollback | Blue/green | Roughly doubles deployment capacity |
-| Limited real-traffic exposure | Weighted canary | Effective weight depends on replica count/proxy behavior |
-| Per-replica helper | Sidecar task in one group | Coupled lifecycle and placement |
-| Credential delivery and rotation | Versioned Trellis secret | Running allocations require replacement to receive changes |
-| Node-local persistence | Advertised host volume | No built-in replication or backup |
-| In-cluster automation | Namespace-scoped API access | Workload becomes a credential holder |
-| Replicated database | Scheduler plus database-native HA | Trellis does not replace database consensus |
+| Stable public endpoint for changing replicas | Label-driven ingress controller | Controller and listener need their own availability design |
+| Private cross-node service communication | Namespace WireGuard plus discovery | Requires consistent node networking configuration |
+| Per-replica helper process | Multiple tasks in one task group | Coupled placement, scaling, update, and failure behavior |
+| Application-aware readiness | Health-filtered discovery and rollout | A poor check can admit bad instances or stall deployment |
+| Recovery from transient process failure | Bounded restart policy | Persistent failure eventually needs operator diagnosis |
+| Non-overlapping update | Recreate strategy | Temporary capacity loss |
+| Availability-preserving in-place update | Rolling strategy | Spare capacity and reliable readiness required |
+| Full release validation and fast route rollback | Blue/green | Both releases consume capacity during overlap |
+| Limited real-traffic exposure | Weighted canary | Effective share depends on replicas and proxy semantics |
+| Tenant/environment isolation | Separate namespaces | Cross-namespace communication must be designed explicitly |
+| Specialized-node placement | Hard constraints | Unsatisfied requirements leave work pending |
+| Credential delivery and rotation | Versioned namespace secret | Running allocations need replacement for new values |
+| Persistent node-local data | Advertised host volume | No built-in replication, movement, or backup |
+| Namespace-local automation | `api_access: namespace` | Every task in the group becomes a namespace credential holder |
+| Administrative/cross-namespace automation | `api_access: cluster` | Every task in the group becomes a cluster administrator |
+| Replicated stateful service | Trellis lifecycle plus application-native HA | Application remains responsible for consensus and data safety |
+
+Concrete manifests live in the [examples index](../../examples/README.md); use them to see syntax after choosing the pattern here.
 
 [Documentation index](../README.md) · [Previous: Operations](operations.md) · [Next: Dashboard](dashboard.md)

@@ -357,7 +357,7 @@ name: trellis-dashboard
 task_groups:
   - name: web
     count: 1
-    api_access: true
+    api_access: cluster
     tasks:
       - name: dashboard
         image: ${ui_image}

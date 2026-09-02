@@ -12,11 +12,25 @@ import { formatBytes, timeAgo } from "@/lib/utils";
 
 export default function SecretsPage() {
   const { data, error, isLoading, mutate } = useSecrets();
-  const { allowWrites, namespace } = useConfig();
+  const { allowWrites, apiAccess, namespace } = useConfig();
   const [editor, setEditor] = useState<SecretMetadata | "new" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SecretMetadata | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  if (apiAccess !== "cluster") {
+    return (
+      <div>
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold text-foreground">Secrets</h1>
+        </div>
+        <EmptyState
+          title="Cluster access required"
+          description="Secret management is available only to dashboards using cluster API access."
+        />
+      </div>
+    );
+  }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;

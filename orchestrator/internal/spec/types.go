@@ -3,6 +3,7 @@ package spec
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -36,6 +37,45 @@ const (
 // Valid reports whether r is a supported runtime.
 func (r Runtime) Valid() bool {
 	return r == RuntimeDefault || r == RuntimeRunc || r == RuntimeRunsc
+}
+
+// APIAccessMode controls which control-plane credential is injected into a task group.
+type APIAccessMode string
+
+const (
+	// APIAccessNone disables in-allocation API credentials.
+	APIAccessNone APIAccessMode = ""
+	// APIAccessNamespace injects a token restricted to the job's own namespace.
+	APIAccessNamespace APIAccessMode = "namespace"
+	// APIAccessCluster injects the cluster administrator token.
+	APIAccessCluster APIAccessMode = "cluster"
+)
+
+// Valid reports whether m is a supported API access mode.
+func (m APIAccessMode) Valid() bool {
+	return m == APIAccessNone || m == APIAccessNamespace || m == APIAccessCluster
+}
+
+// UnmarshalJSON accepts the canonical string modes and legacy booleans.
+func (m *APIAccessMode) UnmarshalJSON(data []byte) error {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	switch v := value.(type) {
+	case string:
+		*m = APIAccessMode(v)
+		return nil
+	case bool:
+		if v {
+			*m = APIAccessNamespace
+		} else {
+			*m = APIAccessNone
+		}
+		return nil
+	default:
+		return fmt.Errorf("api_access must be namespace or cluster")
+	}
 }
 
 // TaskNetworkMode controls how a task container joins the network.
@@ -92,7 +132,7 @@ type TaskGroupSpec struct {
 	Runtime     Runtime            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Tasks       []TaskSpec         `yaml:"tasks" json:"tasks"`
 	Labels      map[string]string  `yaml:"labels,omitempty" json:"labels,omitempty"`
-	APIAccess   bool               `yaml:"api_access,omitempty" json:"api_access,omitempty"`
+	APIAccess   APIAccessMode      `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
 	Constraints []ConstraintSpec   `yaml:"constraints,omitempty" json:"constraints,omitempty"`
 	Update      *UpdateSpec        `yaml:"update,omitempty" json:"update,omitempty"`
@@ -186,7 +226,7 @@ func TaskGroupContentHash(g *TaskGroupSpec) string {
 		Name        string
 		Runtime     Runtime
 		Tasks       []TaskSpec
-		APIAccess   bool
+		APIAccess   APIAccessMode
 		Restart     *RestartPolicySpec
 		Constraints []ConstraintSpec
 	}{

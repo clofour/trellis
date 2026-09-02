@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOrchestratorStatus } from "@/hooks/use-api";
 import { useConfig } from "./config-provider";
+
+const namespacePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
 
 const navigation = [
   {
@@ -42,6 +45,7 @@ const navigation = [
   {
     name: "Secrets",
     href: "/secrets",
+    clusterOnly: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="6" cy="9" r="3" />
@@ -55,7 +59,35 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const cluster = useOrchestratorStatus();
-  const { allowWrites, clusterName, namespace, namespaces, setNamespace } = useConfig();
+  const {
+    allowWrites,
+    apiAccess,
+    clusterName,
+    namespace,
+    namespaces,
+    allowAnyNamespace,
+    setNamespace,
+  } = useConfig();
+  const [namespaceInput, setNamespaceInput] = useState(namespace);
+
+  const visibleNavigation = navigation.filter(
+    (item) => !item.clusterOnly || apiAccess === "cluster",
+  );
+
+  const commitNamespace = () => {
+    const candidate = namespaceInput.trim();
+    if (!namespacePattern.test(candidate)) {
+      setNamespaceInput(namespace);
+      return;
+    }
+    if (!allowAnyNamespace && !namespaces.includes(candidate)) {
+      setNamespaceInput(namespace);
+      return;
+    }
+    if (candidate === namespace) return;
+    setNamespace(candidate);
+    router.push("/");
+  };
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-card">
@@ -69,7 +101,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 p-3">
-        {navigation.map((item) => {
+        {visibleNavigation.map((item) => {
           const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (
             <Link
@@ -112,7 +144,30 @@ export function Sidebar() {
           >
             Namespace
           </label>
-          {namespaces.length > 1 ? (
+          {apiAccess === "cluster" && allowAnyNamespace ? (
+            <>
+              <input
+                id="namespace-context"
+                list="namespace-context-options"
+                value={namespaceInput}
+                onChange={(event) => setNamespaceInput(event.target.value)}
+                onBlur={commitNamespace}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitNamespace();
+                  }
+                }}
+                className="mt-1.5 w-full rounded-md border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-emerald-500/40"
+                aria-label="Namespace"
+              />
+              <datalist id="namespace-context-options">
+                {namespaces.filter(Boolean).map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </>
+          ) : apiAccess === "cluster" ? (
             <select
               id="namespace-context"
               value={namespace}
@@ -133,6 +188,9 @@ export function Sidebar() {
               {namespace || "unscoped"}
             </p>
           )}
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            {apiAccess === "cluster" ? "Cluster API access" : "Own namespace only"}
+          </p>
         </div>
         <div className="flex items-center gap-1.5 text-xs">
           {allowWrites ? (

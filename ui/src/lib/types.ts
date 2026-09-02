@@ -98,6 +98,7 @@ export interface JobSpec {
 export type Runtime = "" | "runc" | "runsc";
 export type TaskNetworkMode = "" | "host" | "wireguard";
 export type UpdateStrategy = "" | "recreate" | "rolling";
+export type APIAccessMode = "namespace" | "cluster";
 
 export interface TaskGroupSpec {
   name: string;
@@ -105,7 +106,7 @@ export interface TaskGroupSpec {
   runtime?: Runtime;
   tasks: TaskSpec[];
   labels?: Record<string, string>;
-  api_access?: boolean;
+  api_access?: APIAccessMode;
   restart?: RestartPolicySpec;
   constraints?: ConstraintSpec[];
   update?: UpdateSpec;

@@ -9,7 +9,7 @@ task_groups:
   - name: frontend
     count: 2
     runtime: runc
-    api_access: false
+    api_access: namespace
     labels:
       route: web
     constraints:
@@ -43,7 +43,7 @@ task_groups:
           threshold: 2
 ```
 
-Validate locally with `trellis jobs validate --file trellis.yaml`, preview with `trellis jobs diff --file trellis.yaml`, and apply with `trellis jobs apply --file trellis.yaml`. The dashboard's **Apply Manifest** editor accepts the same YAML.
+Validate locally with `trellisctl jobs validate --file trellis.yaml`, preview with `trellisctl jobs diff --file trellis.yaml`, and apply with `trellisctl jobs apply --file trellis.yaml`. The dashboard's **Apply Manifest** editor accepts the same YAML.
 
 ## Job fields
 
@@ -64,10 +64,24 @@ There is no job-level networking block. Network attachment belongs to each task 
 | `tasks` | Yes | One or more containers placed in every allocation. |
 | `runtime` | No | Default runtime (`""`), `runc`, or `runsc`. |
 | `labels` | No | Discovery and routing metadata. Keys begin with a letter; values are at most 256 characters. |
-| `api_access` | No | Inject a namespace-scoped API address, token, namespace, and CA certificate into every task in the group. |
+| `api_access` | No | API credential mode: `namespace` or `cluster`. Omit it for no injected API credentials. |
 | `constraints` | No | Exact matches against `os`, `arch`, or node labels. Duplicate attributes are invalid. |
 | `restart` | No | Retry policy for failed tasks. |
 | `update` | No | Replacement strategy when execution-affecting desired state changes. |
+
+### API access
+
+`api_access` controls which control-plane credential is injected into every task in the group:
+
+- `namespace` injects a persistent token restricted to **the namespace of this job**. The manifest cannot name a different namespace for this mode.
+- `cluster` injects the cluster administrator token. It can perform cluster-wide and administrative operations, so use it only for fully trusted operator workloads.
+- omitted means no API credential is injected.
+
+Both enabled modes inject `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE`; `TRELLIS_NAMESPACE` is always initialized to the job's namespace. When TLS is configured, `TRELLIS_CA_CERT` contains the cluster CA PEM. A namespace token remains restricted to that job namespace even if a client changes the `X-Trellis-Namespace` header. A cluster token is not restricted by that default namespace and can deliberately make cluster-wide or differently scoped requests.
+
+`api_access` is a task-group privilege boundary: every task in the group can read the credential. Do not colocate untrusted sidecars with an API-enabled controller. Prefer `namespace`; choose `cluster` only when the workload genuinely performs node, backup, secret-administration, cross-namespace, Raft, or other administrator operations.
+
+For compatibility with older manifests and API clients, boolean `true` is read as `namespace` and `false` as disabled. New manifests should always use the explicit string modes.
 
 `restart.max_restarts` is zero or greater and `restart.window` is a positive Go-style duration such as `5m`. Once the allowed failures in that window are exhausted, the allocation remains failed for operator diagnosis.
 
