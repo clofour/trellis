@@ -32,7 +32,8 @@ func Validate(spec *JobSpec) error {
 	if !identifierPattern.MatchString(spec.Namespace) {
 		return errors.New("job namespace must be a safe identifier")
 	}
-	var totalCPU, totalMemory int
+	var totalCPU int
+	var totalMemory ByteSize
 	if len(spec.TaskGroups) == 0 {
 		return errors.New("at least one task group is required")
 	}
@@ -154,7 +155,7 @@ func Validate(spec *JobSpec) error {
 			}
 			if task.Resources != nil {
 				totalCPU += task.Resources.CPU * group.Count
-				totalMemory += task.Resources.Memory * group.Count
+				totalMemory += task.Resources.Memory * ByteSize(group.Count)
 			}
 			volumes := make(map[string]struct{})
 			for _, volume := range task.Volumes {
