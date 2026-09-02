@@ -177,8 +177,11 @@ func Validate(spec *JobSpec) error {
 					return fmt.Errorf("task group %q task %q: ports require networking mode host", group.Name, task.Name)
 				}
 				for _, port := range task.Networking.Ports {
-					if port.HostPort < 0 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
-						return fmt.Errorf("task group %q task %q: invalid port mapping %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)
+					if port.HostPort < 1 || port.HostPort > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 {
+						return fmt.Errorf("task group %q task %q: invalid host port declaration %d:%d", group.Name, task.Name, port.HostPort, port.ContainerPort)
+					}
+					if port.HostPort != port.ContainerPort {
+						return fmt.Errorf("task group %q task %q: host networking does not translate ports; host_port must equal container_port", group.Name, task.Name)
 					}
 				}
 			}
