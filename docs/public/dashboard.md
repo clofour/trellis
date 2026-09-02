@@ -19,16 +19,21 @@ Server-side variables:
 |---|---|
 | `TRELLIS_API_URL` | Cluster control-plane URL; defaults to `http://localhost:8128`. |
 | `TRELLIS_API_TOKEN` | Bearer cluster or namespace token. `TRELLIS_TOKEN` from workload API access is also accepted. |
+| `TRELLIS_API_ACCESS` | Optional `namespace` or `cluster` scope hint. When omitted, the dashboard detects whether the configured token has cluster authorization. |
 | `TRELLIS_CLUSTER_NAME` | Human-readable cluster name shown in the active context. |
-| `TRELLIS_NAMESPACE` | Default namespace for jobs, allocations, and secrets. |
-| `TRELLIS_NAMESPACES` | Optional comma-separated namespace allowlist for the context selector. Defaults to only `TRELLIS_NAMESPACE`. |
+| `TRELLIS_NAMESPACE` | Initial/default namespace for namespaced views. |
+| `TRELLIS_NAMESPACES` | Optional comma-separated strict allowlist for cluster-mode namespace selection. When omitted, a cluster-authorized dashboard may select any valid namespace. |
 | `TRELLIS_ALLOW_WRITES` | Set exactly `true` to enable mutations; defaults false. |
 
-The active `cluster / namespace` context is always shown in the sidebar. With multiple configured namespaces, selecting another scope refreshes every namespaced view and request. Only server-configured namespaces can be selected. The UI uses same-origin Next.js route handlers as a server-side proxy, keeping the token out of browser JavaScript. `TRELLIS_ALLOW_WRITES` is only a UI-side guard, not a substitute for network and API authorization.
+The active cluster and namespace are always shown in the sidebar. The dashboard keeps the bearer token in server-side Next.js route handlers and sends only the selected namespace from the browser.
 
-A dashboard that only displays one namespace can run with a namespace token, but cluster-level pages and actions such as node maintenance require a cluster credential. The setup script therefore deploys the first-party dashboard with `api_access: cluster`. It still sets `TRELLIS_NAMESPACE` to the dashboard job's namespace and does not automatically configure other namespaces in the selector. If you deploy a namespace-only dashboard yourself, use `api_access: namespace`; that token can access only the namespace containing the dashboard job.
+With a **cluster credential**, the namespace control becomes a selector. Without `TRELLIS_NAMESPACES`, it is a combobox and accepts any valid namespace name; configured namespace values are offered as suggestions. If `TRELLIS_NAMESPACES` is set, it becomes a strict dropdown limited to that allowlist. Changing the namespace refreshes namespaced jobs, allocations, logs, and secret requests under the new context.
 
-Read-only mode disables job apply/edit/delete actions, node drain actions, and secret changes in the UI. It does **not** reduce the authority of the underlying bearer token, so continue to protect a read-only dashboard that holds a cluster credential.
+With a **namespace credential**, the context is pinned to `TRELLIS_NAMESPACE` / the workload's own injected namespace. The selector is not editable, and the **Secrets** navigation item is hidden because secret management requires cluster authorization. The token itself enforces the namespace boundary even if a client attempts to send another `X-Trellis-Namespace` value.
+
+The setup script deploys the first-party dashboard with `api_access: cluster`, so it receives cluster authorization and can use the namespace selector. A dashboard intended only for its own namespace should instead use `api_access: namespace`.
+
+Read-only mode disables job apply/edit/delete actions, node drain actions, and secret changes in the UI. It does **not** reduce the authority of the underlying bearer token, so continue to protect a read-only dashboard that holds a cluster credential. `TRELLIS_ALLOW_WRITES` is a UI-side guard, not an authorization boundary.
 
 ## Cluster connection
 
