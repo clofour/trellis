@@ -1,11 +1,18 @@
 package client
 
-// ClusterToken returns the bearer token configured for agent requests.
-// The server uses the same cluster-administrator credential for workloads that
-// explicitly request cluster-scoped API access.
-func (s *AgentClient) ClusterToken() string {
-	if s == nil || s.client == nil {
-		return ""
+import (
+	"context"
+	"fmt"
+	"net/http"
+
+	"github.com/clofour/trellis/internal/api"
+)
+
+// CreateCredential asks the bootstrap administrator API to mint a scoped credential.
+func (s *ServerClient) CreateCredential(ctx context.Context, request *api.CredentialCreateRequest) (*api.CredentialCreateResponse, error) {
+	var response api.CredentialCreateResponse
+	if err := s.client.request(ctx, http.MethodPost, s.address()+"/v1/credentials", request, &response); err != nil {
+		return nil, fmt.Errorf("create credential: %w", err)
 	}
-	return s.client.token
+	return &response, nil
 }
