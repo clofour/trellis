@@ -157,7 +157,7 @@ export function JobDetail({
                 className="flex flex-col justify-between gap-2 px-4 py-3 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{allocation.group}/{allocation.task || "*"}</p>
+                  <p className="text-sm font-medium text-foreground">{allocation.group}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {allocation.message || (allocation.reason ? humanizeReason(allocation.reason) : `${allocation.phase} · ${allocation.health}`)}
                     {allocation.next_retry_at ? ` · retry ${new Date(allocation.next_retry_at).toLocaleString()}` : ""}

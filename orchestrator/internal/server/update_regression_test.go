@@ -38,7 +38,6 @@ func TestReconcileRollingDoesNotReuseHealthyReplacement(t *testing.T) {
 	makeAllocation := func(id string, revision int, image string, health lifecycle.Health, draining bool) *Allocation {
 		a := &Allocation{
 			ID:            id,
-			Name:          id,
 			Namespace:     "default",
 			JobName:       "web",
 			TaskGroupName: "api",
@@ -52,9 +51,7 @@ func TestReconcileRollingDoesNotReuseHealthyReplacement(t *testing.T) {
 			Diagnostic: lifecycle.Diagnostic{
 				CreatedAt:      now,
 				TransitionedAt: now,
-			},
-		}
-		a.normalize(now)
+			}}
 		return a
 	}
 
@@ -71,7 +68,7 @@ func TestReconcileRollingDoesNotReuseHealthyReplacement(t *testing.T) {
 		phase := old.Phase
 		old.mu.Unlock()
 		if phase == lifecycle.PhaseStopping || phase == lifecycle.PhaseStopped {
-			t.Fatalf("draining allocation %s stopped before the in-flight replacement became healthy", old.Name)
+			t.Fatalf("draining allocation %s stopped before the in-flight replacement became healthy", old.ID)
 		}
 	}
 }

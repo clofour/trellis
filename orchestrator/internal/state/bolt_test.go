@@ -120,4 +120,4 @@ func TestRestoreDesiredKeepsRuntimeStateAndRequiresFreshTarget(t *testing.T) {
 	}
 }
 
-var _ StateStore = (*BoltStore)(nil)
+var _ Store = (*BoltStore)(nil)

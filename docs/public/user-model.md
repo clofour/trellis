@@ -75,7 +75,7 @@ Use the same verbs across interfaces:
 - **Inspect an allocation** for placement, lifecycle, health, events, and logs.
 - **Set**, **describe**, and **delete** secrets.
 
-Existing CLI aliases may remain for compatibility, but documentation and UI copy should prefer these terms.
+Documentation and UI copy use these canonical terms; any deliberate CLI aliases are convenience spellings rather than a compatibility layer.
 
 ## What is not part of the basic model
 

@@ -26,9 +26,9 @@ func TestListAllocationsWithFilters(t *testing.T) {
 			},
 		},
 		allocations: []*Allocation{
-			{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", Name: "acme-web-1", Status: AllocationStatusHealthy, Node: acmeNode},
-			{Namespace: "acme", JobName: "db", TaskGroupName: "primary", Name: "acme-db-1", Status: AllocationStatusHealthy, Node: acmeNode},
-			{Namespace: "staging", JobName: "web", TaskGroupName: "frontend", Name: "staging-web-1", Status: AllocationStatusHealthy, Node: stagingNode},
+			{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", ID: "acme-web-1", Generation: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Node: acmeNode},
+			{Namespace: "acme", JobName: "db", TaskGroupName: "primary", ID: "acme-db-1", Generation: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Node: acmeNode},
+			{Namespace: "staging", JobName: "web", TaskGroupName: "frontend", ID: "staging-web-1", Generation: 1, Phase: lifecycle.PhaseRunning, Health: lifecycle.HealthHealthy, Node: stagingNode},
 		},
 	}
 
@@ -55,8 +55,8 @@ func TestListJobsIncludesAllocationDiagnostics(t *testing.T) {
 		jobs: map[string]*Job{
 			jobKey("default", "web"): {
 				Spec: &spec.JobSpec{
-					Namespace: "default",
-					Name:      "web",
+					Namespace:  "default",
+					Name:       "web",
 					TaskGroups: []spec.TaskGroupSpec{{Name: "frontend", Count: 1}},
 				},
 				Revision: 2,
@@ -67,7 +67,7 @@ func TestListJobsIncludesAllocationDiagnostics(t *testing.T) {
 				Namespace:     "default",
 				JobName:       "web",
 				TaskGroupName: "frontend",
-				Name:          "default-web-frontend-deadbeef",
+				ID:            "default-web-frontend-deadbeef",
 				Node:          &Node{ID: nodeID},
 				Generation:    3,
 				JobRevision:   2,
@@ -83,7 +83,7 @@ func TestListJobsIncludesAllocationDiagnostics(t *testing.T) {
 				Namespace:     "default",
 				JobName:       "web",
 				TaskGroupName: "frontend",
-				Name:          "default-web-frontend-old",
+				ID:            "default-web-frontend-old",
 				JobRevision:   1,
 				Phase:         lifecycle.PhaseRunning,
 				Health:        lifecycle.HealthHealthy,
@@ -107,8 +107,9 @@ func TestListJobsIncludesAllocationDiagnostics(t *testing.T) {
 
 func TestAllocationEvents(t *testing.T) {
 	now := time.Now().UTC()
-	alloc := &Allocation{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", Name: "acme-web-1", Phase: lifecycle.PhasePlaced}
-	alloc.normalize(now)
+	alloc := &Allocation{Namespace: "acme", JobName: "web", TaskGroupName: "frontend", ID: "acme-web-1", Phase: lifecycle.PhasePlaced,
+		Generation: 1,
+		Health:     lifecycle.HealthUnknown}
 
 	s := &Server{
 		jobs:        map[string]*Job{},

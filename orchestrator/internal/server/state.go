@@ -11,7 +11,7 @@ import (
 
 // StateController persists typed server state.
 type StateController struct {
-	store state.StateStore
+	store state.Store
 
 	cluster string
 }
@@ -19,7 +19,7 @@ type StateController struct {
 const trellisNamespace = "trellis"
 
 // NewStateController creates a typed state controller.
-func NewStateController(store state.StateStore, cluster string) *StateController {
+func NewStateController(store state.Store, cluster string) *StateController {
 	return &StateController{
 		store:   store,
 		cluster: cluster,
@@ -115,7 +115,7 @@ func (s *StateController) ListAllocations(ctx context.Context) (map[string]*Allo
 
 // PutAllocation persists an allocation.
 func (s *StateController) PutAllocation(ctx context.Context, allocation *Allocation) error {
-	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, allocation.Name)
+	key := fmt.Sprintf("%s/%s/allocations/%s", trellisNamespace, s.cluster, allocation.ID)
 	return s.put(ctx, key, allocation)
 }
 
@@ -125,7 +125,7 @@ func (s *StateController) DeleteAllocation(ctx context.Context, id string) error
 	return s.store.Delete(ctx, key)
 }
 
-func listValues[T any](ctx context.Context, store state.StateStore, prefix string) (map[string]*T, error) {
+func listValues[T any](ctx context.Context, store state.Store, prefix string) (map[string]*T, error) {
 	raw, err := store.List(ctx, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("list prefix %s: %w", prefix, err)

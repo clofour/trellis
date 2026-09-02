@@ -19,8 +19,6 @@ type PlacementIntent struct {
 	Allocations   []*Allocation
 	Tasks         []spec.TaskSpec
 	Constraints   []spec.ConstraintSpec
-	// Task is deprecated; Tasks represents the colocated scheduling unit.
-	Task *spec.TaskSpec
 }
 
 // Placement associates a task group index with a selected node.
@@ -64,10 +62,6 @@ func Schedule(intent *PlacementIntent) []Placement {
 				reqCPU += task.Resources.CPU
 				reqMemory += int64(task.Resources.Memory)
 			}
-		}
-		if len(intent.Tasks) == 0 && intent.Task != nil && intent.Task.Resources != nil {
-			reqCPU = intent.Task.Resources.CPU
-			reqMemory = int64(intent.Task.Resources.Memory)
 		}
 		for _, node := range nodes {
 			if node.Status != NodeStatusHealthy || !nodeMatchesConstraints(node, intent.Constraints) || !nodeHasTaskVolumes(node, intent.Tasks) {

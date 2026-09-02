@@ -16,7 +16,7 @@ import (
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 )
 
-var _ StateStore = (*RaftStore)(nil)
+var _ Store = (*RaftStore)(nil)
 
 // RaftStore replicates state through a Raft cluster.
 type RaftStore struct {

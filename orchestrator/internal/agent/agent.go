@@ -871,7 +871,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 				for _, p := range alloc.Ports {
 					ports = append(ports, api.PortMapping{HostPort: p.HostPort, ContainerPort: p.ContainerPort})
 				}
-				actual = append(actual, api.AllocationStatus{ID: alloc.AllocationID, Generation: alloc.Generation, Task: alloc.TaskName, Phase: lifecycle.Phase(alloc.Status), Health: lifecycle.Health(alloc.Health), Status: lifecycle.CompatibilityStatus(lifecycle.Phase(alloc.Status), lifecycle.Health(alloc.Health)), Ports: ports})
+				actual = append(actual, api.AllocationStatus{ID: alloc.AllocationID, Generation: alloc.Generation, Task: alloc.TaskName, Phase: lifecycle.Phase(alloc.Status), Health: lifecycle.Health(alloc.Health), Ports: ports})
 			}
 			a.mu.RUnlock()
 			response, err := a.server.SendHeartbeat(ctx, a.nodeID, &client.Heartbeat{

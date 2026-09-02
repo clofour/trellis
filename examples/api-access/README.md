@@ -18,8 +18,6 @@ This example uses `api_access: namespace`. There is intentionally no namespace s
 
 Use `cluster` only when the workload genuinely needs administrative or cross-namespace operations. The injected `TRELLIS_NAMESPACE` still defaults to the job's namespace, but that default does not reduce the authority of a cluster token.
 
-For compatibility, old `api_access: true` manifests are interpreted as `namespace`, but new manifests should use the explicit mode.
-
 ## What Trellis injects
 
 With either enabled mode, Trellis adds these variables to every task in the group:

@@ -33,8 +33,8 @@ import (
 	"github.com/clofour/trellis/internal/client"
 	trellisdns "github.com/clofour/trellis/internal/dns"
 	"github.com/clofour/trellis/internal/election"
-	"github.com/clofour/trellis/internal/localconfig"
 	"github.com/clofour/trellis/internal/health"
+	"github.com/clofour/trellis/internal/localconfig"
 	"github.com/clofour/trellis/internal/network"
 	containerruntime "github.com/clofour/trellis/internal/runtime"
 	secretstore "github.com/clofour/trellis/internal/secrets"
@@ -278,7 +278,7 @@ func run(parent context.Context, cfg *config) error {
 		}
 	}()
 	healthMgr := health.NewHealthManager(log, runtimeClient, nil)
-	restartCtl := agent.NewRestartController(runtimeClient, nil)
+	restartCtl := agent.NewAllocationReconciler(runtimeClient, nil)
 	leaderClient := client.NewServerClient(cfg.ClusterToken, "", clientTLS)
 	volumeManager := agent.NewVolumeManager(cfg.DataDir)
 	if len(cfg.HostVolumes) > 0 {

@@ -28,7 +28,7 @@ Keep these concepts separate when reading any Trellis interface:
 - Allocation **lifecycle** is execution state: `placed`, `starting`, `running`, `stopping`, `stopped`, `failed`, or `lost`.
 - Allocation **health** is readiness/health state: `unknown`, `healthy`, or `unhealthy`.
 
-An allocation can therefore be `running` and `unhealthy`. Older persisted state may still contain legacy status values for compatibility, but lifecycle and health are the canonical model.
+An allocation can therefore be `running` and `unhealthy`. Lifecycle and health are independent parts of the canonical allocation state.
 
 ## Scheduling
 

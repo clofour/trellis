@@ -74,41 +74,6 @@ func Transition(from, to Phase) error {
 	return nil
 }
 
-// Legacy converts the pre-lifecycle status values without claiming more than
-// the old record actually proves. A healthy or unhealthy allocation had been
-// started; pending only proved placement.
-func Legacy(status string) (Phase, Health) {
-	switch status {
-	case "healthy":
-		return PhaseRunning, HealthHealthy
-	case "unhealthy":
-		return PhaseRunning, HealthUnhealthy
-	case "running":
-		return PhaseRunning, HealthUnknown
-	case "stopped":
-		return PhaseStopped, HealthUnknown
-	case "failed":
-		return PhaseFailed, HealthUnknown
-	case "lost":
-		return PhaseLost, HealthUnknown
-	default:
-		return PhasePlaced, HealthUnknown
-	}
-}
-
-// CompatibilityStatus preserves the old status field for existing clients.
-func CompatibilityStatus(phase Phase, health Health) string {
-	if phase == PhaseRunning {
-		if health == HealthHealthy {
-			return "healthy"
-		}
-		if health == HealthUnhealthy {
-			return "unhealthy"
-		}
-	}
-	return string(phase)
-}
-
 // Diagnostic records details about the latest allocation transition.
 type Diagnostic struct {
 	CreatedAt      time.Time  `json:"created_at"`

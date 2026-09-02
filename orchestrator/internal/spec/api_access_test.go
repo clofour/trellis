@@ -1,20 +1,17 @@
 package spec
 
 import (
-	"encoding/json"
 	"testing"
 )
 
 func TestParseAPIAccessModes(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		value string
-		want APIAccessMode
+		want  APIAccessMode
 	}{
 		{name: "namespace", value: "namespace", want: APIAccessNamespace},
 		{name: "cluster", value: "cluster", want: APIAccessCluster},
-		{name: "legacy true", value: "true", want: APIAccessNamespace},
-		{name: "legacy false", value: "false", want: APIAccessNone},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -30,23 +27,6 @@ func TestParseAPIAccessModes(t *testing.T) {
 				t.Fatalf("validate manifest: %v", err)
 			}
 		})
-	}
-}
-
-func TestAPIAccessJSONCompatibility(t *testing.T) {
-	for input, want := range map[string]APIAccessMode{
-		`"namespace"`: APIAccessNamespace,
-		`"cluster"`:   APIAccessCluster,
-		`true`:        APIAccessNamespace,
-		`false`:       APIAccessNone,
-	} {
-		var got APIAccessMode
-		if err := json.Unmarshal([]byte(input), &got); err != nil {
-			t.Fatalf("unmarshal %s: %v", input, err)
-		}
-		if got != want {
-			t.Fatalf("unmarshal %s = %q, want %q", input, got, want)
-		}
 	}
 }
 

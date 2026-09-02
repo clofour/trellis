@@ -108,18 +108,18 @@ func waitForJobDeletion(parent context.Context, w io.Writer, serverClient *clien
 	}
 }
 
-func runJobLogs(ctx context.Context, w io.Writer, serverClient *client.ServerClient, target, allocationRef, group, task string, follow bool, tail int) error {
-	selected, err := resolveLogAllocations(ctx, serverClient, target, allocationRef, group, task)
+func runJobLogs(ctx context.Context, w io.Writer, serverClient *client.ServerClient, target, allocationRef, group string, follow bool, tail int) error {
+	selected, err := resolveLogAllocations(ctx, serverClient, target, allocationRef, group)
 	if err != nil {
 		return err
 	}
 	if follow && len(selected) != 1 {
-		return fmt.Errorf("--follow requires exactly one allocation; select one with --allocation PREFIX, --group, or --task (matches: %s)", allocationRefs(selected))
+		return fmt.Errorf("--follow requires exactly one allocation; select one with --allocation PREFIX or --group (matches: %s)", allocationRefs(selected))
 	}
 
 	for i, allocation := range selected {
 		if len(selected) > 1 {
-			if _, err := fmt.Fprintf(w, "==> %s %s/%s <==\n", shortID(allocation.ID), allocation.Group, displayTask(allocation.Task)); err != nil {
+			if _, err := fmt.Fprintf(w, "==> %s %s <==\n", shortID(allocation.ID), allocation.Group); err != nil {
 				return err
 			}
 		}
@@ -144,48 +144,30 @@ func runJobLogs(ctx context.Context, w io.Writer, serverClient *client.ServerCli
 	return nil
 }
 
-func resolveLogAllocations(ctx context.Context, serverClient *client.ServerClient, target, allocationRef, group, task string) ([]api.AllocationResponse, error) {
+func resolveLogAllocations(ctx context.Context, serverClient *client.ServerClient, target, allocationRef, group string) ([]api.AllocationResponse, error) {
 	status, err := serverClient.GetJob(ctx, target)
-	if err == nil {
-		matches := append([]api.AllocationResponse(nil), status.Allocations...)
-		matches = filterAllocations(matches, group, task)
-		if allocationRef != "" {
-			resolved, err := resolveAllocationPrefix(matches, allocationRef)
-			if err != nil {
-				return nil, err
-			}
-			matches = []api.AllocationResponse{resolved}
-		}
-		if len(matches) == 0 {
-			return nil, fmt.Errorf("job %s has no allocations matching the requested filters", target)
-		}
-		return matches, nil
-	}
-	if !isHTTPStatus(err, http.StatusNotFound) {
-		return nil, err
-	}
-	if allocationRef != "" || group != "" || task != "" {
-		return nil, fmt.Errorf("%q is not a job; --allocation, --group, and --task require a job target", target)
-	}
-
-	allocations, err := serverClient.ListAllocations(ctx, "")
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := resolveAllocationPrefix(*allocations, target)
-	if err != nil {
-		return nil, fmt.Errorf("%q is neither a visible job nor a unique allocation ID/prefix: %w", target, err)
+	matches := append([]api.AllocationResponse(nil), status.Allocations...)
+	matches = filterAllocations(matches, group)
+	if allocationRef != "" {
+		resolved, err := resolveAllocationPrefix(matches, allocationRef)
+		if err != nil {
+			return nil, err
+		}
+		matches = []api.AllocationResponse{resolved}
 	}
-	return []api.AllocationResponse{resolved}, nil
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("job %s has no allocations matching the requested filters", target)
+	}
+	return matches, nil
 }
 
-func filterAllocations(allocations []api.AllocationResponse, group, task string) []api.AllocationResponse {
+func filterAllocations(allocations []api.AllocationResponse, group string) []api.AllocationResponse {
 	result := make([]api.AllocationResponse, 0, len(allocations))
 	for _, allocation := range allocations {
 		if group != "" && allocation.Group != group {
-			continue
-		}
-		if task != "" && allocation.Task != task {
 			continue
 		}
 		result = append(result, allocation)

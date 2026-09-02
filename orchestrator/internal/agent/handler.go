@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,17 +73,13 @@ func (h *Handler) handleRun(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "allocation tasks are required")
 	}
 	if request.AllocationID == "" {
-		request.AllocationID = request.Name
+		return echo.NewHTTPError(http.StatusBadRequest, "allocation_id is required")
 	}
 	if request.Generation == 0 {
-		request.Generation = 1
+		return echo.NewHTTPError(http.StatusBadRequest, "generation must be greater than zero")
 	}
 	if request.ExecutionHash == "" {
-		requestCopy := request
-		requestCopy.Epoch, requestCopy.ExecutionHash = 0, ""
-		raw, _ := json.Marshal(requestCopy)
-		sum := sha256.Sum256(raw)
-		request.ExecutionHash = hex.EncodeToString(sum[:])
+		return echo.NewHTTPError(http.StatusBadRequest, "execution_hash is required")
 	}
 	if err := h.agent.PrepareStart(ctx, &request); err != nil {
 		return operationError(err)
@@ -104,7 +98,7 @@ func (h *Handler) handleRun(c *echo.Context) error {
 		}
 	}
 	if err != nil {
-		h.agent.log.Error("start allocation failed", "allocation", request.Name, "error", err)
+		h.agent.log.Error("start allocation failed", "allocation", request.AllocationID, "error", err)
 		return operationError(err)
 	}
 

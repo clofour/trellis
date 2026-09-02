@@ -2,8 +2,6 @@
 package server
 
 import (
-	"time"
-
 	"github.com/clofour/trellis/internal/api"
 )
 
@@ -24,7 +22,6 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 	result := make(api.AllocationListResponse, 0, len(s.allocations))
 	for _, allocation := range s.allocations {
 		allocation.mu.Lock()
-		allocation.normalize(time.Now().UTC())
 		if namespace != "" && allocation.Namespace != namespace {
 			allocation.mu.Unlock()
 			continue
@@ -41,11 +38,10 @@ func (s *Server) ListAllocations(namespace string, filter *AllocationListFilter)
 		}
 
 		response := api.AllocationResponse{
-			ID:               allocation.AllocationID(),
+			ID:               allocation.ID,
 			Job:              allocation.JobName,
 			Group:            allocation.TaskGroupName,
 			Namespace:        allocation.Namespace,
-			Status:           string(allocation.Status),
 			Phase:            allocation.Phase,
 			Health:           allocation.Health,
 			Draining:         allocation.Draining,
@@ -79,7 +75,7 @@ func (s *Server) AllocationEvents(namespace, id string) (api.AllocationEventList
 	defer s.mu.RUnlock()
 	for _, a := range s.allocations {
 		a.mu.Lock()
-		if a.AllocationID() != id {
+		if a.ID != id {
 			a.mu.Unlock()
 			continue
 		}

@@ -3,7 +3,6 @@ package spec
 import (
 	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"time"
 )
 
@@ -54,28 +53,6 @@ const (
 // Valid reports whether m is a supported API access mode.
 func (m APIAccessMode) Valid() bool {
 	return m == APIAccessNone || m == APIAccessNamespace || m == APIAccessCluster
-}
-
-// UnmarshalJSON accepts the canonical string modes and legacy booleans.
-func (m *APIAccessMode) UnmarshalJSON(data []byte) error {
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return err
-	}
-	switch v := value.(type) {
-	case string:
-		*m = APIAccessMode(v)
-		return nil
-	case bool:
-		if v {
-			*m = APIAccessNamespace
-		} else {
-			*m = APIAccessNone
-		}
-		return nil
-	default:
-		return fmt.Errorf("api_access must be namespace or cluster")
-	}
 }
 
 // TaskNetworkMode controls how a task container joins the network.

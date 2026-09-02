@@ -104,7 +104,6 @@ func (s *Server) Reconcile(ctx context.Context) {
 	valid := make([]*Allocation, 0, len(s.allocations))
 	for _, allocation := range s.allocations {
 		allocation.mu.Lock()
-		allocation.normalize(now)
 		job := s.jobs[jobKey(allocation.Namespace, allocation.JobName)]
 		if allocation.Phase == lifecycle.PhaseStopped || allocation.Phase == lifecycle.PhaseFailed || allocation.Phase == lifecycle.PhaseLost {
 			allocation.mu.Unlock()
@@ -226,8 +225,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 			for _, placement := range placements {
 				node := s.nodes[placement.NodeID]
 				name := fmt.Sprintf("%s-%s-%s-%s", namespace, jobName, group.Name, uuid.NewString()[:8])
-				allocation := &Allocation{ID: name, Name: name, Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Tasks: group.Tasks, Node: node, Generation: 1, JobRevision: job.Revision, Revision: job.Revision, Phase: lifecycle.PhasePlaced, Health: lifecycle.HealthUnknown, Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
-				allocation.normalize(now)
+				allocation := &Allocation{ID: name, Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Tasks: group.Tasks, Node: node, Generation: 1, JobRevision: job.Revision, Phase: lifecycle.PhasePlaced, Health: lifecycle.HealthUnknown, Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 				actions = append(actions, Action{Type: ActionStart, Allocation: allocation})
 				s.allocations = append(s.allocations, allocation)
 			}
@@ -237,7 +235,7 @@ func (s *Server) Reconcile(ctx context.Context) {
 
 	for i := range actions {
 		if err := s.Execute(ctx, &actions[i]); err != nil {
-			s.log.Error("reconcile action failed", "action", actions[i].Type, "allocation", actions[i].Allocation.Name, "error", err)
+			s.log.Error("reconcile action failed", "action", actions[i].Type, "allocation", actions[i].Allocation.ID, "error", err)
 		}
 	}
 	s.refreshCatalog()
@@ -257,7 +255,6 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 	alloc.mu.Lock()
 	defer alloc.mu.Unlock()
 	now := s.now().UTC()
-	alloc.normalize(now)
 	address := fmt.Sprintf("%s:%d", alloc.Node.Host, alloc.Node.Port)
 	switch action.Type {
 	case ActionStart:
@@ -280,7 +277,7 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 				break
 			}
 		}
-		request := &api.AllocationRequest{AllocationID: alloc.AllocationID(), Generation: alloc.Generation, JobRevision: alloc.JobRevision, Epoch: s.controlEpoch, Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Name: alloc.AllocationID(), Tasks: alloc.Tasks, Runtime: groupRuntime, Restart: groupRestart}
+		request := &api.AllocationRequest{AllocationID: alloc.ID, Generation: alloc.Generation, JobRevision: alloc.JobRevision, Epoch: s.controlEpoch, Namespace: alloc.Namespace, JobName: alloc.JobName, GroupName: alloc.TaskGroupName, Tasks: alloc.Tasks, Runtime: groupRuntime, Restart: groupRestart}
 		if groupUsesWireGuard {
 			plan, err := s.networkPlan(alloc.Namespace, alloc.Node)
 			if err != nil {
@@ -353,7 +350,7 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 				_ = alloc.Transition(lifecycle.PhaseFailed, now, "retry_limit", err.Error())
 				alloc.NextRetryAt = nil
 			} else {
-				next := now.Add(retryDelay(alloc.AllocationID(), alloc.Attempt))
+				next := now.Add(retryDelay(alloc.ID, alloc.Attempt))
 				alloc.NextRetryAt = &next
 			}
 			_ = s.state.PutAllocation(context.WithoutCancel(ctx), alloc)
@@ -374,13 +371,13 @@ func (s *Server) Execute(ctx context.Context, action *Action) error {
 			}
 		}
 		if alloc.Node.Status == NodeStatusHealthy || alloc.Node.Status == NodeStatusDraining {
-			if err := s.client.StopAllocation(ctx, address, &api.StopAllocationRequest{AllocationID: alloc.AllocationID(), Generation: alloc.Generation, Epoch: s.controlEpoch}); err != nil {
+			if err := s.client.StopAllocation(ctx, address, &api.StopAllocationRequest{AllocationID: alloc.ID, Generation: alloc.Generation, Epoch: s.controlEpoch}); err != nil {
 				if code := agentOperationCode(err); code == api.OperationStaleEpoch || code == api.OperationStaleGeneration {
 					return err
 				}
 				alloc.Attempt++
 				alloc.Reason, alloc.Message = "agent_stop_failed", err.Error()
-				next := now.Add(retryDelay(alloc.AllocationID(), alloc.Attempt))
+				next := now.Add(retryDelay(alloc.ID, alloc.Attempt))
 				alloc.NextRetryAt = &next
 				_ = s.state.PutAllocation(context.WithoutCancel(ctx), alloc)
 				return err
