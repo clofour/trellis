@@ -4,12 +4,15 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 type DashboardAPIAccess = "namespace" | "cluster";
 
+const namespacePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
+
 interface Config {
   allowWrites: boolean;
   apiAccess: DashboardAPIAccess;
   clusterName: string;
   namespace: string;
   namespaces: string[];
+  allowAnyNamespace: boolean;
   setNamespace: (namespace: string) => void;
 }
 
@@ -19,6 +22,7 @@ const ConfigContext = createContext<Config>({
   clusterName: "Trellis cluster",
   namespace: "",
   namespaces: [""],
+  allowAnyNamespace: false,
   setNamespace: () => undefined,
 });
 
@@ -31,50 +35,38 @@ export function ConfigProvider({
   clusterName,
   defaultNamespace,
   namespaces,
+  allowAnyNamespace,
   children,
 }: {
   allowWrites: boolean;
   clusterName: string;
   defaultNamespace: string;
   namespaces: string[];
+  allowAnyNamespace: boolean;
   children: React.ReactNode;
 }) {
   const [apiAccess, setAPIAccess] = useState<DashboardAPIAccess>("namespace");
   const [namespace, setSelectedNamespace] = useState(defaultNamespace);
-  const [namespaceOptions, setNamespaceOptions] = useState(namespaces);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadScope = async () => {
       try {
-        const accessResponse = await fetch("/api/v1/access", { cache: "no-store" });
-        if (!accessResponse.ok) return;
-        const access = (await accessResponse.json()) as {
+        const response = await fetch("/api/v1/access", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as {
           api_access?: DashboardAPIAccess;
         };
-        if (cancelled || (access.api_access !== "cluster" && access.api_access !== "namespace")) {
+        if (
+          cancelled ||
+          (data.api_access !== "cluster" && data.api_access !== "namespace")
+        ) {
           return;
         }
-        setAPIAccess(access.api_access);
-        if (access.api_access !== "cluster") return;
-
-        const namespacesResponse = await fetch("/api/v1/namespaces", {
-          cache: "no-store",
-        });
-        if (!namespacesResponse.ok) return;
-        const discovered = (await namespacesResponse.json()) as unknown;
-        if (!Array.isArray(discovered)) return;
-        const options = discovered.filter(
-          (item): item is string => typeof item === "string" && item.length > 0,
-        );
-        if (cancelled || options.length === 0) return;
-        setNamespaceOptions(options);
-        setSelectedNamespace((current) =>
-          options.includes(current) ? current : options[0],
-        );
+        setAPIAccess(data.api_access);
       } catch {
-        // Keep the safe namespace-only defaults when scope discovery is unavailable.
+        // Keep the safe namespace-only default when scope detection is unavailable.
       }
     };
 
@@ -85,8 +77,10 @@ export function ConfigProvider({
   }, []);
 
   const setNamespace = (next: string) => {
-    if (!namespaceOptions.includes(next)) return;
-    setSelectedNamespace(next);
+    const candidate = next.trim();
+    if (!namespacePattern.test(candidate)) return;
+    if (!allowAnyNamespace && !namespaces.includes(candidate)) return;
+    setSelectedNamespace(candidate);
   };
 
   return (
@@ -96,7 +90,8 @@ export function ConfigProvider({
         apiAccess,
         clusterName,
         namespace,
-        namespaces: namespaceOptions,
+        namespaces,
+        allowAnyNamespace,
         setNamespace,
       }}
     >
