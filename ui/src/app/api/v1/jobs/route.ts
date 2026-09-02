@@ -49,10 +49,14 @@ export async function POST(request: NextRequest) {
     if (!body?.spec || typeof body.spec !== "object") {
       return NextResponse.json({ error: "Missing job spec" }, { status: 400 });
     }
-
-    // The browser can select only namespaces explicitly allowed by the
-    // dashboard configuration. Force the manifest to that selected scope.
-    body.spec.namespace = selected.namespace;
+    if (body.spec.namespace !== selected.namespace) {
+      return NextResponse.json(
+        {
+          error: `Manifest namespace ${JSON.stringify(body.spec.namespace)} does not match active namespace ${JSON.stringify(selected.namespace)}. Change the manifest or select the intended namespace.`,
+        },
+        { status: 422 },
+      );
+    }
 
     const res = await fetch(`${TRELLIS_URL}/v1/jobs`, {
       method: "POST",
