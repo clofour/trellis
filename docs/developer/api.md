@@ -30,11 +30,19 @@ Secret write body: `{"value_base64":"...","expected_version":1}`; omit `expected
 
 ## Example
 
+First-party clients treat a server address without an explicit scheme as HTTPS. In an API-enabled workload, use the injected namespace and CA rather than falling back to plaintext HTTP:
+
 ```sh
-curl -fsS \
+case "$TRELLIS_ADDR" in
+  http://*|https://*) api_url=${TRELLIS_ADDR%/} ;;
+  *) api_url="https://${TRELLIS_ADDR%/}" ;;
+esac
+
+printf '%s\n' "$TRELLIS_CA_CERT" > /tmp/trellis-ca.pem
+curl -fsS --cacert /tmp/trellis-ca.pem \
   -H "Authorization: Bearer $TRELLIS_TOKEN" \
   -H "X-Trellis-Namespace: $TRELLIS_NAMESPACE" \
-  "http://$TRELLIS_ADDR/v1/jobs"
+  "$api_url/v1/jobs"
 ```
 
-See [`examples/api-access/`](../../examples/api-access/) for in-allocation access.
+For deployments that deliberately use `http://`, omit `--cacert`. See [`examples/api-access/`](../../examples/api-access/) for an in-allocation helper that handles both cases.
