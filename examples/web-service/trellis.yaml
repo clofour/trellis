@@ -3,13 +3,10 @@ name: web-service
 namespace: default
 task_groups:
   - name: web
-    count: 2
-    update:
-      strategy: rolling
-      max_parallel: 1
+    count: 1
     tasks:
       - name: tutorial
-        image: ghcr.io/clofour/trellis-tutorial:v2
+        image: ghcr.io/clofour/trellis-tutorial:v1
         networking:
           mode: host
           ports:
