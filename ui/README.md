@@ -3,7 +3,7 @@
 The dashboard is a Next.js operational interface for deployments, failures,
 cluster maintenance, and namespace-scoped configuration. It uses the same
 [user-facing vocabulary](../docs/public/user-model.md) and YAML job manifests as
-the CLI, documentation, and examples. Runtime data refreshes every five seconds.
+`trellisctl`, the documentation, and examples. Runtime data refreshes every five seconds.
 
 By default the dashboard is read-only. Set `TRELLIS_ALLOW_WRITES=true` only on
 a trusted administration network to enable job apply/edit/delete actions, node
@@ -18,10 +18,10 @@ secondary views. The dashboard intentionally exposes operator workflows rather
 than every internal API endpoint:
 
 - cluster readiness, explicit failures, blocked progress, and maintenance activity
-- deployment state using the same ready/converging/degraded semantics as the CLI
+- deployment state using the same ready/converging/degraded semantics as `trellisctl`
 - node health, labels, available host volumes, and optional drain actions
-- job rollout summaries, YAML manifests, revision changes, and delete actions
-- allocation lifecycle and health as separate states, plus diagnostics, retries, placement, ports, events, and log tails
+- job rollout summaries, YAML manifests, semantic review-before-apply, revision changes, and delete actions
+- allocation lifecycle and health as separate states, plus diagnostics, retries, placement, ports, events, and per-task log tails
 - write-only secret metadata plus optional create/rotate/delete actions
 
 Node registration, heartbeats, Raft joining, leadership epochs, internal
@@ -37,8 +37,9 @@ token through a `NEXT_PUBLIC_` environment variable.
 
 The dashboard connects to one cluster and exposes only the namespaces listed in
 its server-side configuration. The selected namespace is attached to every
-scoped request, and job writes are forced to that selection server-side. A
-browser cannot select an unconfigured namespace.
+scoped request. A browser cannot select an unconfigured namespace. Job manifests
+must explicitly name the selected namespace; the dashboard rejects a mismatch
+rather than silently rewriting desired state.
 
 ## Configuration
 
@@ -74,16 +75,22 @@ carried by the token. Secret management requires cluster authorization by design
 
 ### Job manifests
 
-The dashboard edits the same YAML **job manifest** used by `trellis jobs apply`
-and by the repository examples. It parses YAML in the browser, preserves the
-complete manifest schema, and converts the manifest to the JSON API
-representation only when submitting it.
+The dashboard edits the same YAML **job manifest** used by `trellisctl jobs apply`
+and by the repository examples. It parses YAML in the browser and converts the
+manifest to the numeric JSON API representation before planning and submitting
+it. The dashboard first shows a semantic plan; applying is a separate action.
+Editing the YAML after planning invalidates the plan and requires another review.
 
 This keeps one authoring format across first-party interfaces while still
 supporting every manifest field, including networking, runtimes, labels,
 restart policies, constraints, update strategy, volumes, secrets, and health
 checks. Duration values are shown in manifest form such as `10s` and `1m30s`
-rather than raw API nanoseconds.
+rather than raw API nanoseconds. Memory values are shown as readable sizes such
+as `64MiB` when possible and are converted to byte counts for the API.
+
+Allocation logs follow the same task model as `trellisctl jobs logs`: a
+single-task allocation opens that task directly, while a multi-task allocation
+requires selecting the task whose stream you want to inspect.
 
 ### Cluster connection
 
@@ -164,5 +171,6 @@ sudo systemctl enable --now trellis-ui
 - **Dashboard API requests return 502:** verify the API URL/token and confirm the configured address reaches the active control plane.
 - **Dashboard API requests return 401:** the UI token does not match an accepted cluster or namespace token.
 - **Secret requests return 403:** secret administration requires cluster authorization rather than a namespace-scoped token.
+- **A manifest is rejected for namespace mismatch:** select the manifest's namespace in the dashboard or change the manifest explicitly; the dashboard will not rewrite it.
 - **Write controls are absent:** set `TRELLIS_ALLOW_WRITES=true` and restart the dashboard.
 - **Data appears stale:** runtime data polls every five seconds; check the browser network panel and dashboard service logs for failed proxy requests.
