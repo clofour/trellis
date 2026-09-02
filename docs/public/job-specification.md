@@ -122,7 +122,9 @@ api_access:
 
 A job may never delegate more authority than the credential submitting it. Namespace-scoped callers cannot request cluster-scoped workload credentials, and read-only callers cannot request write credentials. Planning enforces the same ceiling as apply so a preview cannot advertise a deployment the caller is not authorized to create.
 
-The bootstrap cluster token is intentionally separate. Trellis no longer injects that root credential into workloads. Operations such as Raft membership changes, backup/restore, and node registration remain bootstrap/root operations rather than abilities granted by ordinary `cluster/write` credentials.
+The bootstrap credential is intentionally separate. Trellis never injects that root credential into workloads. Operations such as Raft membership changes, backup/restore, node registration, and minting ordinary operator credentials remain bootstrap/root operations rather than abilities granted by `cluster/write`.
+
+Generated credentials carry an authoritative server-side kind (`operator` or `workload`) in addition to scope/access. `GET /v1/auth/whoami` reports the kind and effective authorization of the credential making the request; the bootstrap credential reports itself explicitly as `bootstrap`.
 
 Enabled API access injects `TRELLIS_ADDR`, `TRELLIS_TOKEN`, and `TRELLIS_NAMESPACE`; when TLS is configured, `TRELLIS_CA_CERT` contains the cluster CA PEM. `TRELLIS_NAMESPACE` is initialized to the job namespace even for cluster-scoped credentials.
 
@@ -158,11 +160,13 @@ networking:
 
 `networking.mode` is:
 
-- omitted or `""`: isolated container networking with no external routes;
+- omitted or `isolated`: a private container network namespace with no external routes;
 - `host`: join the node network namespace directly;
-- `wireguard`: join the namespace WireGuard mesh in a private container network namespace.
+- `namespace`: join the private Trellis network belonging to the workload namespace.
 
-Port declarations are valid only with `mode: host`. Host networking has no Trellis NAT or port-forwarding layer, so there is no separate host/container port distinction in desired state. `port` is both the node port Trellis reserves and the port the process must listen on. It must be 1–65535. A fixed port can be used only once per node, so replicas reserving the same port need distinct nodes. WireGuard must be enabled on the nodes before a task requests `wireguard` mode.
+`namespace` deliberately describes the networking semantics rather than the transport implementation. Trellis currently realizes this mode with WireGuard and `runsc`, so participating nodes still require that operator-level setup.
+
+Port declarations are valid only with `mode: host`. Host networking has no Trellis NAT or port-forwarding layer, so there is no separate host/container port distinction in desired state. `port` is both the node port Trellis reserves and the port the process must listen on. It must be 1–65535. A fixed port can be used only once per node, so replicas reserving the same port need distinct nodes.
 
 ### Resources
 
