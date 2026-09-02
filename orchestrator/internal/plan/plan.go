@@ -51,7 +51,10 @@ func Build(current *spec.JobSpec, currentRevision int, desired *spec.JobSpec) Re
 	return result
 }
 
-// Diff returns semantic changes between two job specifications. Named slices are matched by name rather than position.
+// Diff returns semantic changes between two job specifications. Task groups are
+// matched by name because their order does not affect revision semantics. Other
+// slices remain positional because their order participates in task-group
+// content hashing and can therefore cause allocation replacement.
 func Diff(before, after *spec.JobSpec) []Change {
 	var left any
 	var right any
@@ -110,34 +113,36 @@ func walk(path string, before, after any, changes *[]Change) {
 	leftSlice, leftOK := before.([]any)
 	rightSlice, rightOK := after.([]any)
 	if leftOK && rightOK {
-		if leftNamed, okLeft := namedSlice(leftSlice); okLeft {
-			if rightNamed, okRight := namedSlice(rightSlice); okRight {
-				names := make(map[string]struct{}, len(leftNamed)+len(rightNamed))
-				for name := range leftNamed {
-					names[name] = struct{}{}
-				}
-				for name := range rightNamed {
-					names[name] = struct{}{}
-				}
-				ordered := make([]string, 0, len(names))
-				for name := range names {
-					ordered = append(ordered, name)
-				}
-				sort.Strings(ordered)
-				for _, name := range ordered {
-					left, leftExists := leftNamed[name]
-					right, rightExists := rightNamed[name]
-					child := fmt.Sprintf("%s[%s]", path, name)
-					switch {
-					case !leftExists:
-						*changes = append(*changes, Change{Operation: "add", Path: child, After: right})
-					case !rightExists:
-						*changes = append(*changes, Change{Operation: "remove", Path: child, Before: left})
-					default:
-						walk(child, left, right, changes)
+		if path == "task_groups" {
+			if leftNamed, okLeft := namedSlice(leftSlice); okLeft {
+				if rightNamed, okRight := namedSlice(rightSlice); okRight {
+					names := make(map[string]struct{}, len(leftNamed)+len(rightNamed))
+					for name := range leftNamed {
+						names[name] = struct{}{}
 					}
+					for name := range rightNamed {
+						names[name] = struct{}{}
+					}
+					ordered := make([]string, 0, len(names))
+					for name := range names {
+						ordered = append(ordered, name)
+					}
+					sort.Strings(ordered)
+					for _, name := range ordered {
+						left, leftExists := leftNamed[name]
+						right, rightExists := rightNamed[name]
+						child := fmt.Sprintf("%s[%s]", path, name)
+						switch {
+						case !leftExists:
+							*changes = append(*changes, Change{Operation: "add", Path: child, After: right})
+						case !rightExists:
+							*changes = append(*changes, Change{Operation: "remove", Path: child, Before: left})
+						default:
+							walk(child, left, right, changes)
+						}
+					}
+					return
 				}
-				return
 			}
 		}
 		limit := len(leftSlice)
