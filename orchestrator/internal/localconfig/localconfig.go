@@ -18,9 +18,9 @@ const DefaultPath = "/run/trellis/local.yaml"
 
 // Config is the connection information the CLI needs to reach a cluster.
 type Config struct {
-	ServerAddr string `yaml:"server_addr"`
-	Token      string `yaml:"token"`
-	CACert     string `yaml:"ca_cert,omitempty"` // inline PEM
+	ServerAddr   string `yaml:"server_addr"`
+	ClusterToken string `yaml:"token"`
+	CACert       string `yaml:"ca_cert,omitempty"` // inline PEM
 }
 
 // Write atomically writes cfg to path, creating parent directories as needed.
