@@ -43,11 +43,11 @@ const (
 	CredentialBootstrap CredentialKind = "bootstrap"
 	// CredentialOperator is an explicitly minted human or external-client credential.
 	CredentialOperator CredentialKind = "operator"
-	// CredentialWorkload is injected into one task group through api_access.
+	// CredentialWorkload is injected into a task group through api_access.
 	CredentialWorkload CredentialKind = "workload"
 )
 
-// CredentialSubject identifies the workload that owns an injected credential.
+// CredentialSubject optionally identifies the workload that owns an injected credential.
 type CredentialSubject struct {
 	Namespace string `json:"namespace"`
 	Job       string `json:"job"`
@@ -89,9 +89,12 @@ func (p Principal) Validate() error {
 	if p.Kind == CredentialOperator && p.Subject != nil {
 		return fmt.Errorf("operator credential must not include a workload subject")
 	}
-	if p.Kind == CredentialWorkload {
-		if p.Subject == nil || p.Subject.Namespace == "" || p.Subject.Job == "" || p.Subject.TaskGroup == "" {
-			return fmt.Errorf("workload credential requires namespace, job, and task group subject")
+	if p.Subject != nil {
+		if p.Subject.Namespace == "" || p.Subject.Job == "" || p.Subject.TaskGroup == "" {
+			return fmt.Errorf("workload subject requires namespace, job, and task group")
+		}
+		if p.Kind != CredentialWorkload {
+			return fmt.Errorf("only workload credentials may include a workload subject")
 		}
 		if p.Scope == AccessNamespace && p.Namespace != p.Subject.Namespace {
 			return fmt.Errorf("workload credential namespace must match its subject")
@@ -167,26 +170,16 @@ func (m *TokenManager) ValidateToken(ctx context.Context, rawToken string) (*Pri
 	return &principal, nil
 }
 
-// GetOrCreateWorkloadToken returns the persistent credential for one task group.
-func (m *TokenManager) GetOrCreateWorkloadToken(ctx context.Context, scope AccessScope, access AccessLevel, namespace, job, taskGroup string) (string, error) {
-	principal := Principal{
-		Kind:      CredentialWorkload,
-		Scope:     scope,
-		Access:    access,
-		Namespace: namespace,
-		Subject: &CredentialSubject{
-			Namespace: namespace,
-			Job:       job,
-			TaskGroup: taskGroup,
-		},
-	}
+// GetOrCreateWorkloadToken returns the persistent workload credential for a scope/access pair.
+func (m *TokenManager) GetOrCreateWorkloadToken(ctx context.Context, scope AccessScope, access AccessLevel, namespace string) (string, error) {
+	principal := Principal{Kind: CredentialWorkload, Scope: scope, Access: access, Namespace: namespace}
 	if scope == AccessCluster {
 		principal.Namespace = ""
 	}
 	if err := principal.Validate(); err != nil {
 		return "", err
 	}
-	mapping := fmt.Sprintf("%s/%s/%s/%s/%s", namespace, job, taskGroup, scope, access)
+	mapping := fmt.Sprintf("%s/%s/%s", scope, access, namespace)
 	mappingHash := sha256.Sum256([]byte(mapping))
 	rawKey := fmt.Sprintf("trellis/%s/workload-tokens/%s", m.cluster, hex.EncodeToString(mappingHash[:]))
 	existing, err := m.store.Get(ctx, rawKey)
