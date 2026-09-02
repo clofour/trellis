@@ -9,7 +9,7 @@ SHARE_DIR="/vagrant/bin"
 TOKEN_FILE="${SHARE_DIR}/token"
 TRELLIS_TOKEN="$(cat "${TOKEN_FILE}")"
 TRELLIS_ADDR="localhost:8128"
-CLI="trellis --server-addr ${TRELLIS_ADDR} --cluster-token ${TRELLIS_TOKEN}"
+CLI="trellisctl --server-addr ${TRELLIS_ADDR} --cluster-token ${TRELLIS_TOKEN}"
 
 wait_healthy() {
     local namespace="$1" job="$2" timeout="${3:-120}"
@@ -17,7 +17,7 @@ wait_healthy() {
     echo "Waiting for ${namespace}/${job} to become healthy..."
     while [ "${elapsed}" -lt "${timeout}" ]; do
         if ${CLI} --namespace "${namespace}" jobs status "${job}" 2>/dev/null \
-                | grep -q "healthy"; then
+                | grep -q "State: ready"; then
             echo "${namespace}/${job} is healthy."
             return 0
         fi
@@ -40,10 +40,11 @@ for i in $(seq 1 30); do
 done
 
 # ── Hello: two-replica web server ────────────────────────────────────
-# Uses traefik/whoami: a lightweight server that returns request details,
-# demonstrating dynamic port allocation and placement across nodes.
+# Uses traefik/whoami: a lightweight server that returns request details.
+# Host networking has no port translation, so each replica reserves and listens
+# on port 80 and therefore must run on a different node.
 
-cat <<'EOF' | ${CLI} jobs apply --file /dev/stdin
+cat <<'EOF' | ${CLI} --namespace examples jobs apply --file /dev/stdin
 namespace: examples
 name: hello
 task_groups:
@@ -54,10 +55,12 @@ task_groups:
         image: docker.io/traefik/whoami
         resources:
           cpu: 100
-          memory: 16777216
-        ports:
-          - host_port: 0
-            container_port: 80
+          memory: 16MiB
+        networking:
+          mode: host
+          ports:
+            - host_port: 80
+              container_port: 80
         health_check:
           type: http
           port: 80
@@ -66,7 +69,7 @@ EOF
 
 # ── Blog: WordPress + MySQL ──────────────────────────────────────────
 
-cat <<'EOF' | ${CLI} jobs apply --file /dev/stdin
+cat <<'EOF' | ${CLI} --namespace blog jobs apply --file /dev/stdin
 namespace: blog
 name: mysql
 task_groups:
@@ -82,10 +85,12 @@ task_groups:
           MYSQL_PASSWORD: wordpress
         resources:
           cpu: 500
-          memory: 536870912
-        ports:
-          - host_port: 0
-            container_port: 3306
+          memory: 512MiB
+        networking:
+          mode: host
+          ports:
+            - host_port: 3306
+              container_port: 3306
         volumes:
           - name: data
             path: /var/lib/mysql
@@ -96,7 +101,7 @@ EOF
 
 wait_healthy blog mysql 180
 
-cat <<'EOF' | ${CLI} jobs apply --file /dev/stdin
+cat <<'EOF' | ${CLI} --namespace blog jobs apply --file /dev/stdin
 namespace: blog
 name: wordpress
 task_groups:
@@ -115,10 +120,12 @@ task_groups:
           WORDPRESS_DB_PASSWORD: wordpress
         resources:
           cpu: 500
-          memory: 536870912
-        ports:
-          - host_port: 0
-            container_port: 80
+          memory: 512MiB
+        networking:
+          mode: host
+          ports:
+            - host_port: 80
+              container_port: 80
         health_check:
           type: http
           port: 80
@@ -127,5 +134,5 @@ EOF
 
 echo ""
 echo "Demo workloads deployed. Check status with:"
-echo "  trellis --namespace examples jobs status hello"
-echo "  trellis --namespace blog jobs status wordpress"
+echo "  trellisctl --namespace examples jobs status hello"
+echo "  trellisctl --namespace blog jobs status wordpress"
