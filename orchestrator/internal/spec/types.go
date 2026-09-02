@@ -38,21 +38,40 @@ func (r Runtime) Valid() bool {
 	return r == RuntimeDefault || r == RuntimeRunc || r == RuntimeRunsc
 }
 
-// APIAccessMode controls which control-plane credential is injected into a task group.
-type APIAccessMode string
+// APIAccessScope controls where an injected control-plane credential may operate.
+type APIAccessScope string
 
 const (
-	// APIAccessNone disables in-allocation API credentials.
-	APIAccessNone APIAccessMode = ""
-	// APIAccessNamespace injects a token restricted to the job's own namespace.
-	APIAccessNamespace APIAccessMode = "namespace"
-	// APIAccessCluster injects the cluster administrator token.
-	APIAccessCluster APIAccessMode = "cluster"
+	// APIAccessNamespace restricts the credential to the job's namespace.
+	APIAccessNamespace APIAccessScope = "namespace"
+	// APIAccessCluster permits cluster-scoped access.
+	APIAccessCluster APIAccessScope = "cluster"
 )
 
-// Valid reports whether m is a supported API access mode.
-func (m APIAccessMode) Valid() bool {
-	return m == APIAccessNone || m == APIAccessNamespace || m == APIAccessCluster
+// Valid reports whether s is a supported API access scope.
+func (s APIAccessScope) Valid() bool {
+	return s == APIAccessNamespace || s == APIAccessCluster
+}
+
+// APIAccessLevel controls what an injected control-plane credential may do.
+type APIAccessLevel string
+
+const (
+	// APIAccessRead permits read-only API operations.
+	APIAccessRead APIAccessLevel = "read"
+	// APIAccessWrite permits mutations as well as reads.
+	APIAccessWrite APIAccessLevel = "write"
+)
+
+// Valid reports whether a is a supported API access level.
+func (a APIAccessLevel) Valid() bool {
+	return a == APIAccessRead || a == APIAccessWrite
+}
+
+// APIAccessSpec requests a least-privilege control-plane credential for a task group.
+type APIAccessSpec struct {
+	Scope  APIAccessScope `yaml:"scope" json:"scope"`
+	Access APIAccessLevel `yaml:"access" json:"access"`
 }
 
 // TaskNetworkMode controls how a task container joins the network.
@@ -109,7 +128,7 @@ type TaskGroupSpec struct {
 	Runtime     Runtime            `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Tasks       []TaskSpec         `yaml:"tasks" json:"tasks"`
 	Labels      map[string]string  `yaml:"labels,omitempty" json:"labels,omitempty"`
-	APIAccess   APIAccessMode      `yaml:"api_access,omitempty" json:"api_access,omitempty"`
+	APIAccess   *APIAccessSpec     `yaml:"api_access,omitempty" json:"api_access,omitempty"`
 	Restart     *RestartPolicySpec `yaml:"restart,omitempty" json:"restart,omitempty"`
 	Constraints []ConstraintSpec   `yaml:"constraints,omitempty" json:"constraints,omitempty"`
 	Update      *UpdateSpec        `yaml:"update,omitempty" json:"update,omitempty"`
@@ -164,10 +183,9 @@ type SecretRefSpec struct {
 	Mode   uint32       `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
-// PortSpec reserves a host port used directly by a host-networked task.
+// PortSpec reserves a port used directly by a host-networked task.
 type PortSpec struct {
-	HostPort      int `yaml:"host_port" json:"host_port"`
-	ContainerPort int `yaml:"container_port" json:"container_port"`
+	Port int `yaml:"port" json:"port"`
 }
 
 // ResourcesSpec describes task CPU and memory requirements.
@@ -203,7 +221,7 @@ func TaskGroupContentHash(g *TaskGroupSpec) string {
 		Name        string
 		Runtime     Runtime
 		Tasks       []TaskSpec
-		APIAccess   APIAccessMode
+		APIAccess   *APIAccessSpec
 		Restart     *RestartPolicySpec
 		Constraints []ConstraintSpec
 	}{
@@ -217,14 +235,4 @@ func TaskGroupContentHash(g *TaskGroupSpec) string {
 	raw, _ := json.Marshal(hashable)
 	h := sha256.Sum256(raw)
 	return string(h[:])
-}
-
-// GroupUsesWireGuard reports whether any task in the group requests WireGuard networking.
-func GroupUsesWireGuard(g *TaskGroupSpec) bool {
-	for _, task := range g.Tasks {
-		if task.Networking != nil && task.Networking.Mode == TaskNetworkWireGuard {
-			return true
-		}
-	}
-	return false
 }
