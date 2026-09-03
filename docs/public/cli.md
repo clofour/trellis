@@ -1,6 +1,6 @@
 # CLI workflows
 
-The `trellisctl` CLI is the first-party operator interface to the [Trellis user model](user-model.md). Resource commands remain available, but routine usage is organized around a small workflow: select a cluster context, validate and plan desired state, apply it, observe convergence, diagnose failures, inspect logs, and delete the job when it is no longer desired.
+The `trellisctl` CLI is the first-party operator interface to the [Trellis user model](user-model.md). Resource commands remain available, but routine usage is organized around a small workflow: select a cluster context, validate and plan desired state, apply it, observe convergence, diagnose failures, inspect lifecycle history, read logs, and delete the job when it is no longer desired.
 
 ## Named cluster contexts
 
@@ -126,7 +126,21 @@ When a job is not healthy, ask for the failure-oriented view:
 trellisctl jobs diagnose web
 ```
 
-`diagnose` surfaces allocation lifecycle/health, reason codes, human-readable messages, retry timing, and attempt count. It intentionally omits normal healthy allocations and old draining allocations unless they report a real problem.
+`diagnose` surfaces the current allocation lifecycle/health state, reason codes, human-readable messages, retry timing, and attempt count. It intentionally omits normal healthy allocations and old draining allocations unless they report a real problem.
+
+When the current state is not enough to explain what happened, inspect the recorded allocation lifecycle transitions:
+
+```sh
+trellisctl jobs events web
+```
+
+The job-level command combines lifecycle history from its allocations in timestamp order and shows the allocation, task group, phase, reason, and message for every transition. Narrow it to one allocation using the short reference printed by `jobs status`:
+
+```sh
+trellisctl jobs events web --allocation a1b2c3d4
+```
+
+Lifecycle events are control-plane/runtime state such as `placed`, `starting`, `running`, `failed`, or `lost`. They are deliberately separate from task logs: use events to answer **how the allocation moved through Trellis**, and logs to answer **what the process wrote to stdout/stderr**.
 
 ## Read logs by job, allocation, group, or task
 
@@ -196,7 +210,7 @@ Ambiguous prefixes are rejected and the CLI shows the matching nodes rather than
 Current structured-output commands are:
 
 ```text
-jobs validate, diff/plan, list, status, diagnose
+jobs validate, diff/plan, list, status, diagnose, events
 namespaces list
 nodes list, status
 secrets set, list, describe
@@ -207,6 +221,7 @@ For example:
 
 ```sh
 trellisctl jobs status web --output json
+trellisctl jobs events web --output json
 trellisctl namespaces list --output json
 trellisctl nodes status worker-2 -o json
 ```
