@@ -6,6 +6,7 @@ INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/trellis/data"
 CONFIG_DIR="/etc/trellis"
 CONFIG_FILE="${CONFIG_DIR}/trellis.yaml"
+SECRETS_KEY_FILE="${CONFIG_DIR}/secrets.key"
 SERVICE_FILE="/etc/systemd/system/trellis.service"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -124,7 +125,7 @@ install_gvisor() {
 [ "$(uname -s)" = "Linux" ] || error "This script only supports Linux."
 [ "$(uname -m)" = "x86_64" ] || error "This script only supports x86_64 (amd64)."
 [ "$(id -u)" -eq 0 ] || error "Run this script as root (or with sudo)."
-for cmd in curl tar systemctl; do command -v "$cmd" >/dev/null 2>&1 || error "Required command not found: $cmd"; done
+for cmd in curl tar systemctl openssl; do command -v "$cmd" >/dev/null 2>&1 || error "Required command not found: $cmd"; done
 
 if [ -x "${INSTALL_DIR}/trellis" ]; then
     installed_version="$("${INSTALL_DIR}/trellis" --version 2>/dev/null | awk '{print $NF}')" || installed_version="unknown"
@@ -192,6 +193,11 @@ if [ -n "$join_addr" ]; then
     printf 'join: %s\n' "$join_addr" >> "$CONFIG_FILE"
 fi
 chmod 600 "$CONFIG_FILE"
+
+info "Generating secrets encryption key..."
+openssl rand -base64 32 > "$SECRETS_KEY_FILE"
+chmod 600 "$SECRETS_KEY_FILE"
+printf 'secrets_key: %s\n' "$SECRETS_KEY_FILE" >> "$CONFIG_FILE"
 
 info "Writing systemd unit to ${SERVICE_FILE}..."
 cat > "$SERVICE_FILE" <<EOF
@@ -327,6 +333,7 @@ unset cluster_token
 echo
 info "Setup complete!"
 info "Node configuration: ${CONFIG_FILE}"
+info "Secrets key: ${SECRETS_KEY_FILE}"
 info "Verify the cluster: trellisctl nodes list"
 info "Start the tutorial: follow docs/public/getting-started.md"
 if [ "$install_ui" = true ]; then
