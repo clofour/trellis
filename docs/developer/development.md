@@ -20,6 +20,17 @@ npm run build
 
 Containerd end-to-end tests need a Linux host, containerd, permissions on its socket, and `CONTAINERD_ADDRESS`. Multi-node integration uses the test/injected runtime and is separated in CI. Tests beside each package document state-machine invariants, Raft persistence, scheduler behavior, network planning, durability, update regressions, and security validation.
 
+## Three-node Vagrant demo
+
+[`orchestrator/Vagrantfile`](../../orchestrator/Vagrantfile) provides a real three-node local demo cluster for development and for the multi-node public learning-path examples. It currently targets Hyper-V and uses Vagrant hostmanager integration. With those host prerequisites configured:
+
+```sh
+cd orchestrator
+vagrant up
+```
+
+The Vagrant environment provisions `control`, `worker-1`, and `worker-2` Debian 12 VMs, installs containerd and Trellis, joins the nodes, and applies the workloads in `demo/workloads.sh`. It is a disposable development/demo environment rather than a production deployment method.
+
 ## Design rules
 
 - Put wire-compatible JSON structures in `internal/api`; keep job YAML/JSON schema in `internal/spec`.
