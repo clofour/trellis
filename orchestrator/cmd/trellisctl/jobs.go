@@ -71,11 +71,11 @@ func NewJobsDiffCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current, exists, err := getExistingJob(cmd.Context(), serverClient, job.Name)
+			jobPlan, err := serverClient.PlanJob(cmd.Context(), job)
 			if err != nil {
 				return err
 			}
-			return printJobPlan(cmd.OutOrStdout(), current, exists, job)
+			return printJobPlan(cmd.OutOrStdout(), jobPlan)
 		},
 	}
 	cmd.Flags().StringVar(&path, "file", "trellis.yaml", "YAML job manifest path")
@@ -107,19 +107,15 @@ func NewJobsApplyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current, exists, err := getExistingJob(cmd.Context(), serverClient, job.Name)
+			jobPlan, err := serverClient.PlanJob(cmd.Context(), job)
 			if err != nil {
 				return err
 			}
-			changes := []manifestChange(nil)
-			if exists && current.Spec != nil {
-				changes = diffJobSpecs(current.Spec, job)
-			}
 			if dryRun {
-				return printJobPlan(cmd.OutOrStdout(), current, exists, job)
+				return printJobPlan(cmd.OutOrStdout(), jobPlan)
 			}
-			if exists && current.Spec != nil && len(changes) == 0 {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Job %s/%s already matches the manifest (revision %d).\n", job.Namespace, job.Name, current.Revision); err != nil {
+			if jobPlan.Action == "none" {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Job %s/%s already matches the manifest (revision %d).\n", job.Namespace, job.Name, jobPlan.BaseRevision); err != nil {
 					return err
 				}
 				if wait {
@@ -136,8 +132,8 @@ func NewJobsApplyCmd() *cobra.Command {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Applied job %s/%s.\n", job.Namespace, job.Name); err != nil {
 					return err
 				}
-			case exists:
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Applied job %s/%s: revision %d -> %d.\n", job.Namespace, job.Name, current.Revision, after.Revision); err != nil {
+			case jobPlan.Action == "update":
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Applied job %s/%s: revision %d -> %d.\n", job.Namespace, job.Name, jobPlan.BaseRevision, after.Revision); err != nil {
 					return err
 				}
 			default:
@@ -415,8 +411,8 @@ func printJobDiagnosis(w io.Writer, status *api.JobStatusResponse) error {
 		}
 		if a.Attempt > 0 {
 			if _, err := fmt.Fprintf(w, "  attempt: %d\n", a.Attempt); err != nil {
-				return err
-			}
+					return err
+				}
 		}
 	}
 	if problems == 0 {
