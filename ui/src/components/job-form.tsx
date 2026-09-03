@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { DurationValue, JobSpec } from "@/lib/types";
+import type { JobSpec } from "@/lib/types";
 import { formatJobManifest, parseJobManifest } from "@/lib/manifest";
+import { getManifestSchema, normalizeManifestForAPI } from "@/lib/manifest-schema";
 import { planJob, submitJob } from "@/lib/api";
 import {
   formatPlanValue,
@@ -37,115 +38,6 @@ function defaultSpec(namespace: string): JobSpec {
       },
     ],
   };
-}
-
-function durationNanoseconds(value: DurationValue, field: string): number {
-  if (typeof value === "number") return value;
-  if (value === "0" || value === "") return 0;
-
-  const units: Record<string, number> = {
-    ns: 1,
-    us: 1_000,
-    "µs": 1_000,
-    "μs": 1_000,
-    ms: 1_000_000,
-    s: 1_000_000_000,
-    m: 60_000_000_000,
-    h: 3_600_000_000_000,
-  };
-  const pattern = /(\d+(?:\.\d+)?)(ns|us|µs|μs|ms|s|m|h)/g;
-  let total = 0;
-  let consumed = 0;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(value)) !== null) {
-    if (match.index !== consumed) {
-      throw new Error(`${field} has an invalid duration: ${value}`);
-    }
-    total += Number(match[1]) * units[match[2]];
-    consumed = pattern.lastIndex;
-  }
-  if (consumed !== value.length || consumed === 0) {
-    throw new Error(`${field} has an invalid duration: ${value}`);
-  }
-  return Math.round(total);
-}
-
-function byteSizeBytes(value: unknown, field: string): number {
-  if (typeof value === "number") {
-    if (!Number.isFinite(value) || value < 0) {
-      throw new Error(`${field} must be a non-negative byte count.`);
-    }
-    return Math.round(value);
-  }
-  if (typeof value !== "string") {
-    throw new Error(`${field} must be a byte count or size such as 64MiB.`);
-  }
-  const match = value.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]*)$/);
-  if (!match) {
-    throw new Error(`${field} has an invalid byte size: ${value}`);
-  }
-  const units: Record<string, number> = {
-    "": 1,
-    b: 1,
-    kb: 1_000,
-    mb: 1_000_000,
-    gb: 1_000_000_000,
-    tb: 1_000_000_000_000,
-    ki: 2 ** 10,
-    kib: 2 ** 10,
-    mi: 2 ** 20,
-    mib: 2 ** 20,
-    gi: 2 ** 30,
-    gib: 2 ** 30,
-    ti: 2 ** 40,
-    tib: 2 ** 40,
-  };
-  const multiplier = units[match[2].toLowerCase()];
-  if (multiplier === undefined) {
-    throw new Error(`${field} has an invalid byte-size unit: ${match[2]}`);
-  }
-  const bytes = Number(match[1]) * multiplier;
-  if (!Number.isSafeInteger(Math.round(bytes)) || bytes < 0) {
-    throw new Error(`${field} is too large.`);
-  }
-  return Math.round(bytes);
-}
-
-// The dashboard owns conversion from its human-authored YAML representation to
-// canonical API JSON. Trellis owns validation, defaults, and planning semantics.
-function normalizeManifestValues(spec: JobSpec): JobSpec {
-  const normalized = JSON.parse(JSON.stringify(spec)) as JobSpec;
-  for (const group of normalized.task_groups) {
-    if (group.restart) {
-      group.restart.window = durationNanoseconds(
-        group.restart.window,
-        `${group.name}.restart.window`,
-      );
-    }
-    for (const task of group.tasks) {
-      if (task.resources) {
-        task.resources.memory = byteSizeBytes(
-          task.resources.memory as unknown,
-          `${group.name}.${task.name}.resources.memory`,
-        );
-      }
-      const check = task.health_check;
-      if (!check) continue;
-      if (check.interval !== undefined) {
-        check.interval = durationNanoseconds(
-          check.interval,
-          `${group.name}.${task.name}.health_check.interval`,
-        );
-      }
-      if (check.timeout !== undefined) {
-        check.timeout = durationNanoseconds(
-          check.timeout,
-          `${group.name}.${task.name}.health_check.timeout`,
-        );
-      }
-    }
-  }
-  return normalized;
 }
 
 export function JobForm({
@@ -266,7 +158,8 @@ function JobFormPanel({
         return;
       }
 
-      const spec = normalizeManifestValues(parse());
+      const schema = await getManifestSchema();
+      const spec = normalizeManifestForAPI(schema, parse()) as JobSpec;
       setPlan(await planJob(spec));
       setPlannedSpec(spec);
     } catch (err) {
@@ -314,7 +207,7 @@ function JobFormPanel({
                 Active namespace: <span className="font-mono text-foreground">{namespace || "(unscoped)"}</span>. The manifest namespace must match; the dashboard never rewrites it.
               </p>
               <p className="mt-2">
-                YAML is a human-authored representation. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>; memory accepts values such as <span className="font-mono">64MiB</span> and <span className="font-mono">1GiB</span>. The dashboard converts those values to canonical JSON, then Trellis validates and plans the result.
+                YAML is a human-authored representation. Duration fields accept strings such as <span className="font-mono">10s</span> and <span className="font-mono">1m30s</span>; memory accepts values such as <span className="font-mono">64MiB</span> and <span className="font-mono">1GiB</span>. The generated authoring schema identifies those conversions; the dashboard produces canonical JSON, then Trellis validates and plans the result.
               </p>
             </div>
 
