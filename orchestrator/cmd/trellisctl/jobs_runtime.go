@@ -14,17 +14,6 @@ import (
 	"github.com/clofour/trellis/internal/client"
 )
 
-func getExistingJob(ctx context.Context, serverClient *client.ServerClient, name string) (*api.JobStatusResponse, bool, error) {
-	status, err := serverClient.GetJob(ctx, name)
-	if err == nil {
-		return status, true, nil
-	}
-	if isHTTPStatus(err, http.StatusNotFound) {
-		return nil, false, nil
-	}
-	return nil, false, err
-}
-
 func isHTTPStatus(err error, status int) bool {
 	var httpErr *client.HTTPError
 	return errors.As(err, &httpErr) && httpErr.Status == status
