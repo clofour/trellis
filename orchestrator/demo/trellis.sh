@@ -21,25 +21,26 @@ install -m 0755 "${SHARE_DIR}/trellisctl"   /usr/local/bin/trellisctl
 
 mkdir -p "${DATA_DIR}" /etc/trellis
 
-HOSTNAME=$(hostname)
+HOSTNAME=$(hostname -s)
+ADVERTISE_HOST="${HOSTNAME}.local"
 cat > "$CONFIG_FILE" <<EOF
 cluster: default
 bootstrap_token: $(cat "${TOKEN_FILE}")
 data_dir: ${DATA_DIR}
-agent_advertise: ${HOSTNAME}:8127
-server_advertise: ${HOSTNAME}:8128
-raft_advertise: ${HOSTNAME}:8129
+agent_advertise: ${ADVERTISE_HOST}:8127
+server_advertise: ${ADVERTISE_HOST}:8128
+raft_advertise: ${ADVERTISE_HOST}:8129
 EOF
-if [ "${HOSTNAME}" != "control.trellis.local" ]; then
-    printf 'join: control.trellis.local:8128\n' >> "$CONFIG_FILE"
+if [ "${HOSTNAME}" != "control" ]; then
+    printf 'join: control.local:8128\n' >> "$CONFIG_FILE"
 fi
 chmod 600 "$CONFIG_FILE"
 
 cat > /etc/systemd/system/trellis.service <<EOF
 [Unit]
 Description=Trellis node
-After=containerd.service network-online.target
-Wants=containerd.service network-online.target
+After=containerd.service network-online.target avahi-daemon.service
+Wants=containerd.service network-online.target avahi-daemon.service
 
 [Service]
 ExecStart=/usr/local/bin/trellis --config ${CONFIG_FILE}

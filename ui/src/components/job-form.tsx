@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { JobSpec } from "@/lib/types";
+import starterManifest from "@/lib/starter-manifest.json";
 import { formatJobManifest, parseJobManifest } from "@/lib/manifest";
 import { getManifestSchema, normalizeManifestForAPI } from "@/lib/manifest-schema";
 import { planJob, submitJob } from "@/lib/api";
@@ -21,23 +22,9 @@ interface JobFormProps {
 }
 
 function defaultSpec(namespace: string): JobSpec {
-  return {
-    name: "",
-    namespace,
-    task_groups: [
-      {
-        name: "web",
-        count: 1,
-        tasks: [
-          {
-            name: "tutorial",
-            image: "ghcr.io/clofour/trellis-tutorial:v1",
-            resources: { cpu: 100, memory: 67108864 },
-          },
-        ],
-      },
-    ],
-  };
+  const spec = JSON.parse(JSON.stringify(starterManifest)) as JobSpec;
+  spec.namespace = namespace;
+  return spec;
 }
 
 export function JobForm({
@@ -73,16 +60,20 @@ function JobFormPanel({
         : defaultSpec(namespace),
     [initialSpec, namespace],
   );
-  const [source, setSource] = useState(() => formatJobManifest(initial));
+  const initialSource = useMemo(() => formatJobManifest(initial), [initial]);
+  const [source, setSource] = useState(() => initialSource);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<ManifestPlan | null>(null);
   const [plannedSpec, setPlannedSpec] = useState<JobSpec | null>(null);
   const isEditing = !!initialSpec;
+  const dirty = source !== initialSource;
 
   const handleClose = useCallback(() => {
-    if (!submitting) onClose();
-  }, [submitting, onClose]);
+    if (submitting) return;
+    if (dirty && !window.confirm("Discard unapplied manifest changes?")) return;
+    onClose();
+  }, [dirty, submitting, onClose]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -91,6 +82,15 @@ function JobFormPanel({
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [handleClose]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty]);
 
   const clearPlan = () => {
     setPlan(null);

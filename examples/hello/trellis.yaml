@@ -1,11 +1,11 @@
-# yaml-language-server: $schema=../../schemas/trellis-job.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job.schema.json
 name: hello
 namespace: default
 task_groups:
-  - name: app
+  - name: web
     count: 1
     tasks:
-      - name: tutorial
+      - name: hello
         image: ghcr.io/clofour/trellis-tutorial:v1
         resources:
           cpu: 100

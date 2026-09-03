@@ -10,7 +10,7 @@ Every machine runs the same `trellis` daemon. Raft consensus elects one node to 
 
 The setup script downloads the latest release binaries, configures a systemd
 service, and generates a cluster token. It supports Linux x64 and requires
-root access and a running containerd instance.
+root access. If containerd is missing, the installer can install it for you.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash

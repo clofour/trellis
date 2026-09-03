@@ -29,6 +29,16 @@ func (s *ServerClient) AllocationLogs(ctx context.Context, id string, follow boo
 	return s.client.stream(ctx, fmt.Sprintf("%s/v1/allocations/%s/logs?follow=%t&tail=%d", s.address(), url.PathEscape(id), follow, tail))
 }
 
+// AllocationEvents returns the lifecycle event history for an allocation.
+func (s *ServerClient) AllocationEvents(ctx context.Context, id string) (*api.AllocationEventListResponse, error) {
+	var response api.AllocationEventListResponse
+	path := fmt.Sprintf("%s/v1/allocations/%s/events", s.address(), url.PathEscape(id))
+	if err := s.client.request(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return nil, fmt.Errorf("list allocation events: %w", err)
+	}
+	return &response, nil
+}
+
 // SetAddress updates the server address used by the client.
 func (s *ServerClient) SetAddress(addr string) {
 	s.mu.Lock()

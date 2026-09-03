@@ -16,8 +16,34 @@ func message() string {
 		return "Your first Trellis workload is running."
 	case "v2":
 		return "Nice — your new application version is running."
+	case "network-v1":
+		return "The Trellis namespace-networking tutorial is running."
 	default:
 		return "Trellis tutorial workload is running."
+	}
+}
+
+func probePeer(peerURL string) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	probe := func() {
+		response, err := client.Get(peerURL)
+		if err != nil {
+			log.Printf("peer check failed: %s: %v", peerURL, err)
+			return
+		}
+		_ = response.Body.Close()
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			log.Printf("peer check failed: %s returned %s", peerURL, response.Status)
+			return
+		}
+		log.Printf("peer reachable: %s (%s)", peerURL, response.Status)
+	}
+
+	probe()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		probe()
 	}
 }
 
@@ -37,6 +63,11 @@ func main() {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 
+	if peerURL := os.Getenv("TUTORIAL_PEER_URL"); peerURL != "" {
+		log.Printf("peer probe enabled: %s", peerURL)
+		go probePeer(peerURL)
+	}
+
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -45,6 +76,6 @@ func main() {
 		}
 	}()
 
-	log.Printf("HTTP endpoint ready on :8080 (used in the next tutorial stage)")
+	log.Printf("HTTP endpoint ready on :8080 (used in later tutorial stages)")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

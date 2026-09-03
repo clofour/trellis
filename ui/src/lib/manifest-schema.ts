@@ -28,6 +28,12 @@ export interface ManifestCompletion {
   description: string;
 }
 
+export interface ManifestValueCompletion {
+  label: string;
+  value: string;
+  description: string;
+}
+
 let schemaPromise: Promise<ManifestSchema> | null = null;
 
 export function getManifestSchema(): Promise<ManifestSchema> {
@@ -68,7 +74,7 @@ export function manifestCompletions(
   root: ManifestSchema,
   context: string,
 ): ManifestCompletion[] {
-  const schema = context === "root" ? root : findContextSchema(root, context);
+  const schema = contextSchema(root, context);
   if (!schema) return [];
   return Object.entries(schema.properties ?? {})
     .map(([key, property]) => ({
@@ -79,6 +85,35 @@ export function manifestCompletions(
         "Trellis manifest field.",
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+export function manifestValueCompletions(
+  root: ManifestSchema,
+  context: string,
+  key: string,
+): ManifestValueCompletion[] {
+  const schema = contextSchema(root, context);
+  const property = schema?.properties?.[key];
+  if (!property) return [];
+
+  const description =
+    resolveSchema(root, property).description ??
+    property.description ??
+    "Allowed value from the Trellis manifest schema.";
+  const values = scalarCompletionValues(root, property);
+  const seen = new Set<string>();
+  const result: ManifestValueCompletion[] = [];
+  for (const value of values) {
+    const insert = yamlScalar(value);
+    if (seen.has(insert)) continue;
+    seen.add(insert);
+    result.push({
+      label: String(value),
+      value: insert,
+      description,
+    });
+  }
+  return result;
 }
 
 export function validateManifestShape(
@@ -128,6 +163,13 @@ function objectValueSchema(
   return schemaType(schema) === "object" ? schema : null;
 }
 
+function contextSchema(
+  root: ManifestSchema,
+  context: string,
+): ManifestSchema | null {
+  return context === "root" ? root : findContextSchema(root, context);
+}
+
 function findContextSchema(
   root: ManifestSchema,
   target: string,
@@ -147,6 +189,36 @@ function findContextSchema(
     return null;
   };
   return visit(root);
+}
+
+function scalarCompletionValues(
+  root: ManifestSchema,
+  input: ManifestSchema,
+): unknown[] {
+  const schema = resolveSchema(root, input);
+  const result: unknown[] = [];
+  if (schema.enum) result.push(...schema.enum);
+  if (schema.const !== undefined) result.push(schema.const);
+  if (schemaType(schema) === "boolean") result.push(true, false);
+  for (const candidate of schema.oneOf ?? []) {
+    result.push(...scalarCompletionValues(root, candidate));
+  }
+  return result;
+}
+
+function yamlScalar(value: unknown): string {
+  if (typeof value === "boolean" || typeof value === "number") {
+    return String(value);
+  }
+  if (value === null) return "null";
+  const text = String(value);
+  if (
+    /^[A-Za-z0-9_./-]+$/u.test(text) &&
+    !["true", "false", "null", "~"].includes(text.toLowerCase())
+  ) {
+    return text;
+  }
+  return JSON.stringify(text);
 }
 
 function validateNode(

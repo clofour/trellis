@@ -22,8 +22,9 @@ The first workload deliberately omits ports, health-check settings, secrets, vol
 | 5 | [`secrets/`](secrets/) | Namespace-scoped secrets delivered as an environment variable and a file. | Shared node secrets-encryption key. |
 | 6 | [`volumes/`](volumes/) | Allocation-local scratch storage, advertised host volumes, and placement constraints. | Prepared node path, label, and volume advertisement. |
 | 7 | [`sidecar/`](sidecar/) | Two tasks deliberately coupled in one placement/scaling/lifecycle unit. | Two schedulable nodes for two fixed host ports; a custom nginx image for useful metrics. |
+| 8 | [`namespace-networking/`](namespace-networking/) | Private namespace networking and DNS discovery between ordinary workloads. | Namespace networking enabled on every participating node; two nodes recommended for a cross-node path. |
 
-These examples teach reusable primitives. Apply one only after reading its README, because host networking, secret key management, and node-local storage all carry operator responsibilities outside the manifest.
+These examples teach reusable primitives. Apply one only after reading its README, because host networking, namespace networking, secret key management, and node-local storage all carry operator responsibilities outside the manifest.
 
 ## Advanced patterns
 

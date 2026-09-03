@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
+	"github.com/clofour/trellis/internal/lifecycle"
 )
 
 func isHTTPStatus(err error, status int) bool {
@@ -95,6 +97,94 @@ func waitForJobDeletion(parent context.Context, w io.Writer, serverClient *clien
 		case <-timer.C:
 		}
 	}
+}
+
+type jobAllocationEvent struct {
+	Allocation string          `json:"allocation"`
+	Group      string          `json:"group"`
+	Phase      lifecycle.Phase `json:"phase"`
+	Reason     string          `json:"reason,omitempty"`
+	Message    string          `json:"message,omitempty"`
+	At         time.Time       `json:"at"`
+}
+
+func loadJobEvents(ctx context.Context, serverClient *client.ServerClient, target, allocationRef string) ([]jobAllocationEvent, error) {
+	status, err := serverClient.GetJob(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	matches := append([]api.AllocationResponse(nil), status.Allocations...)
+	if allocationRef != "" {
+		resolved, err := resolveAllocationPrefix(matches, allocationRef)
+		if err != nil {
+			return nil, err
+		}
+		matches = []api.AllocationResponse{resolved}
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("job %s has no allocations", target)
+	}
+
+	result := make([]jobAllocationEvent, 0)
+	for _, allocation := range matches {
+		events, err := serverClient.AllocationEvents(ctx, allocation.ID)
+		if err != nil {
+			return nil, fmt.Errorf("allocation %s: %w", shortID(allocation.ID), err)
+		}
+		for _, event := range *events {
+			result = append(result, jobAllocationEvent{
+				Allocation: allocation.ID,
+				Group:      allocation.Group,
+				Phase:      event.Phase,
+				Reason:     event.Reason,
+				Message:    event.Message,
+				At:         event.At,
+			})
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].At.Equal(result[j].At) {
+			return result[i].Allocation < result[j].Allocation
+		}
+		return result[i].At.Before(result[j].At)
+	})
+	return result, nil
+}
+
+func printJobEvents(w io.Writer, events []jobAllocationEvent) error {
+	if len(events) == 0 {
+		_, err := fmt.Fprintln(w, "No lifecycle events recorded.")
+		return err
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "Time\tAllocation\tTask group\tLifecycle\tReason\tMessage"); err != nil {
+		return err
+	}
+	for _, event := range events {
+		if _, err := fmt.Fprintf(
+			tw,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			event.At.Format(time.RFC3339),
+			shortID(event.Allocation),
+			event.Group,
+			event.Phase,
+			singleLine(event.Reason),
+			singleLine(event.Message),
+		); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
+}
+
+func singleLine(value string) string {
+	value = strings.ReplaceAll(value, "\t", " ")
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\n", " ")
+	if value == "" {
+		return "—"
+	}
+	return value
 }
 
 type jobLogStream struct {
