@@ -13,7 +13,7 @@ Complete [Getting Started](getting-started.md) first. It establishes the only go
 | 5. Runtime configuration | Namespace-scoped environment/file secrets and rotation | [`examples/secrets`](../../examples/secrets/) |
 | 6. Persistence | Allocation-local storage, advertised host volumes, constraints, backup responsibility | [`examples/volumes`](../../examples/volumes/) |
 | 7. Colocated tasks | Sidecars and the consequences of shared placement/scaling/lifecycle | [`examples/sidecar`](../../examples/sidecar/) |
-| 8. Namespace networking | Isolated, host, and namespace networking; service discovery | [Networking below](#8-namespace-networking-and-discovery) |
+| 8. Namespace networking | Isolated, host, and namespace networking; service discovery | [`examples/namespace-networking`](../../examples/namespace-networking/) |
 | 9. In-cluster automation | Namespace/cluster scope and read/write API access | [`examples/api-access`](../../examples/api-access/) |
 | 10. Release architecture | Rolling, blue/green, and weighted canary composition | [`examples/deployment-strategies`](../../examples/deployment-strategies/) |
 | 11. Stateful compositions | Coupled development stacks, local-volume caveats, application-native HA | [`examples/wordpress`](../../examples/wordpress/), then [`examples/patroni`](../../examples/patroni/) |
@@ -51,11 +51,20 @@ Apply the example, reach the service at the selected node's port 8080, and use `
 
 Stages 1 and 2 work on the single node from Getting Started. The repository also includes [`orchestrator/Vagrantfile`](../../orchestrator/Vagrantfile) for the point where the learning path begins to need real multi-node placement. It provisions three Debian 12 VMs named `control`, `worker-1`, and `worker-2`, installs containerd and Trellis on them, joins them into one cluster, and deploys a couple of demo workloads.
 
-The current Vagrantfile targets Hyper-V and uses the Vagrant hostmanager integration. With those host prerequisites already configured, start it from the orchestrator directory:
+The Vagrantfile contains no provider-specific VM configuration and requires no hostmanager plugin. It uses Vagrant's high-level private-network abstraction plus guest mDNS for peer names, so use whichever Vagrant VM provider is available on your host. Some providers still have their own normal setup requirements—for example, Hyper-V asks which virtual switch to use.
+
+Start it from the orchestrator directory:
 
 ```sh
 cd orchestrator
 vagrant up
+```
+
+Or select a provider explicitly when your Vagrant installation has more than one:
+
+```sh
+vagrant up --provider=virtualbox
+# or: --provider=libvirt / --provider=hyperv / another compatible provider
 ```
 
 This demo is an optional local lab, not a supported production installation method and not a separate Trellis abstraction. You can use any three compatible machines instead. The important property for the next two lessons is simply having enough independently schedulable nodes to make placement and rollout overlap visible.
@@ -129,21 +138,23 @@ networking:
 
 There is only one port because host networking has no Trellis NAT or translation layer. The reservation prevents another Trellis task from claiming the same node port; the process must bind it itself.
 
-Namespace-networked tasks do not declare host ports. Check them from inside the container with a script health check when needed:
+Namespace-networked tasks do not declare host ports. Healthy allocations enter Trellis DNS discovery using names shaped like:
 
-```yaml
-runtime: runsc
-tasks:
-  - name: app
-    image: registry.example/app:v1
-    networking:
-      mode: namespace
-    health_check:
-      type: script
-      command: [wget, -q, -O, /dev/null, http://127.0.0.1:8080/health]
+```text
+group.job.namespace.trellis
 ```
 
-Configure the namespace-networking dependencies on every participating node, open the configured WireGuard UDP port between nodes, and verify the image contains the health-check command. Healthy allocations enter Trellis discovery; API-aware controllers can filter them by task-group labels. Treat discovery as runtime endpoint information, not application consensus.
+Run [`examples/namespace-networking`](../../examples/namespace-networking/) at this stage. Its `web` group publishes two healthy tutorial allocations while an `observer` group repeatedly requests:
+
+```text
+http://web.namespace-networking.default.trellis:8080/health
+```
+
+That makes both discovery and the private network visible in `trellisctl jobs logs` without introducing an application proxy or special service resource.
+
+Configure the namespace-networking dependencies on every participating node and open the configured WireGuard UDP port between nodes (`51820` by default). The installer can set up the WireGuard and gVisor/runsc dependencies when namespace networking is enabled. Use `trellisctl jobs status` to see placement, `jobs logs` to see application-level peer probes, and `jobs events` when you need the recorded allocation lifecycle transitions that led to the current state.
+
+Treat discovery as runtime endpoint information, not application consensus. Applications that require a single writer, leader election, or distributed locking still need their own coordination protocol.
 
 ## 9. In-cluster API access
 
@@ -180,7 +191,7 @@ The WordPress example is a development composition, not a production topology. T
 Use the learning path to acquire the model; use these pages afterward:
 
 - [Job manifest reference](job-specification.md) for exact fields and validation.
-- [CLI workflows](cli.md) for contexts, planning, diagnosis, logging, and automation.
+- [CLI workflows](cli.md) for contexts, planning, diagnosis, lifecycle history, logging, and automation.
 - [Operations](operations.md) for node maintenance, backups, TLS, and recovery.
 - [Cookbook](cookbook.md) for architecture outcomes and tradeoffs.
 
