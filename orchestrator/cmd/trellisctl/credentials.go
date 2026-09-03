@@ -10,9 +10,9 @@ import (
 
 func NewCredentialsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "credentials",
-		Short:  "Mint scoped API credentials with the bootstrap cluster credential",
-		Hidden: true,
+		Use:   "credentials",
+		Short: "Mint scoped operator API credentials",
+		Long:  "Mint scoped operator API credentials. This administrative command requires the bootstrap credential; ordinary cluster/write operator credentials cannot mint additional credentials.",
 	}
 	cmd.AddCommand(newCredentialsCreateCmd())
 	return cmd
@@ -22,7 +22,8 @@ func newCredentialsCreateCmd() *cobra.Command {
 	var scope, access, namespace string
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a scoped API credential",
+		Short: "Create a scoped operator API credential",
+		Long:  "Create an operator credential with namespace or cluster scope and read or write access. The caller must authenticate with the bootstrap credential.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if scope != "cluster" && scope != "namespace" {
 				return fmt.Errorf("--scope must be cluster or namespace")
@@ -31,10 +32,10 @@ func newCredentialsCreateCmd() *cobra.Command {
 				return fmt.Errorf("--access must be read or write")
 			}
 			if scope == "namespace" && namespace == "" {
-				return fmt.Errorf("--namespace is required for namespace scope")
+				return fmt.Errorf("--namespace-scope is required for namespace scope")
 			}
 			if scope == "cluster" && namespace != "" {
-				return fmt.Errorf("--namespace cannot be used with cluster scope")
+				return fmt.Errorf("--namespace-scope cannot be used with cluster scope")
 			}
 			tlsCfg, err := buildCLITLSConfig()
 			if err != nil {

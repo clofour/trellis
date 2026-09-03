@@ -54,9 +54,19 @@ Secret values are never readable through the API. `cluster/read` may list and in
 
 ## Manifest editing
 
+The dashboard manifest editor is still deliberately YAML-first rather than a form abstraction, but it provides editor ergonomics around that representation:
+
+- line numbers and synchronized scrolling;
+- YAML-aware indentation for Enter and two-space Tab insertion;
+- live YAML parse feedback;
+- context-sensitive manifest-key completion with `Ctrl+Space` / `⌘+Space`;
+- short field explanations alongside completion choices;
+- formatting through **Format YAML**;
+- server-owned semantic review through **Review Plan** before apply.
+
 The editor accepts the same first-party YAML conveniences as `trellisctl`, including durations such as `10s` and memory such as `64MiB`. Those are consumer-side representation details. Before an API call, the dashboard converts them to the canonical JSON model: durations are nanoseconds and memory is bytes.
 
-Editor schema assistance comes from [`schemas/trellis-job.schema.json`](../../schemas/trellis-job.schema.json). Server validation and planning remain authoritative.
+The published authoring schema at [`schemas/trellis-job.schema.json`](../../schemas/trellis-job.schema.json) contains field-level descriptions as well as structural validation rules so external editors such as VS Code can offer useful completion and hover documentation. Dashboard completion is lightweight editing assistance; server validation and planning remain authoritative.
 
 Allocation logs are task-specific. A single-task allocation selects its task automatically; multi-task groups require choosing a task, matching `trellisctl jobs logs JOB --task TASK`.
 

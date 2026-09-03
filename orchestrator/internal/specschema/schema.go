@@ -280,6 +280,66 @@ func deriveYAML(root schema) {
 	setDef(root, "RestartPolicySpec", "window", humanDuration(defProperty(root, "RestartPolicySpec", "window")))
 	setDef(root, "HealthCheckSpec", "interval", humanDuration(defProperty(root, "HealthCheckSpec", "interval")))
 	setDef(root, "HealthCheckSpec", "timeout", humanDuration(defProperty(root, "HealthCheckSpec", "timeout")))
+	describeAuthoringFields(root)
+}
+
+func describeAuthoringFields(root schema) {
+	describe(root, []string{"properties", "name"}, "Job identifier, unique within its namespace.")
+	describe(root, []string{"properties", "namespace"}, "Namespace that owns the job and all runtime allocations created for it.")
+	describe(root, []string{"properties", "task_groups"}, "One or more placement, scaling, update, restart, and draining units.")
+
+	describeDef(root, "TaskGroupSpec", "name", "Task-group identifier, unique within this job.")
+	describeDef(root, "TaskGroupSpec", "count", "Desired number of allocations for this task group.")
+	describeDef(root, "TaskGroupSpec", "runtime", "Optional OCI runtime override. Omit to use the node default; supported explicit values are runc and runsc.")
+	describeDef(root, "TaskGroupSpec", "tasks", "Containers colocated in every allocation of this group; they share placement, scaling, update, restart, and drain lifecycle.")
+	describeDef(root, "TaskGroupSpec", "labels", "Discovery and routing metadata attached to allocations from this group.")
+	describeDef(root, "TaskGroupSpec", "api_access", "Optional least-privilege Trellis API credential request for every task in this group.")
+	describeDef(root, "TaskGroupSpec", "constraints", "Exact node attribute or label matches required for placement.")
+	describeDef(root, "TaskGroupSpec", "restart", "Retry policy for task failures inside an allocation.")
+	describeDef(root, "TaskGroupSpec", "update", "How allocations from an older job revision are replaced.")
+
+	describeDef(root, "APIAccessSpec", "scope", "Where the injected workload credential may operate: only this namespace or the whole cluster.")
+	describeDef(root, "APIAccessSpec", "access", "Whether the injected credential is read-only or may perform ordinary writes within its scope.")
+	describeDef(root, "ConstraintSpec", "attribute", "Node attribute or label key to match, such as arch, os, or a custom label.")
+	describeDef(root, "ConstraintSpec", "value", "Exact value the selected node must report for this attribute.")
+	describeDef(root, "RestartPolicySpec", "max_restarts", "Maximum failures allowed inside the restart window. Zero disables retries.")
+	describeDef(root, "RestartPolicySpec", "window", "Time window used to count restart attempts.")
+	describeDef(root, "UpdateSpec", "strategy", "Replacement strategy. Omit for recreate; rolling starts healthy replacement capacity incrementally.")
+	describeDef(root, "UpdateSpec", "max_parallel", "Maximum not-yet-healthy rolling replacements in flight. Zero uses Trellis's effective default of one.")
+
+	describeDef(root, "TaskSpec", "name", "Task identifier, unique within this task group.")
+	describeDef(root, "TaskSpec", "image", "Pullable OCI image reference. Pin a version or digest for reproducible deployments.")
+	describeDef(root, "TaskSpec", "env", "Literal environment variables. Keep credentials in Trellis secrets instead of manifest text.")
+	describeDef(root, "TaskSpec", "networking", "Network attachment and, for host mode, direct node-port reservations.")
+	describeDef(root, "TaskSpec", "volumes", "Allocation-local or advertised host-volume mounts for this task.")
+	describeDef(root, "TaskSpec", "resources", "CPU and memory requested from the scheduler for each task instance.")
+	describeDef(root, "TaskSpec", "health_check", "Optional HTTP, TCP, or script readiness/health observation. A running task without one is considered healthy.")
+	describeDef(root, "TaskSpec", "secrets", "Stored namespace secrets delivered to the task as environment variables or files.")
+
+	describeDef(root, "TaskNetworkingSpec", "mode", "Network attachment: isolated, host, or the private Trellis namespace network. Omission means isolated.")
+	describeDef(root, "TaskNetworkingSpec", "ports", "Direct host-port reservations. Valid only with mode: host; Trellis does not perform NAT or port translation.")
+	describeDef(root, "PortSpec", "port", "Node port Trellis reserves and the process must bind directly when using host networking.")
+	describeDef(root, "ResourcesSpec", "cpu", "CPU request in millicores; 1000 represents one CPU core.")
+	describeDef(root, "ResourcesSpec", "memory", "Memory request as bytes or a readable decimal/binary size such as 500MB or 256MiB.")
+
+	describeDef(root, "HealthCheckSpec", "type", "Health-check implementation: http, tcp, or script.")
+	describeDef(root, "HealthCheckSpec", "port", "Port checked by HTTP or TCP health checks.")
+	describeDef(root, "HealthCheckSpec", "path", "HTTP request path; ignored by TCP and script checks.")
+	describeDef(root, "HealthCheckSpec", "command", "Command argv executed for a script health check.")
+	describeDef(root, "HealthCheckSpec", "interval", "Delay between health checks. Omit to use the Trellis default.")
+	describeDef(root, "HealthCheckSpec", "timeout", "Maximum duration of one health check. Omit to use the Trellis default.")
+	describeDef(root, "HealthCheckSpec", "threshold", "Consecutive failed checks required before unhealthy. Zero uses the Trellis default.")
+
+	describeDef(root, "SecretRefSpec", "name", "Name of a stored secret in this job's namespace.")
+	describeDef(root, "SecretRefSpec", "target", "Delivery mechanism: env or file.")
+	describeDef(root, "SecretRefSpec", "env", "Environment variable name used by an env target.")
+	describeDef(root, "SecretRefSpec", "path", "Destination path below /run/trellis-secrets/ used by a file target.")
+	describeDef(root, "SecretRefSpec", "mode", "File mode for a file target: 0400 or 0600 (or decimal 256/384). Zero uses the default.")
+
+	describeDef(root, "VolumeSpec", "name", "Volume identifier within this task.")
+	describeDef(root, "VolumeSpec", "path", "Absolute mount path inside the container.")
+	describeDef(root, "VolumeSpec", "host_volume", "Optional advertised node volume name. Trellis schedules only onto nodes advertising this name and does not replicate its data.")
+	describeDef(root, "VolumeSpec", "read_only", "Mount this volume read-only when true.")
 }
 
 func humanDuration(base schema) schema {
@@ -346,6 +406,14 @@ func patchDef(root schema, name, property string, values schema) {
 
 func setDef(root schema, name, property string, value schema) {
 	set(def(root, name), []string{"properties", property}, value)
+}
+
+func describeDef(root schema, name, property, description string) {
+	describe(def(root, name), []string{"properties", property}, description)
+}
+
+func describe(root schema, path []string, description string) {
+	patch(root, path, schema{"description": description})
 }
 
 func set(root schema, path []string, value schema) {

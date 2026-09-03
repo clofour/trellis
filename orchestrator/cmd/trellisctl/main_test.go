@@ -102,6 +102,45 @@ func TestWriteUserConfigProtectsTokenFile(t *testing.T) {
 	}
 }
 
+func TestStructuredOutputFlagIsCommandLocal(t *testing.T) {
+	previousConfig := config
+	t.Cleanup(func() { config = previousConfig })
+	config = CLIConfig{}
+
+	root := newRootCmd()
+	if root.PersistentFlags().Lookup("output") != nil {
+		t.Fatal("--output must not be a persistent/global flag")
+	}
+
+	credentials, _, err := root.Find([]string{"credentials"})
+	if err != nil {
+		t.Fatalf("find credentials: %v", err)
+	}
+	if credentials.Hidden {
+		t.Fatal("credentials command must be discoverable in CLI help")
+	}
+
+	for _, path := range [][]string{{"jobs", "status"}, {"nodes", "list"}, {"secrets", "describe"}, {"credentials", "create"}} {
+		command, _, err := root.Find(path)
+		if err != nil {
+			t.Fatalf("find %v: %v", path, err)
+		}
+		if command.Flags().Lookup("output") == nil {
+			t.Fatalf("%v does not expose --output", path)
+		}
+	}
+
+	for _, path := range [][]string{{"jobs", "apply"}, {"jobs", "logs"}, {"nodes", "drain"}, {"secrets", "delete"}} {
+		command, _, err := root.Find(path)
+		if err != nil {
+			t.Fatalf("find %v: %v", path, err)
+		}
+		if command.Flags().Lookup("output") != nil {
+			t.Fatalf("%v unexpectedly exposes --output", path)
+		}
+	}
+}
+
 func testRootCommand() *cobra.Command {
 	root := &cobra.Command{Use: "trellisctl"}
 	flags := root.PersistentFlags()
@@ -112,6 +151,5 @@ func testRootCommand() *cobra.Command {
 	flags.StringVar(&config.CACert, "ca-cert", "", "")
 	flags.StringVar(&config.Cert, "cert", "", "")
 	flags.StringVar(&config.Key, "key", "", "")
-	flags.StringVarP(&config.Output, "output", "o", "table", "")
 	return root
 }
