@@ -2,9 +2,12 @@
 package spec
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -41,4 +44,58 @@ func TestExampleManifestsValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walk examples: %v", err)
 	}
+}
+
+func TestStarterManifestSurfacesMatchHelloExample(t *testing.T) {
+	root := filepath.Join("..", "..", "..")
+	canonicalRaw, err := os.ReadFile(filepath.Join(root, "examples", "hello", "trellis.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := ParseYAML(canonicalRaw)
+	if err != nil {
+		t.Fatalf("parse canonical hello example: %v", err)
+	}
+
+	docsRaw, err := os.ReadFile(filepath.Join(root, "docs", "public", "getting-started.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docsYAML, err := firstFencedYAML(string(docsRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docsSpec, err := ParseYAML([]byte(docsYAML))
+	if err != nil {
+		t.Fatalf("parse Getting Started starter manifest: %v", err)
+	}
+	if !reflect.DeepEqual(canonical, docsSpec) {
+		t.Fatalf("Getting Started starter manifest drifted from examples/hello/trellis.yaml")
+	}
+
+	uiRaw, err := os.ReadFile(filepath.Join(root, "ui", "src", "lib", "starter-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uiSpec JobSpec
+	if err := json.Unmarshal(uiRaw, &uiSpec); err != nil {
+		t.Fatalf("parse dashboard starter manifest: %v", err)
+	}
+	if !reflect.DeepEqual(canonical, &uiSpec) {
+		t.Fatalf("dashboard starter manifest drifted from examples/hello/trellis.yaml")
+	}
+}
+
+func firstFencedYAML(document string) (string, error) {
+	const fence = "```yaml\n"
+	start := strings.Index(document, fence)
+	if start < 0 {
+		return "", os.ErrNotExist
+	}
+	start += len(fence)
+	end := strings.Index(document[start:], "\n```")
+	if end < 0 {
+		return "", os.ErrInvalid
+	}
+	return document[start : start+end], nil
 }
