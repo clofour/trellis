@@ -129,6 +129,7 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/jobs/plan", h.handlePlanJob)
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
+	v1.GET("/namespaces", h.handleListNamespaces)
 	v1.GET("/allocations", h.handleListAllocations)
 	v1.GET("/allocations/:id/events", h.handleAllocationEvents)
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
