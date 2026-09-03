@@ -281,8 +281,7 @@ if confirm "Install the web dashboard?" "n"; then
     allow_writes_env=""
     if [ "$dashboard_mode" = "rw" ]; then
         dashboard_access="write"
-        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\"
-"
+        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\"\n"
     fi
 
     dashboard_manifest="${tmp}/trellis-dashboard.yaml"

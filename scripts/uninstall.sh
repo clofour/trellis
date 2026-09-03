@@ -27,7 +27,7 @@ confirm() {
     esac
 }
 
-# ── Preflight checks ─────────────────────────────────────────────────
+# ── Preflight checks ──────────────────────────────────────
 
 [ "$(uname -s)" = "Linux" ] || error "This script only supports Linux."
 [ "$(id -u)" -eq 0 ] || error "Run this script as root (or with sudo)."
@@ -43,7 +43,7 @@ warn "under ${DATA_DIR} will be permanently deleted."
 echo
 confirm "Continue with uninstall?" "n" || { info "Aborted."; exit 0; }
 
-# ── Stop and disable the service ─────────────────────────────────────
+# ── Stop and disable the service ───────────────────────────
 
 if systemctl is-active --quiet trellis 2>/dev/null; then
     info "Stopping trellis service..."
@@ -55,7 +55,7 @@ if systemctl is-enabled --quiet trellis 2>/dev/null; then
     systemctl disable trellis
 fi
 
-# ── Remove the systemd unit ──────────────────────────────────────────
+# ── Remove the systemd unit ───────────────────────────────
 
 if [ -f "$SERVICE_FILE" ]; then
     info "Removing systemd unit ${SERVICE_FILE}..."
@@ -64,27 +64,41 @@ if [ -f "$SERVICE_FILE" ]; then
     systemctl reset-failed 2>/dev/null || true
 fi
 
-# ── Remove binaries ──────────────────────────────────────────────────
+# ── Remove binaries ──────────────────────────────────────
 
 info "Removing binaries..."
 rm -f "${INSTALL_DIR}/trellis"
 rm -f "${INSTALL_DIR}/trellisctl"
 
-# ── Remove config directory ──────────────────────────────────────────
+# ── Remove trellisctl context ──────────────────────────────
+
+operator_user="${SUDO_USER:-root}"
+if [ "$operator_user" = "root" ]; then
+    operator_config_home="/root/.config"
+else
+    operator_home="$(getent passwd "$operator_user" | cut -d: -f6 2>/dev/null || true)"
+    operator_config_home="${operator_home}/.config"
+fi
+if [ -n "${operator_config_home:-}" ] && [ -d "${operator_config_home}/trellis" ]; then
+    info "Removing trellisctl context directory ${operator_config_home}/trellis..."
+    rm -rf "${operator_config_home}/trellis"
+fi
+
+# ── Remove config directory ────────────────────────────────
 
 if [ -d "$CONFIG_DIR" ]; then
     info "Removing config directory ${CONFIG_DIR}..."
     rm -rf "$CONFIG_DIR"
 fi
 
-# ── Remove runtime files ─────────────────────────────────────────────
+# ── Remove runtime files ───────────────────────────────────
 
 if [ -d "$RUN_DIR" ]; then
     info "Removing runtime directory ${RUN_DIR}..."
     rm -rf "$RUN_DIR"
 fi
 
-# ── Remove persistent data ───────────────────────────────────────────
+# ── Remove persistent data ──────────────────────────────────
 
 if [ -d "$DATA_DIR" ]; then
     echo
@@ -102,7 +116,7 @@ if [ -d "$DATA_DIR" ]; then
     fi
 fi
 
-# ── Optional: remove apt packages installed by setup.sh ─────────────
+# ── Optional: remove apt packages installed by setup.sh ───────────
 
 if command -v apt-get >/dev/null 2>&1; then
     removals=()
