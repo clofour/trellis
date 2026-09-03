@@ -47,9 +47,22 @@ Host networking has no Trellis NAT or port translation. The reservation prevents
 
 Apply the example, reach the service at the selected node's port 8080, and use `jobs diagnose` if its health check blocks readiness. Do not add replicas yet; first make the one-allocation service model concrete.
 
+### Optional three-node Vagrant demo
+
+Stages 1 and 2 work on the single node from Getting Started. The repository also includes [`orchestrator/Vagrantfile`](../../orchestrator/Vagrantfile) for the point where the learning path begins to need real multi-node placement. It provisions three Debian 12 VMs named `control`, `worker-1`, and `worker-2`, installs containerd and Trellis on them, joins them into one cluster, and deploys a couple of demo workloads.
+
+The current Vagrantfile targets Hyper-V and uses the Vagrant hostmanager integration. With those host prerequisites already configured, start it from the orchestrator directory:
+
+```sh
+cd orchestrator
+vagrant up
+```
+
+This demo is an optional local lab, not a supported production installation method and not a separate Trellis abstraction. You can use any three compatible machines instead. The important property for the next two lessons is simply having enough independently schedulable nodes to make placement and rollout overlap visible.
+
 ## 3. Replicas and placement
 
-The `replicated-service` example changes the healthy service from one desired allocation to two. Both replicas reserve port 8080, so they cannot share a node and require at least two compatible nodes.
+The `replicated-service` example changes the healthy service from one desired allocation to two. Both replicas reserve port 8080, so they cannot share a node and require at least two compatible nodes. The three-node Vagrant demo above is enough to run this lesson without provisioning separate hosts manually.
 
 This stage is about scheduling rather than rollout policy. Inspect both allocations with:
 
@@ -73,7 +86,7 @@ update:
 
 Change only the tutorial image from `v1` to `v2`, run `jobs diff`, then apply again. Trellis starts healthy replacement capacity before completing removal of the old revision.
 
-The fixed host port makes the temporary-capacity cost visible: two old replicas already occupy port 8080 on two nodes, so the first replacement needs another compatible node with that port free. `max_parallel: 1` limits how much replacement capacity can be in flight at once. If placement or health blocks progress, use `jobs diagnose` rather than treating the rollout as an opaque failed command.
+The fixed host port makes the temporary-capacity cost visible: two old replicas already occupy port 8080 on two nodes, so the first replacement needs another compatible node with that port free. `max_parallel: 1` limits how much replacement capacity can be in flight at once. The three-node Vagrant demo has exactly enough nodes to demonstrate this overlap. If placement or health blocks progress, use `jobs diagnose` rather than treating the rollout as an opaque failed command.
 
 ## 5. Secrets
 

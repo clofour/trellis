@@ -51,6 +51,7 @@ export function ConfigProvider({
   const [apiAccess, setAPIAccess] = useState<DashboardAPIAccess>("namespace");
   const [accessLevel, setAccessLevel] = useState<DashboardAccessLevel>("read");
   const [namespace, setSelectedNamespace] = useState(defaultNamespace);
+  const [knownNamespaces, setKnownNamespaces] = useState(namespaces);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,9 +80,28 @@ export function ConfigProvider({
           namespacePattern.test(data.namespace)
         ) {
           setSelectedNamespace(data.namespace);
+          setKnownNamespaces([data.namespace]);
+          return;
+        }
+        if (data.scope === "cluster" && allowAnyNamespace) {
+          const namespaceResponse = await fetch("/api/v1/namespaces", {
+            cache: "no-store",
+          });
+          if (!namespaceResponse.ok || cancelled) return;
+          const discovered = (await namespaceResponse.json()) as unknown;
+          if (!Array.isArray(discovered)) return;
+          const valid = discovered.filter(
+            (value): value is string =>
+              typeof value === "string" && namespacePattern.test(value),
+          );
+          const merged = Array.from(new Set([...namespaces.filter(Boolean), ...valid])).sort();
+          setKnownNamespaces(merged.length > 0 ? merged : namespaces);
+          if (!namespace && merged.length > 0) {
+            setSelectedNamespace(merged[0]);
+          }
         }
       } catch {
-        // Keep safe namespace/read defaults when credential introspection is unavailable.
+        // Keep safe namespace/read defaults when credential introspection or discovery is unavailable.
       }
     };
 
@@ -89,7 +109,7 @@ export function ConfigProvider({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [allowAnyNamespace, namespace, namespaces]);
 
   const setNamespace = (next: string) => {
     if (apiAccess !== "cluster") return;
@@ -97,6 +117,11 @@ export function ConfigProvider({
     if (!namespacePattern.test(candidate)) return;
     if (!allowAnyNamespace && !namespaces.includes(candidate)) return;
     setSelectedNamespace(candidate);
+    if (allowAnyNamespace) {
+      setKnownNamespaces((current) =>
+        current.includes(candidate) ? current : [...current, candidate].sort(),
+      );
+    }
   };
 
   return (
@@ -107,7 +132,8 @@ export function ConfigProvider({
         accessLevel,
         clusterName,
         namespace,
-        namespaces,
+        namespaces:
+          allowAnyNamespace && apiAccess === "cluster" ? knownNamespaces : namespaces,
         allowAnyNamespace: allowAnyNamespace && apiAccess === "cluster",
         setNamespace,
       }}

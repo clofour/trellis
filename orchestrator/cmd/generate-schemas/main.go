@@ -21,6 +21,7 @@ func main() {
 func run() error {
 	check := flag.Bool("check", false, "fail if the checked-in schemas differ from generated output")
 	outputDir := flag.String("output-dir", filepath.Join("..", "schemas"), "directory containing generated schema files")
+	uiSchema := flag.String("ui-schema", filepath.Join("..", "ui", "public", "trellis-job.schema.json"), "dashboard copy of the first-party authoring schema")
 	flag.Parse()
 
 	apiSchema, yamlSchema, err := specschema.Generate()
@@ -28,20 +29,20 @@ func run() error {
 		return err
 	}
 	files := []struct {
-		name string
+		path string
 		data []byte
 	}{
-		{name: "trellis-job-api.schema.json", data: apiSchema},
-		{name: "trellis-job.schema.json", data: yamlSchema},
+		{path: filepath.Join(*outputDir, "trellis-job-api.schema.json"), data: apiSchema},
+		{path: filepath.Join(*outputDir, "trellis-job.schema.json"), data: yamlSchema},
+		{path: *uiSchema, data: yamlSchema},
 	}
 
 	if *check {
 		var stale []string
 		for _, file := range files {
-			path := filepath.Join(*outputDir, file.name)
-			existing, err := os.ReadFile(path)
+			existing, err := os.ReadFile(file.path)
 			if err != nil || !bytes.Equal(existing, file.data) {
-				stale = append(stale, file.name)
+				stale = append(stale, file.path)
 			}
 		}
 		if len(stale) > 0 {
@@ -50,15 +51,14 @@ func run() error {
 		return nil
 	}
 
-	if err := os.MkdirAll(*outputDir, 0o755); err != nil {
-		return fmt.Errorf("create schema directory: %w", err)
-	}
 	for _, file := range files {
-		path := filepath.Join(*outputDir, file.name)
-		if err := os.WriteFile(path, file.data, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
+		if err := os.MkdirAll(filepath.Dir(file.path), 0o755); err != nil {
+			return fmt.Errorf("create schema directory for %s: %w", file.path, err)
 		}
-		fmt.Println(path)
+		if err := os.WriteFile(file.path, file.data, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", file.path, err)
+		}
+		fmt.Println(file.path)
 	}
 	return nil
 }

@@ -25,6 +25,7 @@ The API uses the same resource vocabulary as the [Trellis user model](../public/
 | `GET`, `POST` | `/v1/jobs` | List jobs or submit `{"spec": JobSpec}`. |
 | `POST` | `/v1/jobs/plan` | Validate and calculate the authoritative semantic plan for a `JobSpec`. |
 | `GET`, `DELETE` | `/v1/jobs/{name}` | Read job state/API representation or delete the job. |
+| `GET` | `/v1/namespaces` | Discover namespace names visible to the caller. |
 | `GET` | `/v1/allocations?label=key:value` | List/filter allocations. |
 | `GET` | `/v1/allocations/{id}/events` | Lifecycle event array. |
 | `GET` | `/v1/allocations/{id}/logs?task=NAME&tail=100&follow=true` | Plain-text logs for one task in an allocation. |
@@ -45,6 +46,8 @@ The API uses the same resource vocabulary as the [Trellis user model](../public/
 ```
 
 A bootstrap credential reports `kind: "bootstrap"`, `scope: "cluster"`, and `access: "write"`, but callers must still treat `bootstrap` as more privileged than ordinary `cluster/write`: root-only endpoint checks use the credential kind/context, not merely those two effective fields.
+
+`GET /v1/namespaces` is discovery, not namespace lifecycle management. For cluster-scoped or bootstrap callers it returns the sorted unique namespace names currently referenced by desired jobs. A namespace-scoped caller receives only its own namespace. Applying a valid job to a previously unseen namespace does not require a separate namespace-creation call; after that desired job exists, the name becomes discoverable.
 
 For allocation logs, `task` selects the task name from the allocation's task group. It may be omitted when the allocation has exactly one task; a multi-task allocation returns `400` until the caller selects one. The allocation ID is the Trellis allocation identity, not an agent/container runtime ID.
 

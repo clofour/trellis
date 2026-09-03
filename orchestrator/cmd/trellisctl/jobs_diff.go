@@ -7,21 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/plan"
-	"github.com/clofour/trellis/internal/spec"
 )
 
-type manifestChange = plan.Change
-
-func printJobPlan(w io.Writer, current *api.JobStatusResponse, exists bool, desired *spec.JobSpec) error {
-	var currentSpec *spec.JobSpec
-	var revision int
-	if exists && current != nil {
-		currentSpec = current.Spec
-		revision = current.Revision
-	}
-	result := plan.Build(currentSpec, revision, desired)
+func printJobPlan(w io.Writer, result *plan.Result) error {
 	if config.Output == "json" {
 		return writeJSON(w, result)
 	}
@@ -55,10 +44,6 @@ func printJobPlan(w io.Writer, current *api.JobStatusResponse, exists bool, desi
 		}
 		return nil
 	}
-}
-
-func diffJobSpecs(before, after *spec.JobSpec) []manifestChange {
-	return plan.Diff(before, after)
 }
 
 func formatChangeValue(path string, value any) string {
