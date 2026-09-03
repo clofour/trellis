@@ -47,9 +47,21 @@ local node run file
 
 The selected context itself comes from `current_context`, then `TRELLIS_CONTEXT`, then the explicit `--context` flag.
 
+## Discover known namespaces
+
+Namespaces are isolation and authorization boundaries, not lifecycle-managed objects. Trellis therefore does not require a separate create/delete step before applying a job to a namespace.
+
+To discover namespace names currently referenced by desired jobs and visible to the current credential:
+
+```sh
+trellisctl namespaces list
+```
+
+A namespace-scoped credential sees only its own namespace. A cluster-scoped credential sees the known desired-job namespaces across the cluster. Applying a job to a new valid namespace is still allowed; after the job exists, that namespace appears in discovery. Use `--output json` when automation needs the array directly.
+
 ## Validate and plan a manifest
 
-Validation is local and does not modify the cluster:
+Validation is local and does not modify or contact the cluster:
 
 ```sh
 trellisctl jobs validate --file trellis.yaml
@@ -63,15 +75,17 @@ trellisctl jobs diff --file trellis.yaml
 trellisctl jobs plan --file trellis.yaml
 ```
 
-The diff is semantic rather than a textual YAML diff. Task groups and tasks are identified by name, so reformatting a manifest does not look like a deployment. Example output:
+The CLI parses the human-authored YAML locally, converts it to canonical JSON, and sends that model to `POST /v1/jobs/plan`. Trellis validates the canonical model and computes the semantic plan against authoritative current state on the control plane; `trellisctl` does not maintain a second planning implementation.
+
+The diff is semantic rather than a textual YAML diff. Task groups are identified by name, so merely reordering them does not look like a deployment. Ordered fields inside a group remain positional where order participates in Trellis semantics. Example output:
 
 ```text
 Plan: update production/web from revision 7
-  ~ task_groups[frontend].tasks[app].image: "registry.example/app:v7" -> "registry.example/app:v8"
+  ~ task_groups[frontend].tasks[0].image: "registry.example/app:v7" -> "registry.example/app:v8"
   ~ task_groups[frontend].update.max_parallel: 1 -> 2
 ```
 
-`trellisctl jobs apply --dry-run --file trellis.yaml` uses the same planner when a CI/CD workflow wants one apply-shaped command for preview and execution.
+`trellisctl jobs apply --dry-run --file trellis.yaml` uses that same server-owned planner when a CI/CD workflow wants one apply-shaped command for preview and execution. A normal `apply` also asks the server for a plan first and uses its `none` result for the no-op decision.
 
 ## Apply and observe convergence
 
@@ -183,6 +197,7 @@ Current structured-output commands are:
 
 ```text
 jobs validate, diff/plan, list, status, diagnose
+namespaces list
 nodes list, status
 secrets set, list, describe
 credentials create
@@ -192,6 +207,7 @@ For example:
 
 ```sh
 trellisctl jobs status web --output json
+trellisctl namespaces list --output json
 trellisctl nodes status worker-2 -o json
 ```
 
