@@ -1,12 +1,20 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
 import { parseJobManifest } from "@/lib/manifest";
+import {
+  getManifestSchema,
+  manifestCompletions,
+  manifestContainerKeys,
+  validateManifestShape,
+  type ManifestSchema,
+} from "@/lib/manifest-schema";
 
 interface ManifestEditorProps {
   value: string;
@@ -14,90 +22,11 @@ interface ManifestEditorProps {
   onDirty?: () => void;
 }
 
-type Completion = {
-  key: string;
-  description: string;
-};
-
-const completions: Record<string, Completion[]> = {
-  root: [
-    { key: "name", description: "Job identifier, unique within its namespace." },
-    { key: "namespace", description: "Namespace that owns this job and its allocations." },
-    { key: "task_groups", description: "Placement and scaling units for the job." },
-  ],
-  task_groups: [
-    { key: "name", description: "Task-group identifier within the job." },
-    { key: "count", description: "Desired number of allocations for this group." },
-    { key: "runtime", description: "OCI runtime: runc or runsc when explicitly selected." },
-    { key: "labels", description: "Discovery and routing metadata for the group." },
-    { key: "api_access", description: "Least-privilege API credential requested by this group." },
-    { key: "constraints", description: "Exact node-attribute placement constraints." },
-    { key: "restart", description: "Retry policy for failed tasks." },
-    { key: "update", description: "Allocation replacement strategy for revisions." },
-    { key: "tasks", description: "Containers colocated in every allocation." },
-  ],
-  tasks: [
-    { key: "name", description: "Task identifier within the group." },
-    { key: "image", description: "Pullable OCI image reference." },
-    { key: "env", description: "Literal environment variables; use secrets for credentials." },
-    { key: "networking", description: "Network attachment and host-port reservations." },
-    { key: "volumes", description: "Allocation-local or advertised host-volume mounts." },
-    { key: "resources", description: "CPU and memory requested by this task." },
-    { key: "health_check", description: "HTTP, TCP, or script readiness/health observation." },
-    { key: "secrets", description: "Namespace secrets delivered as env vars or files." },
-  ],
-  resources: [
-    { key: "cpu", description: "CPU request in millicores." },
-    { key: "memory", description: "Memory request, for example 64MiB or 500MB." },
-  ],
-  networking: [
-    { key: "mode", description: "isolated, host, or namespace networking." },
-    { key: "ports", description: "Host ports reserved directly by a host-networked task." },
-  ],
-  health_check: [
-    { key: "type", description: "Health-check implementation: http, tcp, or script." },
-    { key: "port", description: "Port checked by HTTP/TCP health checks." },
-    { key: "path", description: "HTTP health-check path." },
-    { key: "command", description: "Command argv for a script health check." },
-    { key: "interval", description: "Check interval, for example 5s." },
-    { key: "timeout", description: "Per-check timeout, for example 2s." },
-    { key: "threshold", description: "Consecutive failures required before unhealthy." },
-  ],
-  restart: [
-    { key: "max_restarts", description: "Maximum failures allowed inside the restart window." },
-    { key: "window", description: "Restart accounting window, for example 5m." },
-  ],
-  update: [
-    { key: "strategy", description: "recreate or rolling replacement." },
-    { key: "max_parallel", description: "Maximum not-yet-healthy rolling replacements in flight." },
-  ],
-  api_access: [
-    { key: "scope", description: "Credential scope: namespace or cluster." },
-    { key: "access", description: "Credential access: read or write." },
-  ],
-  constraints: [
-    { key: "attribute", description: "Node attribute or label key to match." },
-    { key: "value", description: "Exact required value for the attribute." },
-  ],
-  volumes: [
-    { key: "name", description: "Volume name within this task." },
-    { key: "path", description: "Absolute container mount path." },
-    { key: "host_volume", description: "Optional advertised node volume name." },
-    { key: "read_only", description: "Mount the volume read-only when true." },
-  ],
-  secrets: [
-    { key: "name", description: "Stored namespace secret name." },
-    { key: "target", description: "Delivery target: env or file." },
-    { key: "env", description: "Environment variable name for an env target." },
-    { key: "path", description: "Path below /run/trellis-secrets/ for a file target." },
-    { key: "mode", description: "File mode: 0400 or 0600 (or decimal equivalent)." },
-  ],
-  ports: [{ key: "port", description: "Node port reserved and bound directly by the task." }],
-};
-
-const containerKeys = new Set(Object.keys(completions).filter((key) => key !== "root"));
-
-function currentContext(source: string, cursor: number): string {
+function currentContext(
+  source: string,
+  cursor: number,
+  containerKeys: Set<string>,
+): string {
   const before = source.slice(0, cursor);
   const lines = before.split("\n");
   const current = lines.at(-1) ?? "";
@@ -128,22 +57,45 @@ export function ManifestEditor({ value, onChange, onDirty }: ManifestEditorProps
   const [cursor, setCursor] = useState(0);
   const [completionOpen, setCompletionOpen] = useState(false);
   const [selectedCompletion, setSelectedCompletion] = useState(0);
+  const [schema, setSchema] = useState<ManifestSchema | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getManifestSchema()
+      .then((loaded) => {
+        if (!cancelled) setSchema(loaded);
+      })
+      .catch(() => {
+        // YAML parsing and server validation remain available if schema assistance cannot load.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const lineCount = Math.max(1, value.split("\n").length);
-  const context = currentContext(value, cursor);
+  const containerKeys = useMemo(
+    () => (schema ? manifestContainerKeys(schema) : new Set<string>()),
+    [schema],
+  );
+  const context = currentContext(value, cursor, containerKeys);
   const token = currentToken(value, cursor).toLowerCase();
-  const options = (completions[context] ?? completions.root).filter((item) =>
-    item.key.toLowerCase().startsWith(token),
+  const options = useMemo(
+    () =>
+      (schema ? manifestCompletions(schema, context) : []).filter((item) =>
+        item.key.toLowerCase().startsWith(token),
+      ),
+    [context, schema, token],
   );
 
-  const yamlError = useMemo(() => {
+  const manifestError = useMemo(() => {
     try {
-      parseJobManifest(value);
-      return null;
+      const parsed = parseJobManifest(value);
+      return schema ? validateManifestShape(schema, parsed) : null;
     } catch (error) {
       return error instanceof Error ? error.message : "Invalid YAML";
     }
-  }, [value]);
+  }, [schema, value]);
 
   const syncCursor = () => {
     setCursor(textareaRef.current?.selectionStart ?? 0);
@@ -233,8 +185,12 @@ export function ManifestEditor({ value, onChange, onDirty }: ManifestEditorProps
           <span className="font-medium text-zinc-200">YAML</span>
           <span>Ctrl/⌘ + Space for manifest keys</span>
         </div>
-        <span className={yamlError ? "text-amber-400" : "text-emerald-400"}>
-          {yamlError ? "YAML needs attention" : "YAML parsed"}
+        <span className={manifestError ? "text-amber-400" : "text-emerald-400"}>
+          {manifestError
+            ? "Manifest needs attention"
+            : schema
+              ? "Schema valid"
+              : "YAML parsed"}
         </span>
       </div>
 
@@ -294,8 +250,16 @@ export function ManifestEditor({ value, onChange, onDirty }: ManifestEditorProps
       </div>
 
       <div className="border-t border-zinc-800 px-3 py-2 text-[11px] text-zinc-400">
-        <p id="manifest-editor-help">Tab inserts two spaces; Enter preserves YAML indentation. Completion is editing assistance only; Trellis validation and planning remain authoritative.</p>
-        {yamlError && <p id="manifest-editor-diagnostic" className="mt-1 truncate text-amber-400" title={yamlError}>{yamlError}</p>}
+        <p id="manifest-editor-help">Tab inserts two spaces; Enter preserves YAML indentation. Completion and structural diagnostics come from the generated authoring schema; Trellis validation and planning remain authoritative.</p>
+        {manifestError && (
+          <p
+            id="manifest-editor-diagnostic"
+            className="mt-1 truncate text-amber-400"
+            title={manifestError}
+          >
+            {manifestError}
+          </p>
+        )}
       </div>
     </div>
   );
