@@ -1,6 +1,6 @@
 # Operations dashboard
 
-The `ui/` directory is a deliberately thin Next.js operations client for Trellis. It exposes the same jobs, nodes, allocations, diagnostics, logs, and YAML manifests as `trellisctl`; it does not add application-platform abstractions or choose reverse proxies, ingress models, or deployment architecture for you.
+The `ui/` directory is a deliberately thin Next.js operations client for Trellis. It exposes the same jobs, nodes, allocations, diagnostics, logs, namespaces, and YAML manifests as `trellisctl`; it does not add application-platform abstractions or choose reverse proxies, ingress models, or deployment architecture for you.
 
 The Operations page prioritizes failures and changing state. Job creation/editing uses the same YAML authoring representation as `trellisctl`, while the dashboard sends only canonical JSON to the Trellis API. **Review Plan** calls the control plane for the semantic plan; the browser does not maintain an independent implementation of Trellis diff semantics.
 
@@ -27,7 +27,7 @@ Server-side variables:
 
 The bearer token stays in server-side Next.js route handlers. The browser sends only the selected namespace and desired-state payloads.
 
-## Authorization
+## Authorization and namespace selection
 
 Trellis credentials have independent **scope** and **access**:
 
@@ -48,7 +48,7 @@ api_access:
 
 Selecting read-write mode instead gives the dashboard `cluster/write` and sets `TRELLIS_ALLOW_WRITES=true`. This means the normal installer aligns the UI controls with the server-enforced credential. `TRELLIS_ALLOW_WRITES` remains a presentation guard, not a substitute for API authorization; if a dashboard is configured manually, its token must still have the permissions required for the operations it exposes.
 
-With namespace scope, the namespace selector is pinned to the credential's namespace. With cluster scope, the selector can switch namespaces subject to `TRELLIS_NAMESPACES` when configured.
+With namespace scope, the namespace selector is pinned to the credential's namespace. With cluster scope and no `TRELLIS_NAMESPACES` allowlist, the dashboard asks `GET /v1/namespaces` for namespace names already referenced by desired jobs and offers them as autocomplete choices. Those names are discovery assistance, not namespace objects: an operator may still type a new valid namespace and apply the first job there. When `TRELLIS_NAMESPACES` is configured, that explicit list remains an allowlist and discovery does not broaden it.
 
 Secret values are never readable through the API. `cluster/read` may list and inspect secret metadata, so the default read-only dashboard can render the Secrets page without holding mutation authority. Creating, rotating, or deleting a secret requires `cluster/write`.
 
@@ -58,15 +58,15 @@ The dashboard manifest editor is still deliberately YAML-first rather than a for
 
 - line numbers and synchronized scrolling;
 - YAML-aware indentation for Enter and two-space Tab insertion;
-- live YAML parse feedback;
+- live YAML parse and authoring-schema structural feedback;
 - context-sensitive manifest-key completion with `Ctrl+Space` / `⌘+Space`;
-- short field explanations alongside completion choices;
+- field explanations from the generated authoring schema alongside completion choices;
 - formatting through **Format YAML**;
 - server-owned semantic review through **Review Plan** before apply.
 
-The editor accepts the same first-party YAML conveniences as `trellisctl`, including durations such as `10s` and memory such as `64MiB`. Those are consumer-side representation details. Before an API call, the dashboard converts them to the canonical JSON model: durations are nanoseconds and memory is bytes.
+The editor accepts the same first-party YAML conveniences as `trellisctl`, including durations such as `10s` and memory such as `64MiB`. Those are consumer-side representation details. The generated authoring schema identifies fields whose human representation differs from canonical JSON; before an API call, the dashboard follows that schema to convert durations to nanoseconds and memory sizes to bytes.
 
-The published authoring schema at [`schemas/trellis-job.schema.json`](../../schemas/trellis-job.schema.json) contains field-level descriptions as well as structural validation rules so external editors such as VS Code can offer useful completion and hover documentation. Dashboard completion is lightweight editing assistance; server validation and planning remain authoritative.
+The published authoring schema at [`schemas/trellis-job.schema.json`](../../schemas/trellis-job.schema.json) is generated from the canonical Go model and contains field descriptions plus structural validation rules. The schema generator also writes the byte-identical dashboard asset at `ui/public/trellis-job.schema.json`, and CI checks both copies together. The dashboard therefore does not maintain a separate handwritten catalogue of manifest keys, descriptions, or human-value paths. Schema diagnostics remain editing assistance only; Trellis server validation and planning are authoritative.
 
 Allocation logs are task-specific. A single-task allocation selects its task automatically; multi-task groups require choosing a task, matching `trellisctl jobs logs JOB --task TASK`.
 
