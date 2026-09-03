@@ -231,12 +231,6 @@ if confirm "Enable namespace networking on this node?" "n"; then
     info "Namespace networking dependencies are installed. Configure wireguard_endpoint, wireguard_port, or wireguard_pool in ${CONFIG_FILE} when non-default values are required, then restart trellis."
 fi
 
-# A saved context from a previous install carries an old CA cert. If it is
-# named "local", loadConfig() would silently prefer it over the fresh CA in
-# the local run file, causing TLS verification to fail and the credential
-# creation loop below to exhaust all retries. Delete it before that loop.
-"${INSTALL_DIR}/trellisctl" context delete local 2>/dev/null || true
-
 operator_token=""
 for attempt in $(seq 1 30); do
     if operator_token="$("${INSTALL_DIR}/trellisctl" --output table credentials create --scope cluster --access write 2>/dev/null)" && [ -n "$operator_token" ]; then
@@ -287,8 +281,7 @@ if confirm "Install the web dashboard?" "n"; then
     allow_writes_env=""
     if [ "$dashboard_mode" = "rw" ]; then
         dashboard_access="write"
-        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\"
-"
+        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\"\n"
     fi
 
     dashboard_manifest="${tmp}/trellis-dashboard.yaml"
