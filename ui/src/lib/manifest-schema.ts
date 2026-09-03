@@ -102,15 +102,30 @@ function resolveSchema(root: ManifestSchema, input: ManifestSchema): ManifestSch
   return root.$defs?.[input.$ref.slice(prefix.length)] ?? input;
 }
 
+function schemaType(schema: ManifestSchema): string | undefined {
+  if (schema.type) return schema.type;
+  if (
+    schema.properties ||
+    schema.required ||
+    schema.additionalProperties !== undefined
+  ) {
+    return "object";
+  }
+  if (schema.items || schema.minItems !== undefined || schema.maxItems !== undefined) {
+    return "array";
+  }
+  return undefined;
+}
+
 function objectValueSchema(
   root: ManifestSchema,
   input: ManifestSchema,
 ): ManifestSchema | null {
   let schema = resolveSchema(root, input);
-  if (schema.type === "array" && schema.items) {
+  if (schemaType(schema) === "array" && schema.items) {
     schema = resolveSchema(root, schema.items);
   }
-  return schema.type === "object" ? schema : null;
+  return schemaType(schema) === "object" ? schema : null;
 }
 
 function findContextSchema(
@@ -156,7 +171,7 @@ function validateNode(
     return [`${path} must be ${String(schema.const)}`];
   }
 
-  switch (schema.type) {
+  switch (schemaType(schema)) {
     case "object": {
       if (!isRecord(value)) return [`${path} must be a mapping`];
       for (const required of schema.required ?? []) {
@@ -240,7 +255,11 @@ function validateNode(
     const issue = validateNode(root, constraint, value, path)[0];
     if (issue) return [issue];
   }
-  if (schema.if && schema.then && validateNode(root, schema.if, value, path).length === 0) {
+  if (
+    schema.if &&
+    schema.then &&
+    validateNode(root, schema.if, value, path).length === 0
+  ) {
     const issue = validateNode(root, schema.then, value, path)[0];
     if (issue) return [issue];
   }
@@ -266,12 +285,12 @@ function normalizeNode(
     return byteSizeBytes(value, path);
   }
 
-  if (schema.type === "array" && schema.items && Array.isArray(value)) {
+  if (schemaType(schema) === "array" && schema.items && Array.isArray(value)) {
     return value.map((item, index) =>
       normalizeNode(root, schema.items!, item, `${path}[${index}]`),
     );
   }
-  if (schema.type === "object" && isRecord(value)) {
+  if (schemaType(schema) === "object" && isRecord(value)) {
     const result: Record<string, unknown> = { ...value };
     for (const [key, property] of Object.entries(schema.properties ?? {})) {
       if (key in result) {
