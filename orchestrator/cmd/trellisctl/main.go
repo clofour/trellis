@@ -68,7 +68,9 @@ func newRootCmd() *cobra.Command {
 	persistentFlags.StringVar(&config.Key, "key", "", "Path to client private key (PEM)")
 
 	root.AddCommand(NewContextCmd())
-	root.AddCommand(NewJobsCmd())
+	jobsCmd := NewJobsCmd()
+	jobsCmd.AddCommand(NewJobsEventsCmd())
+	root.AddCommand(jobsCmd)
 	root.AddCommand(NewNamespacesCmd())
 	root.AddCommand(NewNodesCmd())
 	root.AddCommand(NewSecretsCmd())
@@ -85,6 +87,7 @@ var structuredOutputCommands = [][]string{
 	{"jobs", "list"},
 	{"jobs", "status"},
 	{"jobs", "diagnose"},
+	{"jobs", "events"},
 	{"namespaces", "list"},
 	{"nodes", "list"},
 	{"nodes", "status"},
