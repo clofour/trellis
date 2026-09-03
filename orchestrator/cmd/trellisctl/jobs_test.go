@@ -3,41 +3,35 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/lifecycle"
-	"github.com/clofour/trellis/internal/spec"
+	"github.com/clofour/trellis/internal/plan"
 )
 
-func TestDiffJobSpecsUsesTaskGroupNamesAndHumanDurations(t *testing.T) {
-	before := &spec.JobSpec{Name: "web", Namespace: "default", TaskGroups: []spec.TaskGroupSpec{{
-		Name: "frontend", Count: 1, Restart: &spec.RestartPolicySpec{MaxRestarts: 3, Window: time.Minute},
-		Tasks: []spec.TaskSpec{{Name: "app", Image: "example/app:v1"}},
-	}}}
-	after := &spec.JobSpec{Name: "web", Namespace: "default", TaskGroups: []spec.TaskGroupSpec{{
-		Name: "frontend", Count: 1, Restart: &spec.RestartPolicySpec{MaxRestarts: 3, Window: 2 * time.Minute},
-		Tasks: []spec.TaskSpec{{Name: "app", Image: "example/app:v2"}},
-	}}}
-	changes := diffJobSpecs(before, after)
-	if len(changes) != 2 {
-		t.Fatalf("got %d changes: %#v", len(changes), changes)
+func TestPrintJobPlanFormatsHumanDurations(t *testing.T) {
+	previousOutput := config.Output
+	config.Output = "table"
+	defer func() { config.Output = previousOutput }()
+
+	result := &plan.Result{
+		Action:       "update",
+		Namespace:    "default",
+		Job:          "web",
+		BaseRevision: 7,
+		Changes: []plan.Change{{
+			Operation: "change",
+			Path:      "task_groups[frontend].restart.window",
+			Before:    float64(60_000_000_000),
+			After:     float64(120_000_000_000),
+		}},
 	}
-	var paths []string
-	for _, change := range changes {
-		paths = append(paths, change.Path)
+	var out strings.Builder
+	if err := printJobPlan(&out, result); err != nil {
+		t.Fatal(err)
 	}
-	joined := strings.Join(paths, "\n")
-	if !strings.Contains(joined, "task_groups[frontend].tasks[0].image") {
-		t.Fatalf("positional task path missing: %s", joined)
-	}
-	if !strings.Contains(joined, "task_groups[frontend].restart.window") {
-		t.Fatalf("duration path missing: %s", joined)
-	}
-	for _, change := range changes {
-		if strings.HasSuffix(change.Path, ".window") && formatChangeValue(change.Path, change.After) != "2m0s" {
-			t.Fatalf("duration formatted as %q", formatChangeValue(change.Path, change.After))
-		}
+	if !strings.Contains(out.String(), "1m0s -> 2m0s") {
+		t.Fatalf("plan output did not humanize duration: %q", out.String())
 	}
 }
 
