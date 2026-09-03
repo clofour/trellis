@@ -12,7 +12,7 @@ The repository publishes two schemas:
 The schema improves editing but never replaces `trellisctl jobs validate` or server validation.
 
 ```yaml
-# yaml-language-server: $schema=../../schemas/trellis-job.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job.schema.json
 name: web
 namespace: default
 task_groups:
@@ -235,7 +235,7 @@ health_check:
 
 Job, namespace, group, task, secret, and volume identifiers accept letters, digits, `_`, `.`, and `-`, must begin with a letter or digit, and are limited to 63 characters. Unknown YAML fields are rejected by the first-party parser.
 
-The YAML schema is intended for VS Code, Neovim, Zed, and other editors that support YAML language-server schemas. Checked-in examples include a `yaml-language-server` schema directive so completion and basic diagnostics work immediately when the repository is opened. Schema diagnostics are structural assistance only; `trellisctl jobs validate`, `/v1/jobs/plan`, and apply use Trellis's authoritative validator, which reports all independently actionable validation issues with paths and error codes.
+The YAML schema is intended for VS Code, Neovim, Zed, and other editors that support YAML language-server schemas. Checked-in beginner/intermediate examples use a stable raw-GitHub `yaml-language-server` schema URL, so completion and basic diagnostics continue to work when a manifest is copied out of the repository. Schema diagnostics are structural assistance only; `trellisctl jobs validate`, `/v1/jobs/plan`, and apply use Trellis's authoritative validator, which reports all independently actionable validation issues with paths and error codes.
 
 Follow checked-in examples in learning order from the [examples index](../../examples/README.md), rather than copying an advanced architecture as a first workload.
 
