@@ -255,6 +255,79 @@ Cluster mode is appropriate for an operator surface that genuinely needs node ma
 
 Treat compromise of any task in the group as compromise of the cluster credential. Pin and review images, avoid unrelated sidecars, keep the token out of logs/metrics/browser code, and prefer `namespace` whenever it can express the controller's job.
 
+## Apply database schema migrations safely across deployment strategies
+
+**Outcome:** evolve a database schema without downtime or data loss, regardless of whether the workload uses rolling, blue/green, or canary deployment.
+
+Database migrations are a deployment concern, not a container lifecycle concern. In any deployment strategy old and new application code run simultaneously against the same database, so the schema must be compatible with both versions at all times.
+
+### Development and single-instance environments
+
+Use application-level auto-migration: the application checks for pending migrations on startup, controlled by an environment variable so it can be disabled in production. Combined with a health check, the allocation stays unhealthy until migrations complete and the server starts listening:
+
+```yaml
+tasks:
+  - name: app
+    image: registry.example.com/app:v1
+    env:
+      AUTO_MIGRATE: "true"
+    health_check:
+      type: http
+      port: 3000
+      path: /health
+```
+
+This is safe for single-instance dev environments where concurrent migration attempts and backwards compatibility are not concerns.
+
+### Production environments
+
+Apply migrations as a controlled pre-deployment step, separate from the workload update. The operator or CI/CD pipeline runs the migration, verifies it succeeded, and only then applies the new job revision:
+
+```sh
+# 1. Apply the backwards-compatible migration
+trellisctl exec ALLOC_ID -- your-migration-command
+# or connect directly to the database from a CI runner
+
+# 2. Verify the migration succeeded and existing workload still works
+
+# 3. Deploy the new application code
+trellisctl jobs apply --file app.yaml --wait
+```
+
+Write every production migration using the expand-and-contract pattern:
+
+1. **Expand:** add the new column, table, or index. The currently running code continues to work against the new schema.
+2. **Deploy** the new application code that uses both old and new schema structures.
+3. **Contract** (in a later release): remove the old column or compatibility code once all instances run the new version.
+
+This pattern is required because rolling, blue/green, and canary deployments all result in two application versions sharing one database. An `ALTER TABLE` that breaks the running version will cause failures regardless of deployment strategy.
+
+For large-table schema changes that would lock reads or writes, use an online schema change tool (such as `pg_osc` or `pgroll` for PostgreSQL) rather than a blocking `ALTER TABLE`. These tools copy data incrementally and swap atomically without holding table locks.
+
+Do not use orchestrator-level init containers or lifecycle hooks for production migrations. They couple the migration to the container lifecycle: in a rolling update, the migration runs once per replica (or per restart), they cannot gate the deployment across all replicas, and they cannot be observed or rolled back independently of the workload.
+
+### Scheduled database maintenance
+
+Run periodic maintenance (backups, `VACUUM`, integrity checks) inside a long-running sidecar or dedicated container with an internal scheduler such as `cron`. This is ordinary workload scheduling, not a Trellis-specific mechanism:
+
+```yaml
+task_groups:
+  - name: db-maintenance
+    count: 1
+    constraints:
+      - attribute: database
+        value: "true"
+    tasks:
+      - name: maintenance
+        image: registry.example.com/db-tools:v1
+        volumes:
+          - name: backups
+            path: /backups
+            host_volume: db-backups
+```
+
+Trellis keeps the maintenance container running and restarts it on failure. The container's internal cron or loop handles the schedule.
+
 ## Run application-managed replicated state without confusing scheduling with consensus
 
 **Outcome:** let Trellis place and operate replicated stateful members while the application remains responsible for data correctness and leadership.
@@ -284,6 +357,8 @@ Before treating such a deployment as highly available, test node loss, leader lo
 | Persistent node-local data | Advertised host volume | No built-in replication, movement, or backup |
 | Namespace-local automation | `api_access: namespace` | Every task in the group becomes a namespace credential holder |
 | Administrative/cross-namespace automation | `api_access: cluster` | Every task in the group becomes a cluster administrator |
+| Database schema migrations | Pre-deployment expand-and-contract | Migrations must be backwards-compatible with running code |
+| Scheduled database maintenance | Long-running container with internal cron | Container owns the schedule; Trellis owns the lifecycle |
 | Replicated stateful service | Trellis lifecycle plus application-native HA | Application remains responsible for consensus and data safety |
 
 Concrete manifests live in the [examples index](../../examples/README.md); use them to see syntax after choosing the pattern here.
