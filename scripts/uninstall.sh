@@ -55,6 +55,33 @@ if systemctl is-enabled --quiet trellis 2>/dev/null; then
     systemctl disable trellis
 fi
 
+# ── Optionally stop and remove managed containers ─────────
+
+if command -v ctr >/dev/null 2>&1; then
+    container_ids="$(ctr -n trellis containers ls -q 2>/dev/null || true)"
+    if [ -n "$container_ids" ]; then
+        count="$(echo "$container_ids" | wc -l)"
+        echo
+        warn "Found ${count} container(s) in the trellis containerd namespace."
+        warn "These were started by Trellis and may still be running."
+        echo
+        if confirm "Stop and remove these containers?" "n"; then
+            for cid in $container_ids; do
+                info "Stopping container ${cid}..."
+                ctr -n trellis tasks kill "$cid" -s SIGTERM 2>/dev/null || true
+                sleep 1
+                ctr -n trellis tasks kill "$cid" -s SIGKILL 2>/dev/null || true
+                ctr -n trellis tasks delete "$cid" 2>/dev/null || true
+                info "Removing container ${cid}..."
+                ctr -n trellis containers rm "$cid" 2>/dev/null || true
+            done
+            info "All Trellis containers removed."
+        else
+            info "Keeping containers. Remove them manually with: ctr -n trellis containers rm <id>"
+        fi
+    fi
+fi
+
 # ── Remove the systemd unit ───────────────────────────────
 
 if [ -f "$SERVICE_FILE" ]; then
