@@ -235,6 +235,7 @@ func resolveLogStreams(ctx context.Context, serverClient *client.ServerClient, t
 	}
 	matches := append([]api.AllocationResponse(nil), status.Allocations...)
 	matches = filterAllocations(matches, group)
+	matches = preferActiveAllocations(matches)
 	if allocationRef != "" {
 		resolved, err := resolveAllocationPrefix(matches, allocationRef)
 		if err != nil {
@@ -304,6 +305,19 @@ func logStreamRefs(streams []jobLogStream) string {
 	}
 	sort.Strings(refs)
 	return strings.Join(refs, ", ")
+}
+
+func preferActiveAllocations(allocations []api.AllocationResponse) []api.AllocationResponse {
+	var active []api.AllocationResponse
+	for _, a := range allocations {
+		if a.Phase != lifecycle.PhaseStopped && a.Phase != lifecycle.PhaseFailed && a.Phase != lifecycle.PhaseLost {
+			active = append(active, a)
+		}
+	}
+	if len(active) > 0 {
+		return active
+	}
+	return allocations
 }
 
 func filterAllocations(allocations []api.AllocationResponse, group string) []api.AllocationResponse {
