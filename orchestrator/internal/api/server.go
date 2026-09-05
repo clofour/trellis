@@ -193,3 +193,64 @@ type RaftJoinResponse struct {
 	CACert string `json:"ca_cert"`
 	CAKey  string `json:"ca_key"`
 }
+
+// JobRevisionResponse describes one persisted revision of a job.
+type JobRevisionResponse struct {
+	Revision  int          `json:"revision"`
+	Spec      spec.JobSpec `json:"spec"`
+	CreatedAt time.Time    `json:"created_at"`
+}
+
+// JobRevisionListResponse is the response returned when listing job revisions.
+type JobRevisionListResponse = []JobRevisionResponse
+
+// AllocationMetricsResponse reports current resource usage for an allocation task.
+type AllocationMetricsResponse struct {
+	AllocationID       string    `json:"allocation_id"`
+	Task               string    `json:"task"`
+	CPUUsageNanoseconds int64    `json:"cpu_usage_nanoseconds"`
+	MemoryUsageBytes   int64     `json:"memory_usage_bytes"`
+	CollectedAt        time.Time `json:"collected_at"`
+}
+
+// AllocationMetricsListResponse is the response returned when listing allocation metrics.
+type AllocationMetricsListResponse = []AllocationMetricsResponse
+
+// ExecRequest is the body for an allocation exec call.
+type ExecRequest struct {
+	Task    string   `json:"task,omitempty"`
+	Command []string `json:"command"`
+}
+
+// ExecResponse is the response from an allocation exec call.
+type ExecResponse struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exit_code"`
+}
+
+// EventType identifies the kind of a cluster event.
+type EventType string
+
+const (
+	// EventAllocationPhaseChanged fires when an allocation's phase transitions.
+	EventAllocationPhaseChanged EventType = "allocation.phase_changed"
+	// EventAllocationHealthChanged fires when an allocation's health changes.
+	EventAllocationHealthChanged EventType = "allocation.health_changed"
+	// EventJobRegistered fires when a job is applied.
+	EventJobRegistered EventType = "job.registered"
+	// EventJobDeleted fires when a job is deleted.
+	EventJobDeleted EventType = "job.deleted"
+)
+
+// ClusterEvent carries a typed cluster event payload.
+type ClusterEvent struct {
+	Type         EventType `json:"type"`
+	Namespace    string    `json:"namespace,omitempty"`
+	JobName      string    `json:"job,omitempty"`
+	AllocationID string    `json:"allocation_id,omitempty"`
+	Phase        string    `json:"phase,omitempty"`
+	Health       string    `json:"health,omitempty"`
+	Revision     int       `json:"revision,omitempty"`
+	At           time.Time `json:"at"`
+}

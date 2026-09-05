@@ -114,6 +114,16 @@ func (r *InjectedRuntime) setStatus(op, id string, status ContainerStatus) error
 // Exec simulates a successful container command.
 func (r *InjectedRuntime) Exec(context.Context, string, []string) (int, error) { return 0, nil }
 
+// ExecOutput simulates a successful command and returns empty output.
+func (r *InjectedRuntime) ExecOutput(context.Context, string, []string) ([]byte, []byte, int, error) {
+	return nil, nil, 0, nil
+}
+
+// Metrics returns zero metrics for an injected container.
+func (r *InjectedRuntime) Metrics(context.Context, string) (*ContainerMetrics, error) {
+	return &ContainerMetrics{}, nil
+}
+
 // Inspect returns a copy of injected container state.
 func (r *InjectedRuntime) Inspect(_ context.Context, id string) (*ContainerInfo, error) {
 	r.mu.Lock()

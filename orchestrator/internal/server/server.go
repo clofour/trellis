@@ -80,6 +80,7 @@ type Server struct {
 	now          func() time.Time
 	metrics      *Metrics
 	secrets      *secretstore.Store
+	events       *EventBus
 }
 
 // SetSecretStore configures encrypted secret storage.
@@ -308,6 +309,7 @@ func NewServer(log *slog.Logger, storage *storage.LocalStorage, state *StateCont
 		now:          time.Now,
 	}
 	s.backupStore, _ = store.(desiredStore)
+	s.events = newEventBus()
 	return s
 }
 
@@ -650,6 +652,19 @@ func (s *Server) RegisterJob(ctx context.Context, namespace string, jobSpec *spe
 
 	if labelOnly {
 		s.refreshCatalog()
+	} else {
+		_ = s.state.PutJobRevision(ctx, key, &JobRevisionRecord{
+			Revision:  revision,
+			Spec:      jobSpec,
+			CreatedAt: s.now().UTC(),
+		})
+		s.events.publish(api.ClusterEvent{
+			Type:      api.EventJobRegistered,
+			Namespace: namespace,
+			JobName:   jobSpec.Name,
+			Revision:  revision,
+			At:        s.now().UTC(),
+		})
 	}
 
 	return nil
@@ -849,8 +864,162 @@ func (s *Server) DeleteJob(ctx context.Context, namespace, name string) error {
 	s.mu.Lock()
 	delete(s.jobs, key)
 	s.mu.Unlock()
+	s.events.publish(api.ClusterEvent{
+		Type:      api.EventJobDeleted,
+		Namespace: namespace,
+		JobName:   name,
+		At:        s.now().UTC(),
+	})
 	s.Reconcile(ctx)
 	return nil
+}
+
+// RestartJob marks all running allocations for a job as draining so the
+// reconciler will replace them with fresh instances.
+func (s *Server) RestartJob(ctx context.Context, namespace, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := jobKey(namespace, name)
+	if s.jobs[key] == nil {
+		return fmt.Errorf("job %s not found", name)
+	}
+	for _, alloc := range s.allocations {
+		alloc.mu.Lock()
+		if alloc.Namespace == namespace && alloc.JobName == name && !alloc.Draining &&
+			alloc.Phase != lifecycle.PhaseStopped && alloc.Phase != lifecycle.PhaseFailed && alloc.Phase != lifecycle.PhaseLost {
+			alloc.Draining = true
+			_ = s.state.PutAllocation(context.WithoutCancel(ctx), alloc)
+		}
+		alloc.mu.Unlock()
+	}
+	return nil
+}
+
+// StopAllocationByID stops a single allocation identified by namespace and ID.
+func (s *Server) StopAllocationByID(ctx context.Context, namespace, id string) error {
+	s.mu.RLock()
+	var found *Allocation
+	for _, alloc := range s.allocations {
+		if alloc.ID == id && alloc.Namespace == namespace {
+			found = alloc
+			break
+		}
+	}
+	if found == nil || found.Node == nil {
+		s.mu.RUnlock()
+		return fmt.Errorf("allocation not found")
+	}
+	address := fmt.Sprintf("%s:%d", found.Node.Host, found.Node.Port)
+	generation := found.Generation
+	epoch := s.controlEpoch
+	s.mu.RUnlock()
+
+	now := s.now().UTC()
+	found.mu.Lock()
+	_ = found.Transition(lifecycle.PhaseStopping, now, "manual_stop", "stopped by operator")
+	_ = s.state.PutAllocation(context.WithoutCancel(ctx), found)
+	found.mu.Unlock()
+
+	if err := s.client.StopAllocation(ctx, address, &api.StopAllocationRequest{
+		AllocationID: id,
+		Generation:   generation,
+		Epoch:        epoch,
+	}); err != nil {
+		s.log.Error("stop allocation failed", "id", id, "error", err)
+	}
+
+	now = s.now().UTC()
+	found.mu.Lock()
+	_ = found.Transition(lifecycle.PhaseStopped, now, "manual_stop", "stopped by operator")
+	_ = s.state.PutAllocation(context.WithoutCancel(ctx), found)
+	found.mu.Unlock()
+
+	return nil
+}
+
+// ListJobRevisions returns the stored spec history for a job.
+func (s *Server) ListJobRevisions(ctx context.Context, namespace, name string) (api.JobRevisionListResponse, error) {
+	s.mu.RLock()
+	key := jobKey(namespace, name)
+	_, ok := s.jobs[key]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("job not found")
+	}
+	records, err := s.state.ListJobRevisions(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	result := make(api.JobRevisionListResponse, 0, len(records))
+	for _, r := range records {
+		result = append(result, api.JobRevisionResponse{
+			Revision:  r.Revision,
+			Spec:      *r.Spec,
+			CreatedAt: r.CreatedAt,
+		})
+	}
+	return result, nil
+}
+
+// ExecAllocation runs a command in an allocation task container.
+func (s *Server) ExecAllocation(ctx context.Context, namespace, id, task string, command []string) (*api.ExecResponse, error) {
+	s.mu.RLock()
+	var found *Allocation
+	for _, alloc := range s.allocations {
+		if alloc.ID == id && alloc.Namespace == namespace {
+			found = alloc
+			break
+		}
+	}
+	if found == nil || found.Node == nil {
+		s.mu.RUnlock()
+		return nil, fmt.Errorf("allocation not found")
+	}
+	address := fmt.Sprintf("%s:%d", found.Node.Host, found.Node.Port)
+	tasks := append([]spec.TaskSpec(nil), found.Tasks...)
+	s.mu.RUnlock()
+
+	if task == "" {
+		switch len(tasks) {
+		case 1:
+			task = tasks[0].Name
+		case 0:
+		default:
+			return nil, fmt.Errorf("%w: allocation %s has multiple tasks; specify task", ErrTaskSelection, id)
+		}
+	} else if len(tasks) > 0 {
+		found := false
+		for _, t := range tasks {
+			if t.Name == task {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: allocation %s has no task %q", ErrTaskSelection, id, task)
+		}
+	}
+
+	return s.client.ExecAllocation(ctx, address, id, task, command)
+}
+
+// AllocationMetrics returns resource usage for all tasks in an allocation.
+func (s *Server) AllocationMetrics(ctx context.Context, namespace, id string) (api.AllocationMetricsListResponse, error) {
+	s.mu.RLock()
+	var found *Allocation
+	for _, alloc := range s.allocations {
+		if alloc.ID == id && alloc.Namespace == namespace {
+			found = alloc
+			break
+		}
+	}
+	if found == nil || found.Node == nil {
+		s.mu.RUnlock()
+		return nil, fmt.Errorf("allocation not found")
+	}
+	address := fmt.Sprintf("%s:%d", found.Node.Host, found.Node.Port)
+	s.mu.RUnlock()
+	return s.client.AllocationMetrics(ctx, address, id)
 }
 
 // ValidateAPIToken validates the cluster API token.

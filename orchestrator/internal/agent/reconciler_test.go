@@ -31,6 +31,12 @@ func (r *reconcilerRuntime) Remove(context.Context, string) error { return nil }
 func (r *reconcilerRuntime) Exec(context.Context, string, []string) (int, error) {
 	return 0, nil
 }
+func (r *reconcilerRuntime) ExecOutput(context.Context, string, []string) ([]byte, []byte, int, error) {
+	return nil, nil, 0, nil
+}
+func (r *reconcilerRuntime) Metrics(context.Context, string) (*runtime.ContainerMetrics, error) {
+	return &runtime.ContainerMetrics{}, nil
+}
 func (r *reconcilerRuntime) Inspect(context.Context, string) (*runtime.ContainerInfo, error) {
 	return &runtime.ContainerInfo{Status: r.status}, nil
 }

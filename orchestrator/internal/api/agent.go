@@ -54,3 +54,23 @@ type OperationResponse struct {
 	Generation uint64        `json:"generation,omitempty"`
 	Epoch      uint64        `json:"epoch,omitempty"`
 }
+
+// AgentExecRequest is the body for an exec call on an agent.
+type AgentExecRequest struct {
+	Task    string   `json:"task"`
+	Command []string `json:"command"`
+}
+
+// AgentExecResponse is the exec result from an agent.
+type AgentExecResponse struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exit_code"`
+}
+
+// AgentTaskMetrics holds resource usage for a single task container.
+type AgentTaskMetrics struct {
+	Task                string `json:"task"`
+	CPUUsageNanoseconds int64  `json:"cpu_usage_nanoseconds"`
+	MemoryUsageBytes    int64  `json:"memory_usage_bytes"`
+}

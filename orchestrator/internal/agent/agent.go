@@ -662,6 +662,61 @@ func (a *Agent) RunAllocation(ctx context.Context, allocID, schedulerID string, 
 	return nil
 }
 
+// ExecAllocation runs a command in an allocation task container and returns its output.
+func (a *Agent) ExecAllocation(ctx context.Context, allocID, task string, command []string) (*api.AgentExecResponse, error) {
+	a.mu.RLock()
+	var containerID string
+	for k, alloc := range a.allocations {
+		if alloc.AllocationID == allocID && (task == "" || alloc.TaskName == task) {
+			containerID = alloc.ContainerID
+			_ = k
+			break
+		}
+	}
+	a.mu.RUnlock()
+	if containerID == "" {
+		return nil, fmt.Errorf("%w: %s", ErrAllocationNotFound, allocID)
+	}
+	stdout, stderr, exitCode, err := a.runtime.ExecOutput(ctx, containerID, command)
+	if err != nil {
+		return nil, fmt.Errorf("exec in container %s: %w", containerID, err)
+	}
+	return &api.AgentExecResponse{
+		Stdout:   string(stdout),
+		Stderr:   string(stderr),
+		ExitCode: exitCode,
+	}, nil
+}
+
+// AllocationMetrics returns resource usage for all tasks in an allocation.
+func (a *Agent) AllocationMetrics(ctx context.Context, allocID string) ([]api.AgentTaskMetrics, error) {
+	a.mu.RLock()
+	var tasks []Allocation
+	for _, alloc := range a.allocations {
+		if alloc.AllocationID == allocID {
+			tasks = append(tasks, *alloc)
+		}
+	}
+	a.mu.RUnlock()
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrAllocationNotFound, allocID)
+	}
+	result := make([]api.AgentTaskMetrics, 0, len(tasks))
+	for _, task := range tasks {
+		m, err := a.runtime.Metrics(ctx, task.ContainerID)
+		if err != nil {
+			a.log.Warn("metrics unavailable", "container", task.ContainerID, "error", err)
+			continue
+		}
+		result = append(result, api.AgentTaskMetrics{
+			Task:                task.TaskName,
+			CPUUsageNanoseconds: m.CPUUsageNanoseconds,
+			MemoryUsageBytes:    m.MemoryUsageBytes,
+		})
+	}
+	return result, nil
+}
+
 // Logs opens the log stream for an allocation.
 func (a *Agent) Logs(ctx context.Context, allocID string, follow bool, tail int) (io.ReadCloser, error) {
 	a.mu.RLock()
