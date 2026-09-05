@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -129,10 +131,16 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/jobs/plan", h.handlePlanJob)
 	v1.GET("/jobs/:name", h.handleGetJob)
 	v1.DELETE("/jobs/:name", h.handleDeleteJob)
+	v1.POST("/jobs/:name/restart", h.handleRestartJob)
+	v1.GET("/jobs/:name/revisions", h.handleListJobRevisions)
 	v1.GET("/namespaces", h.handleListNamespaces)
 	v1.GET("/allocations", h.handleListAllocations)
+	v1.DELETE("/allocations/:id", h.handleStopAllocation)
 	v1.GET("/allocations/:id/events", h.handleAllocationEvents)
 	v1.GET("/allocations/:id/logs", h.handleAllocationLogs)
+	v1.POST("/allocations/:id/exec", h.handleExecAllocation)
+	v1.GET("/allocations/:id/metrics", h.handleAllocationMetrics)
+	v1.GET("/events", h.handleEvents)
 	v1.GET("/internal/discovery", h.handleListDiscovery)
 	v1.POST("/raft/join", h.handleRaftJoin)
 	v1.DELETE("/raft/members/:id", h.handleRaftMemberRemove)
@@ -574,5 +582,94 @@ func (h *Handler) convertNode(node *Node) *api.NodeResponse {
 		ID: node.ID, Host: node.Host, Port: node.Port, Status: api.NodeStatusResponse(node.Status),
 		LastHeartbeat: node.LastHeartbeat, CPU: node.CPU, Memory: node.Memory, OS: node.OS, Arch: node.Arch, Labels: node.Labels,
 		Volumes: node.Volumes, Version: node.Version,
+	}
+}
+
+func (h *Handler) handleRestartJob(c *echo.Context) error {
+	if err := requireWrite(c, "restarting jobs requires write authorization"); err != nil {
+		return err
+	}
+	if err := h.server.RestartJob(c.Request().Context(), requestNamespace(c), c.Param("name")); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	return c.NoContent(http.StatusAccepted)
+}
+
+func (h *Handler) handleListJobRevisions(c *echo.Context) error {
+	revisions, err := h.server.ListJobRevisions(c.Request().Context(), requestNamespace(c), c.Param("name"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	return c.JSON(http.StatusOK, revisions)
+}
+
+func (h *Handler) handleStopAllocation(c *echo.Context) error {
+	if err := requireWrite(c, "stopping allocations requires write authorization"); err != nil {
+		return err
+	}
+	if err := h.server.StopAllocationByID(c.Request().Context(), requestNamespace(c), c.Param("id")); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *Handler) handleExecAllocation(c *echo.Context) error {
+	if err := requireWrite(c, "exec requires write authorization"); err != nil {
+		return err
+	}
+	var request api.ExecRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if len(request.Command) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "command is required")
+	}
+	result, err := h.server.ExecAllocation(c.Request().Context(), requestNamespace(c), c.Param("id"), request.Task, request.Command)
+	if errors.Is(err, ErrTaskSelection) {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) handleAllocationMetrics(c *echo.Context) error {
+	metrics, err := h.server.AllocationMetrics(c.Request().Context(), requestNamespace(c), c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	return c.JSON(http.StatusOK, metrics)
+}
+
+func (h *Handler) handleEvents(c *echo.Context) error {
+	ch := h.server.events.subscribe()
+	defer h.server.events.unsubscribe(ch)
+
+	c.Response().Header().Set("Content-Type", "text/event-stream")
+	c.Response().Header().Set("Cache-Control", "no-cache")
+	c.Response().Header().Set("Connection", "keep-alive")
+	c.Response().WriteHeader(http.StatusOK)
+
+	ctx := c.Request().Context()
+	rc := http.NewResponseController(c.Response())
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case event, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			data, err := json.Marshal(event)
+			if err != nil {
+				continue
+			}
+			if _, err := fmt.Fprintf(c.Response(), "data: %s\n\n", data); err != nil {
+				return err
+			}
+			_ = rc.Flush()
+		}
 	}
 }

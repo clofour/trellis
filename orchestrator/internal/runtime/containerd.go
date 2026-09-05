@@ -2,6 +2,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,8 +15,11 @@ import (
 	"github.com/containerd/containerd/v2/pkg/cio"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/oci"
+	v1stats "github.com/containerd/cgroups/v3/cgroup1/stats"
+	v2stats "github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/containerd/errdefs"
 	"github.com/opencontainers/runtime-spec/specs-go"
+	"google.golang.org/protobuf/proto"
 )
 
 const trellisNamespace = "trellis"
@@ -431,6 +435,101 @@ func writeDNSConfig(path string, servers []string) error {
 		content += "nameserver " + s + "\n"
 	}
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// ExecOutput runs a command in a container and returns its captured output.
+func (c *ContainerdRuntime) ExecOutput(ctx context.Context, containerID string, command []string) ([]byte, []byte, int, error) {
+	ctx = c.withNamespace(ctx)
+
+	container, err := c.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil, nil, 1, fmt.Errorf("loading container %s: %w", containerID, err)
+	}
+
+	task, err := container.Task(ctx, nil)
+	if err != nil {
+		return nil, nil, 1, fmt.Errorf("getting task for %s: %w", containerID, err)
+	}
+
+	execID := fmt.Sprintf("exec-%d", time.Now().UnixNano())
+	process := &specs.Process{
+		Args: command,
+		Cwd:  "/",
+	}
+
+	var outBuf, errBuf bytes.Buffer
+	creator := cio.NewCreator(cio.WithStreams(nil, &outBuf, &errBuf))
+	taskExec, err := task.Exec(ctx, execID, process, creator)
+	if err != nil {
+		return nil, nil, 1, fmt.Errorf("constructing exec for %s: %w", containerID, err)
+	}
+	defer func() { _, _ = taskExec.Delete(ctx) }()
+
+	exitCh, err := taskExec.Wait(ctx)
+	if err != nil {
+		return nil, nil, 1, fmt.Errorf("waiting on exec for %s: %w", containerID, err)
+	}
+
+	if err := taskExec.Start(ctx); err != nil {
+		return nil, nil, 1, fmt.Errorf("starting exec for %s: %w", containerID, err)
+	}
+
+	status := <-exitCh
+	code, _, err := status.Result()
+	if err != nil {
+		return nil, nil, 1, fmt.Errorf("extracting exec status for %s: %w", containerID, err)
+	}
+
+	return outBuf.Bytes(), errBuf.Bytes(), int(code), nil
+}
+
+// Metrics returns a point-in-time resource usage snapshot for a container.
+func (c *ContainerdRuntime) Metrics(ctx context.Context, containerID string) (*ContainerMetrics, error) {
+	ctx = c.withNamespace(ctx)
+
+	container, err := c.client.LoadContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("loading container %s: %w", containerID, err)
+	}
+
+	task, err := container.Task(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting task for %s: %w", containerID, err)
+	}
+
+	metric, err := task.Metrics(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting metrics for %s: %w", containerID, err)
+	}
+
+	result := &ContainerMetrics{}
+	if metric.Data != nil {
+		switch metric.Data.TypeUrl {
+		case "io.containerd.cgroups.v2.Metrics":
+			var m v2stats.Metrics
+			if proto.Unmarshal(metric.Data.Value, &m) == nil {
+				if m.CPU != nil {
+					result.CPUUsageNanoseconds = int64(m.CPU.UsageUsec) * 1000
+				}
+				if m.Memory != nil {
+					result.MemoryUsageBytes = int64(m.Memory.Usage)
+				}
+			}
+		default:
+			// cgroup v1 and other runtimes
+			var m v1stats.Metrics
+			if proto.Unmarshal(metric.Data.Value, &m) == nil {
+				if m.CPU != nil && m.CPU.Usage != nil {
+					result.CPUUsageNanoseconds = int64(m.CPU.Usage.Total)
+				}
+				if m.Memory != nil && m.Memory.Usage != nil {
+					result.MemoryUsageBytes = int64(m.Memory.Usage.Usage)
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (c *ContainerdRuntime) withNamespace(ctx context.Context) context.Context {

@@ -31,6 +31,8 @@ func (h *Handler) Register(e *echo.Echo) {
 	v1.POST("/allocations", h.handleRun)
 	v1.DELETE("/allocations/:id", h.handleDelete)
 	v1.GET("/allocations/:id/logs", h.handleLogs)
+	v1.POST("/allocations/:id/exec", h.handleExec)
+	v1.GET("/allocations/:id/metrics", h.handleMetrics)
 }
 
 func (h *Handler) handleLogs(c *echo.Context) error {
@@ -127,6 +129,35 @@ func (h *Handler) handleDelete(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, api.OperationResponse{Code: api.OperationOK, Generation: request.Generation, Epoch: request.Epoch})
+}
+
+func (h *Handler) handleExec(c *echo.Context) error {
+	var request api.AgentExecRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if len(request.Command) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "command is required")
+	}
+	result, err := h.agent.ExecAllocation(c.Request().Context(), c.Param("id"), request.Task, request.Command)
+	if err != nil {
+		if errors.Is(err, ErrAllocationNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, err.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) handleMetrics(c *echo.Context) error {
+	metrics, err := h.agent.AllocationMetrics(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, ErrAllocationNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, err.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, metrics)
 }
 
 func operationError(err error) error {

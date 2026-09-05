@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/clofour/trellis/internal/api"
 )
@@ -92,4 +93,40 @@ func (s *AgentClient) StopAllocation(ctx context.Context, address string, reques
 	}
 
 	return nil
+}
+
+// ExecAllocation runs a command in an allocation task container via an agent.
+func (s *AgentClient) ExecAllocation(ctx context.Context, address, allocID, task string, command []string) (*api.ExecResponse, error) {
+	request := api.AgentExecRequest{Task: task, Command: command}
+	var response api.AgentExecResponse
+	err := s.client.request(ctx, http.MethodPost, normalizeBaseURL(address)+"/v1/allocations/"+url.PathEscape(allocID)+"/exec", &request, &response)
+	if err != nil {
+		return nil, fmt.Errorf("exec allocation: %w", err)
+	}
+	return &api.ExecResponse{
+		Stdout:   response.Stdout,
+		Stderr:   response.Stderr,
+		ExitCode: response.ExitCode,
+	}, nil
+}
+
+// AllocationMetrics fetches resource usage for an allocation's tasks from an agent.
+func (s *AgentClient) AllocationMetrics(ctx context.Context, address, allocID string) (api.AllocationMetricsListResponse, error) {
+	var response []api.AgentTaskMetrics
+	err := s.client.request(ctx, http.MethodGet, normalizeBaseURL(address)+"/v1/allocations/"+url.PathEscape(allocID)+"/metrics", nil, &response)
+	if err != nil {
+		return nil, fmt.Errorf("allocation metrics: %w", err)
+	}
+	now := time.Now().UTC()
+	result := make(api.AllocationMetricsListResponse, 0, len(response))
+	for _, m := range response {
+		result = append(result, api.AllocationMetricsResponse{
+			AllocationID:        allocID,
+			Task:                m.Task,
+			CPUUsageNanoseconds: m.CPUUsageNanoseconds,
+			MemoryUsageBytes:    m.MemoryUsageBytes,
+			CollectedAt:         now,
+		})
+	}
+	return result, nil
 }

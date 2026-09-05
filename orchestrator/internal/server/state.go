@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
+	"time"
 
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/clofour/trellis/internal/state"
 )
 
@@ -156,6 +159,39 @@ func (s *StateController) get(ctx context.Context, key string, value any) (bool,
 	}
 
 	return true, nil
+}
+
+// JobRevisionRecord stores a historical job spec snapshot.
+type JobRevisionRecord struct {
+	Revision  int           `json:"revision"`
+	Spec      *spec.JobSpec `json:"spec"`
+	CreatedAt time.Time     `json:"created_at"`
+}
+
+// PutJobRevision persists a job revision record.
+func (s *StateController) PutJobRevision(ctx context.Context, key string, record *JobRevisionRecord) error {
+	storageKey := fmt.Sprintf("%s/%s/job-revisions/%s/%d", trellisNamespace, s.cluster, url.QueryEscape(key), record.Revision)
+	if err := s.put(ctx, storageKey, record); err != nil {
+		return fmt.Errorf("put job revision: %w", err)
+	}
+	return nil
+}
+
+// ListJobRevisions returns all stored revisions for a job in ascending order.
+func (s *StateController) ListJobRevisions(ctx context.Context, key string) ([]*JobRevisionRecord, error) {
+	prefix := fmt.Sprintf("%s/%s/job-revisions/%s/", trellisNamespace, s.cluster, url.QueryEscape(key))
+	values, err := listValues[JobRevisionRecord](ctx, s.store, prefix)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*JobRevisionRecord, 0, len(values))
+	for _, r := range values {
+		result = append(result, r)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Revision < result[j].Revision
+	})
+	return result, nil
 }
 
 func (s *StateController) put(ctx context.Context, key string, value any) error {

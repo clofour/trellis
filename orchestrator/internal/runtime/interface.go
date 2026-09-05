@@ -46,6 +46,14 @@ type ManagedRuntime interface {
 	ListManaged(ctx context.Context, cluster string) ([]ContainerInfo, error)
 }
 
+// ContainerMetrics holds a point-in-time resource usage snapshot for a container.
+type ContainerMetrics struct {
+	// CPUUsageNanoseconds is the cumulative CPU time consumed by the container.
+	CPUUsageNanoseconds int64
+	// MemoryUsageBytes is the current memory footprint of the container.
+	MemoryUsageBytes int64
+}
+
 // ContainerRuntime defines the operations required by an allocation runtime.
 type ContainerRuntime interface {
 	Pull(ctx context.Context, image string) error
@@ -55,6 +63,11 @@ type ContainerRuntime interface {
 	Stop(ctx context.Context, containerID string) error
 	Remove(ctx context.Context, containerID string) error
 	Exec(ctx context.Context, containerID string, command []string) (int, error)
+	// ExecOutput runs a command in a container and returns its stdout, stderr,
+	// and exit code. The command must not require a terminal.
+	ExecOutput(ctx context.Context, containerID string, command []string) (stdout []byte, stderr []byte, exitCode int, err error)
+	// Metrics returns a point-in-time resource usage snapshot for a container.
+	Metrics(ctx context.Context, containerID string) (*ContainerMetrics, error)
 	Inspect(ctx context.Context, containerID string) (*ContainerInfo, error)
 	Logs(ctx context.Context, containerID string, follow bool, tail int) (io.ReadCloser, error)
 }
