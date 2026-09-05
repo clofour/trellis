@@ -44,6 +44,7 @@ func TestValidateAcceptsExtensions(t *testing.T) {
 	group.APIAccess = &APIAccessSpec{Scope: APIAccessNamespace, Access: APIAccessRead}
 	group.Labels = map[string]string{"trellis.expose": "true", "trellis/domain": "example.com"}
 	group.Constraints = []ConstraintSpec{{Attribute: "arch", Value: "amd64"}}
+	group.Count = 2
 	group.Update = &UpdateSpec{Strategy: UpdateRolling, MaxParallel: 1}
 	group.Restart = &RestartPolicySpec{MaxRestarts: 3, Window: 5 * time.Minute}
 	group.Tasks[0].Networking = &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{Port: 8080}}}
@@ -66,6 +67,10 @@ func TestValidateRejectsInvalidJobs(t *testing.T) {
 		{"invalid port", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].Networking = &TaskNetworkingSpec{Mode: TaskNetworkHost, Ports: []PortSpec{{Port: 70000}}} }},
 		{"port without host networking", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].Networking = &TaskNetworkingSpec{Ports: []PortSpec{{Port: 8080}}} }},
 		{"invalid networking", func(j *JobSpec) { j.TaskGroups[0].Tasks[0].Networking = &TaskNetworkingSpec{Mode: "bridge"} }},
+		{"rolling with count 1", func(j *JobSpec) {
+			j.TaskGroups[0].Count = 1
+			j.TaskGroups[0].Update = &UpdateSpec{Strategy: UpdateRolling}
+		}},
 		{"invalid label", func(j *JobSpec) { j.TaskGroups[0].Labels = map[string]string{"123bad": "v"} }},
 		{"invalid api scope", func(j *JobSpec) { j.TaskGroups[0].APIAccess = &APIAccessSpec{Scope: "other", Access: APIAccessRead} }},
 		{"invalid api access", func(j *JobSpec) { j.TaskGroups[0].APIAccess = &APIAccessSpec{Scope: APIAccessNamespace, Access: "admin"} }},
