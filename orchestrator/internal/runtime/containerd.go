@@ -294,6 +294,13 @@ func (c *ContainerdRuntime) Exec(ctx context.Context, containerID string, comman
 		Args: command,
 		Cwd:  "/",
 	}
+	if containerSpec, specErr := container.Spec(ctx); specErr == nil && containerSpec.Process != nil {
+		process.Env = containerSpec.Process.Env
+		process.User = containerSpec.Process.User
+		if containerSpec.Process.Cwd != "" {
+			process.Cwd = containerSpec.Process.Cwd
+		}
+	}
 
 	taskExec, err := task.Exec(ctx, execID, process, cio.NullIO)
 	if err != nil {

@@ -18,6 +18,22 @@ func TestTaskHealthUsesConfiguredThreshold(t *testing.T) {
 	}
 }
 
+func TestTaskHealthInitializingTransitionsToUnhealthy(t *testing.T) {
+	health := NewTaskHealth(2)
+	if changed, status := health.RecordResult(false); changed || status != StatusInitializing {
+		t.Fatalf("first failure = (%v, %q), want unchanged initializing", changed, status)
+	}
+	if changed, status := health.RecordResult(false); !changed || status != StatusUnhealthy {
+		t.Fatalf("second failure = (%v, %q), want changed unhealthy", changed, status)
+	}
+	if changed, status := health.RecordResult(true); changed || status != StatusUnhealthy {
+		t.Fatalf("first pass after unhealthy = (%v, %q), want unchanged unhealthy", changed, status)
+	}
+	if changed, status := health.RecordResult(true); !changed || status != StatusHealthy {
+		t.Fatalf("second pass after unhealthy = (%v, %q), want changed healthy", changed, status)
+	}
+}
+
 func TestTaskHealthUsesDefaultThresholdForZero(t *testing.T) {
 	health := NewTaskHealth(0)
 	for i := 0; i < defaultCheckThreshold-1; i++ {

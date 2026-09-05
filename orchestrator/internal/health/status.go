@@ -46,7 +46,17 @@ func (t *TaskHealth) RecordResult(pass bool) (bool, HealthStatus) {
 	}
 
 	switch t.Status {
-	case StatusInitializing, StatusUnhealthy:
+	case StatusInitializing:
+		if t.ConsecutivePass >= t.threshold {
+			t.Status = StatusHealthy
+			return true, t.Status
+		}
+		if t.ConsecutiveFail >= t.threshold {
+			t.Status = StatusUnhealthy
+			return true, t.Status
+		}
+
+	case StatusUnhealthy:
 		if t.ConsecutivePass >= t.threshold {
 			t.Status = StatusHealthy
 			return true, t.Status
