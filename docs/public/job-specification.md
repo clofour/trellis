@@ -164,7 +164,7 @@ networking:
 - `host`: join the node network namespace directly;
 - `namespace`: join the private Trellis network belonging to the workload namespace.
 
-`namespace` deliberately describes the networking semantics rather than the transport implementation. Trellis currently realizes this mode with WireGuard and `runsc`, so participating nodes still require that operator-level setup.
+`namespace` deliberately describes the networking semantics rather than the transport implementation. Trellis currently realizes this mode with WireGuard, so participating nodes require the corresponding WireGuard setup. Adding `runsc` (gVisor) is recommended for additional syscall-level sandboxing but is not required.
 
 Port declarations are valid only with `mode: host`. Host networking has no Trellis NAT or port-forwarding layer, so there is no separate host/container port distinction in desired state. `port` is both the node port Trellis reserves and the port the process must listen on. It must be 1–65535. A fixed port can be used only once per node, so replicas reserving the same port need distinct nodes.
 

@@ -41,13 +41,14 @@ Keep the public listener itself stable: place it deliberately or put an external
 Use `networking.mode: wireguard` for tasks that should join the namespace's private mesh:
 
 ```yaml
-runtime: runsc
 tasks:
   - name: api
     image: registry.example.com/api:v1
     networking:
       mode: wireguard
 ```
+
+Optionally add `runtime: runsc` at the task-group level for additional syscall-level sandboxing.
 
 Enable and configure WireGuard consistently on every node that may run the workload. Healthy allocation endpoints enter Trellis discovery, and DNS names follow the shape:
 

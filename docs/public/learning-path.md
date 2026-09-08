@@ -125,7 +125,7 @@ Networking is selected per task:
 | `host` | Join the node network; may reserve ports used directly by the process | Directly reachable services and simple local communication |
 | `namespace` | Join the private Trellis network for the job namespace | Cross-node communication within the workload namespace |
 
-`namespace` is the user-facing semantic mode. Its current implementation uses a WireGuard mesh and therefore requires the corresponding WireGuard and `runsc` node setup, but manifests do not depend on that implementation detail.
+`namespace` is the user-facing semantic mode. Its current implementation uses a WireGuard mesh and therefore requires the corresponding WireGuard node setup, but manifests do not depend on that implementation detail. Adding `runsc` (gVisor) provides additional syscall-level sandboxing and is recommended but not required.
 
 Host port declarations are valid only with `mode: host`:
 
@@ -152,7 +152,7 @@ http://web.namespace-networking.default.trellis:8080/health
 
 That makes both discovery and the private network visible in `trellisctl jobs logs` without introducing an application proxy or special service resource.
 
-Configure the namespace-networking dependencies on every participating node and open the configured WireGuard UDP port between nodes (`51820` by default). The installer can set up the WireGuard and gVisor/runsc dependencies when namespace networking is enabled. Use `trellisctl jobs status` to see placement, `jobs logs` to see application-level peer probes, and `jobs events` when you need the recorded allocation lifecycle transitions that led to the current state.
+Configure the namespace-networking dependencies on every participating node and open the configured WireGuard UDP port between nodes (`51820` by default). The installer sets up WireGuard when namespace networking is enabled and optionally installs gVisor/runsc for additional sandboxing. Use `trellisctl jobs status` to see placement, `jobs logs` to see application-level peer probes, and `jobs events` when you need the recorded allocation lifecycle transitions that led to the current state.
 
 Treat discovery as runtime endpoint information, not application consensus. Applications that require a single writer, leader election, or distributed locking still need their own coordination protocol.
 

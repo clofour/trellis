@@ -8,7 +8,7 @@ This directory demonstrates how Trellis can place and monitor three Patroni/Post
 
 - Three `postgres` group allocations with a normal scheduler preference to spread replicas.
 - A `database=true` node constraint and required `patroni-data` host volume.
-- Task-level namespace WireGuard networking with the `runsc` runtime.
+- Task-level namespace WireGuard networking with the `runsc` runtime for additional syscall-level sandboxing.
 - PostgreSQL and Patroni REST listeners inside the WireGuard-attached task, plus a script `/health` probe.
 - Namespace-scoped Trellis API access for optional endpoint discovery.
 - Environment-delivered superuser and replication credentials.
