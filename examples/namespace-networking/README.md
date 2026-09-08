@@ -3,7 +3,7 @@
 **Level:** intermediate  
 **Prerequisites:** complete the sidecar stage; enable namespace networking on every node that may run this job; use at least two schedulable nodes if you want to observe real cross-node traffic.
 
-This example introduces the private network attached to a Trellis namespace without introducing a proxy, ingress abstraction, or application platform. Both task groups request `networking.mode: namespace`, and therefore use the `runsc` runtime required by the current namespace-networking implementation.
+This example introduces the private network attached to a Trellis namespace without introducing a proxy, ingress abstraction, or application platform. Both task groups request `networking.mode: namespace` to join the private namespace network.
 
 The `web` task group runs two tutorial allocations. Once they are healthy, Trellis publishes them through DNS as:
 
@@ -15,7 +15,7 @@ The `observer` group runs the same small tutorial image with an opt-in peer prob
 
 ## Prepare the nodes
 
-When installing Trellis, answer yes to **Enable namespace networking on this node?** on every participating node. The installer adds the WireGuard and gVisor/runsc dependencies. Ensure the configured WireGuard UDP port can pass between the nodes (`51820` by default).
+When installing Trellis, answer yes to **Enable namespace networking on this node?** on every participating node. The installer adds the WireGuard dependencies and optionally installs gVisor/runsc for additional sandboxing. Ensure the configured WireGuard UDP port can pass between the nodes (`51820` by default).
 
 If these nodes were installed before namespace networking was enabled, use the node configuration and setup guidance in the [learning path](../../docs/public/learning-path.md#8-namespace-networking-and-discovery) before applying this manifest.
 
@@ -55,7 +55,7 @@ trellisctl jobs events namespace-networking
 
 ## What this demonstrates
 
-- `namespace` is the manifest-level networking semantic; WireGuard and runsc are current node implementation details.
+- `namespace` is the manifest-level networking semantic; WireGuard is a current node implementation detail. `runsc` can be added independently for additional sandboxing.
 - Healthy task-group allocations are discoverable at `group.job.namespace.trellis`.
 - Discovery returns runtime endpoints; it is not leader election, locking, or application consensus.
 - No host port is declared or exposed. Communication stays on the namespace network.

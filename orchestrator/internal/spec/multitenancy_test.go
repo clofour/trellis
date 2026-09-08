@@ -12,7 +12,15 @@ func TestValidateNamespaceNetworkAndGroupRuntime(t *testing.T) {
 		}},
 	}
 	if err := Validate(job); err != nil {
-		t.Fatalf("expected valid namespaced job: %v", err)
+		t.Fatalf("expected valid namespaced job with runsc: %v", err)
+	}
+	job.TaskGroups[0].Runtime = ""
+	if err := Validate(job); err != nil {
+		t.Fatalf("expected valid namespaced job with default runtime: %v", err)
+	}
+	job.TaskGroups[0].Runtime = "runc"
+	if err := Validate(job); err != nil {
+		t.Fatalf("expected valid namespaced job with runc: %v", err)
 	}
 	job.TaskGroups[0].Runtime = "other"
 	if err := Validate(job); err == nil {

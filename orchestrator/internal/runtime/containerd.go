@@ -122,10 +122,14 @@ func (c *ContainerdRuntime) Create(ctx context.Context, options CreateOptions) (
 		containerOpts = append(containerOpts, containerd.WithContainerLabels(options.Labels))
 	}
 	if options.Runtime != "" {
-		if options.Runtime != "runsc" {
+		switch options.Runtime {
+		case "runc":
+			containerOpts = append(containerOpts, containerd.WithRuntime("io.containerd.runc.v2", nil))
+		case "runsc":
+			containerOpts = append(containerOpts, containerd.WithRuntime("io.containerd.runsc.v1", nil))
+		default:
 			return "", fmt.Errorf("unsupported runtime %q", options.Runtime)
 		}
-		containerOpts = append(containerOpts, containerd.WithRuntime("io.containerd.runsc.v1", nil))
 	}
 	container, err := c.client.NewContainer(ctx, options.ID, containerOpts...)
 	if err != nil {

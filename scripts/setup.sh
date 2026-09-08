@@ -225,8 +225,9 @@ if confirm "Enable namespace networking on this node?" "n"; then
     apt-get update -qq
     apt-get install -y -qq wireguard-tools iproute2 iptables >/dev/null
     if ! command -v containerd-shim-runsc-v1 >/dev/null 2>&1; then
-        confirm "Install gVisor automatically?" "y" || error "gVisor is required for namespace-networked jobs."
-        install_gvisor
+        if confirm "Install gVisor (recommended for additional syscall-level sandboxing)?" "y"; then
+            install_gvisor
+        fi
     fi
     info "Namespace networking dependencies are installed. Configure wireguard_endpoint, wireguard_port, or wireguard_pool in ${CONFIG_FILE} when non-default values are required, then restart trellis."
 fi

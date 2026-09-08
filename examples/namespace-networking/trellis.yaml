@@ -4,7 +4,6 @@ namespace: default
 task_groups:
   - name: web
     count: 2
-    runtime: runsc
     tasks:
       - name: tutorial
         image: ghcr.io/clofour/trellis-tutorial:network-v1
@@ -15,7 +14,6 @@ task_groups:
           memory: 64MiB
   - name: observer
     count: 1
-    runtime: runsc
     tasks:
       - name: tutorial
         image: ghcr.io/clofour/trellis-tutorial:network-v1
