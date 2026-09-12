@@ -12,7 +12,7 @@ The repository publishes two schemas:
 The schema improves editing but never replaces `trellisctl jobs validate` or server validation.
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/clofour/trellis/main/schemas/trellis-job.schema.json
 name: web
 namespace: default
 task_groups:

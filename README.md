@@ -13,14 +13,14 @@ service, and generates a cluster token. It supports Linux x64 and requires
 root access. If containerd is missing, the installer can install it for you.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | sudo bash
 ```
 
 Or clone the repository and run the script directly:
 
 ```sh
-git clone https://github.com/clofour/trellis-experimental.git
-sudo ./trellis-experimental/scripts/setup.sh
+git clone https://github.com/clofour/trellis.git
+sudo ./trellis/scripts/setup.sh
 ```
 
 The script interactively asks whether to enable WireGuard networking, whether to install the web dashboard, and whether this node should join an existing cluster. Joining an existing cluster requires that cluster's token; the installer prompts for it without echoing it.
