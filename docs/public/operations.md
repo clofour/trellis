@@ -55,9 +55,10 @@ The last requirement is important: encrypted secret records are replicated clust
 On an existing node, make temporary root-readable copies for secure transfer:
 
 ```sh
-sudo sh -c 'awk -F": " '\''$1 == "bootstrap_token" { print $2; exit }'\'' \
-  /etc/trellis/trellis.yaml > /root/trellis-bootstrap-token && \
-  chmod 600 /root/trellis-bootstrap-token'
+sudo awk -F': ' '$1 == "bootstrap_token" { print $2; exit }' \
+  /etc/trellis/trellis.yaml | \
+  sudo tee /root/trellis-bootstrap-token >/dev/null
+sudo chmod 600 /root/trellis-bootstrap-token
 sudo install -m 600 /etc/trellis/secrets.key /root/trellis-secrets.key
 ```
 
@@ -70,6 +71,8 @@ curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.
     --bootstrap-token-file /root/trellis-bootstrap-token \
     --secrets-key-file /root/trellis-secrets.key
 ```
+
+Normal installer-created clusters derive the secrets key ID from the shared key, so no additional argument is needed. If the existing cluster explicitly sets `secrets_key_id` in its node configuration, pass that same value with `--secrets-key-id ID` (or `TRELLIS_SECRETS_KEY_ID`) on the joining node.
 
 The installer shows one plan before making changes. `--advertise HOST` overrides address auto-detection when peers cannot reach the detected private address. Use `--with-networking`, `--with-gvisor`, and `--with-dashboard` when those capabilities should also be installed on the new node. Delete the temporary transferred copies after setup succeeds.
 
@@ -140,7 +143,7 @@ curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/uninst
 
 On a live multi-node cluster it drains the node, waits for healthy replacements, transfers leadership away when necessary, and removes the local Raft member before deleting local software. It removes only dependencies/repositories recorded as introduced by Trellis; older installations without ownership records are handled conservatively and shared host packages are left alone. The user's `trellisctl` contexts are also kept because they describe cluster connections, not ownership of this machine.
 
-Instead of throwing away the encryption key while retaining encrypted state, normal uninstall archives the complete recoverable set—node data, `/etc/trellis` configuration and secrets key, plus installer state—under a timestamped `/var/lib/trellis/recovery/` directory.
+Instead of throwing away the encryption key while retaining encrypted state, normal uninstall archives the complete recoverable set—node data, `/etc/trellis` configuration and the configured secrets key, plus installer state—under a timestamped `/var/lib/trellis/recovery/` directory.
 
 For deliberate permanent destruction, use:
 
