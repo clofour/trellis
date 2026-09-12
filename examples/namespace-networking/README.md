@@ -15,7 +15,14 @@ The `observer` group runs the same small tutorial image with an opt-in peer prob
 
 ## Prepare the nodes
 
-When installing Trellis, answer yes to **Enable namespace networking on this node?** on every participating node. The installer adds the WireGuard dependencies and optionally installs gVisor/runsc for additional sandboxing. Ensure the configured WireGuard UDP port can pass between the nodes (`51820` by default).
+Install participating nodes with `--with-networking`; add `--with-gvisor` when you also want runsc syscall sandboxing. These are explicit setup choices rather than interactive installer questions:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | \
+  sudo bash -s -- --with-networking --with-gvisor
+```
+
+For an additional cluster member, combine those flags with the [documented join workflow](../../docs/public/operations.md#add-a-node). Ensure the configured WireGuard UDP port can pass between participating nodes (`51820` by default).
 
 If these nodes were installed before namespace networking was enabled, use the node configuration and setup guidance in the [learning path](../../docs/public/learning-path.md#8-namespace-networking-and-discovery) before applying this manifest.
 
