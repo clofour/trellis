@@ -60,6 +60,7 @@ require_commands curl tar systemctl install mktemp ctr
 [ -x "${INSTALL_DIR}/trellis" ] || ui_die "Trellis is not installed at ${INSTALL_DIR}/trellis."
 [ -x "${INSTALL_DIR}/trellisctl" ] || ui_die "trellisctl is not installed at ${INSTALL_DIR}/trellisctl."
 [ -f "$CONFIG_FILE" ] || ui_die "Node configuration is missing at ${CONFIG_FILE}."
+load_node_config_paths
 
 load_install_state
 current_version="$("${INSTALL_DIR}/trellis" --version 2>/dev/null | awk '{print $NF}' || true)"

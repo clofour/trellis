@@ -45,6 +45,7 @@ Options:
   --join HOST:8128              Join an existing cluster instead of creating one
   --bootstrap-token-file FILE   Read the existing cluster bootstrap token from FILE
   --secrets-key-file FILE       Read the existing cluster secrets key from FILE
+  --secrets-key-id ID           Existing cluster key ID when it was explicitly configured
   --with-networking             Install WireGuard dependencies for namespace networking
   --with-gvisor                 Install gVisor/runsc
   --with-dashboard              Deploy the read-only Trellis dashboard
@@ -55,6 +56,7 @@ Options:
 Environment alternatives for joins:
   TRELLIS_BOOTSTRAP_TOKEN       Existing cluster bootstrap token
   TRELLIS_SECRETS_KEY           Existing cluster 32-byte/base64 secrets key
+  TRELLIS_SECRETS_KEY_ID        Existing cluster key ID when explicitly configured
 EOF_USAGE
 }
 
@@ -62,6 +64,7 @@ advertise_host=""
 join_addr=""
 bootstrap_token_file=""
 join_secrets_file=""
+join_secrets_key_id="${TRELLIS_SECRETS_KEY_ID:-}"
 with_networking=false
 with_gvisor=false
 with_dashboard=false
@@ -74,6 +77,7 @@ while [ "$#" -gt 0 ]; do
         --join) [ "$#" -ge 2 ] || ui_die "--join requires a host:port"; join_addr="$2"; shift 2 ;;
         --bootstrap-token-file) [ "$#" -ge 2 ] || ui_die "--bootstrap-token-file requires a path"; bootstrap_token_file="$2"; shift 2 ;;
         --secrets-key-file) [ "$#" -ge 2 ] || ui_die "--secrets-key-file requires a path"; join_secrets_file="$2"; shift 2 ;;
+        --secrets-key-id) [ "$#" -ge 2 ] || ui_die "--secrets-key-id requires a value"; join_secrets_key_id="$2"; shift 2 ;;
         --with-networking) with_networking=true; shift ;;
         --with-gvisor) with_gvisor=true; shift ;;
         --with-dashboard) with_dashboard=true; shift ;;
@@ -103,7 +107,7 @@ if [ ! -f "$STATE_FILE" ] && [ -x "${INSTALL_DIR}/trellis" ] && [ -f "$CONFIG_FI
     STATE_COMPLETE=true
     STATE_VERSION="$("${INSTALL_DIR}/trellis" --version 2>/dev/null | awk '{print $NF}' || true)"
     CONTAINERD_OWNED=false; CONTAINERD_CONFIG_OWNED=false; DOCKER_REPO_OWNED=false; DOCKER_KEY_OWNED=false
-    RUNSC_OWNED=false; GVISOR_REPO_OWNED=false; GVISOR_KEY_OWNED=false; WIREGUARD_OWNED=false
+    RUNSC_OWNED=false; GVISOR_REPO_OWNED=false; GVISOR_KEY_OWNED=false; GVISOR_CONFIG_OWNED=false; WIREGUARD_OWNED=false
     NETWORKING_ENABLED=false; GVISOR_ENABLED=false; DASHBOARD_INSTALLED=false; DASHBOARD_NAMESPACE=default; DASHBOARD_ACCESS_STATE=read
     write_install_state
 fi
@@ -123,6 +127,7 @@ fi
 existing_config=false
 existing_join=""
 if [ -f "$CONFIG_FILE" ]; then
+    load_node_config_paths
     existing_config=true
     configured_advertise="$(awk -F': ' '$1 == "agent_advertise" {sub(/:8127$/, "", $2); print $2; exit}' "$CONFIG_FILE")"
     existing_join="$(awk -F': ' '$1 == "join" {print $2; exit}' "$CONFIG_FILE")"
@@ -236,7 +241,10 @@ server_advertise: ${advertise_host}:8128
 raft_advertise: ${advertise_host}:8129
 secrets_key: ${SECRETS_KEY_FILE}
 EOF_CONFIG
-    if [ -n "$join_addr" ]; then printf 'join: %s\n' "$join_addr" >>"$CONFIG_FILE"; fi
+    if [ -n "$join_addr" ]; then
+        printf 'join: %s\n' "$join_addr" >>"$CONFIG_FILE"
+        [ -z "$join_secrets_key_id" ] || printf 'secrets_key_id: %s\n' "$join_secrets_key_id" >>"$CONFIG_FILE"
+    fi
     chmod 600 "$CONFIG_FILE"
     unset cluster_token
     ui_step "Created node configuration"

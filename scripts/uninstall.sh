@@ -60,6 +60,7 @@ if [ ! -x "${INSTALL_DIR}/trellis" ] && [ ! -f "$SERVICE_FILE" ] && [ ! -d "$CON
     exit 0
 fi
 load_install_state
+load_node_config_paths
 
 ui_title "uninstall"
 ui_section "Plan"
@@ -148,6 +149,8 @@ remove_owned_dependencies
 
 if [ "$purge" = true ]; then
     ui_section "Data"
+    if [ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "/" ]; then rm -rf "$DATA_DIR"; fi
+    if [ -n "$SECRETS_KEY_FILE" ] && [ "$SECRETS_KEY_FILE" != "/" ]; then rm -f "$SECRETS_KEY_FILE"; fi
     rm -rf "$CONFIG_DIR" "$STATE_ROOT"
     ui_step "Permanently removed Trellis node data"
     ui_done "Trellis was purged from this node"
@@ -161,7 +164,9 @@ else
     if [ -d "$DATA_DIR" ]; then mv "$DATA_DIR" "$data_tmp"; fi
     install -d -m 0700 "$recovery_dir"
     if [ -d "$data_tmp" ]; then mv "$data_tmp" "${recovery_dir}/data"; fi
+    if [ -f "$SECRETS_KEY_FILE" ]; then cp -a "$SECRETS_KEY_FILE" "${recovery_dir}/secrets.key"; fi
     if [ -d "$CONFIG_DIR" ]; then cp -a "$CONFIG_DIR" "${recovery_dir}/config"; rm -rf "$CONFIG_DIR"; fi
+    if [ -f "$SECRETS_KEY_FILE" ]; then rm -f "$SECRETS_KEY_FILE"; fi
     if [ -f "$STATE_FILE" ]; then cp -a "$STATE_FILE" "${recovery_dir}/install-state"; fi
     rm -f "$STATE_FILE"
     ui_step "Archived recoverable node state at ${recovery_dir}"

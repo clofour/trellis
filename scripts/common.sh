@@ -59,12 +59,23 @@ load_install_state() {
     RUNSC_OWNED="$(state_get runsc_owned false)"
     GVISOR_REPO_OWNED="$(state_get gvisor_repo_owned false)"
     GVISOR_KEY_OWNED="$(state_get gvisor_key_owned false)"
+    GVISOR_CONFIG_OWNED="$(state_get gvisor_config_owned false)"
     WIREGUARD_OWNED="$(state_get wireguard_owned false)"
     NETWORKING_ENABLED="$(state_get networking_enabled false)"
     GVISOR_ENABLED="$(state_get gvisor_enabled false)"
     DASHBOARD_INSTALLED="$(state_get dashboard_installed false)"
     DASHBOARD_NAMESPACE="$(state_get dashboard_namespace default)"
     DASHBOARD_ACCESS_STATE="$(state_get dashboard_access read)"
+}
+
+
+load_node_config_paths() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    local configured_data configured_key
+    configured_data="$(awk -F': ' '$1 == "data_dir" {print $2; exit}' "$CONFIG_FILE")"
+    configured_key="$(awk -F': ' '$1 == "secrets_key" {print $2; exit}' "$CONFIG_FILE")"
+    [ -z "$configured_data" ] || DATA_DIR="$configured_data"
+    [ -z "$configured_key" ] || SECRETS_KEY_FILE="$configured_key"
 }
 
 write_install_state() {
@@ -82,6 +93,7 @@ docker_key_owned=${DOCKER_KEY_OWNED}
 runsc_owned=${RUNSC_OWNED}
 gvisor_repo_owned=${GVISOR_REPO_OWNED}
 gvisor_key_owned=${GVISOR_KEY_OWNED}
+gvisor_config_owned=${GVISOR_CONFIG_OWNED}
 wireguard_owned=${WIREGUARD_OWNED}
 networking_enabled=${NETWORKING_ENABLED}
 gvisor_enabled=${GVISOR_ENABLED}
@@ -282,8 +294,9 @@ install_networking() {
 install_gvisor() {
     detect_distro
     ui_step "Installing gVisor"
-    local had_runsc=false
+    local had_runsc=false had_runsc_config=false
     command -v runsc >/dev/null 2>&1 && had_runsc=true
+    grep -q 'io.containerd.runsc.v1' /etc/containerd/config.toml 2>/dev/null && had_runsc_config=true
     apt-get update -qq >/dev/null
     apt-get install -y -qq ca-certificates curl gnupg >/dev/null
 
@@ -304,6 +317,8 @@ install_gvisor() {
     $had_runsc || RUNSC_OWNED=true
     write_install_state
     runsc install >/dev/null
+    $had_runsc_config || GVISOR_CONFIG_OWNED=true
+    write_install_state
     systemctl restart containerd
     GVISOR_ENABLED=true
     write_install_state
@@ -357,8 +372,10 @@ remove_owned_dependencies() {
     command -v dpkg-query >/dev/null 2>&1 || return 0
     local removals=() repo_changed=false
 
+    if [ "$GVISOR_CONFIG_OWNED" = true ] && command -v runsc >/dev/null 2>&1; then
+        runsc uninstall >/dev/null 2>&1 || true
+    fi
     if [ "$RUNSC_OWNED" = true ] && package_installed runsc; then
-        command -v runsc >/dev/null 2>&1 && runsc uninstall >/dev/null 2>&1 || true
         removals+=(runsc)
     fi
     if [ "$WIREGUARD_OWNED" = true ] && package_installed wireguard-tools; then
