@@ -203,12 +203,6 @@ local_ctl() {
     TRELLIS_CONFIG="${temp_root}/root-config.yaml" "${INSTALL_DIR}/trellisctl" "$@"
 }
 
-staged_ctl() {
-    local temp_root="$1"
-    shift
-    TRELLIS_CONFIG="${temp_root}/root-config.yaml" "${temp_root}/trellisctl" "$@"
-}
-
 wait_for_service() {
     local temp_root="$1" attempt
     for attempt in $(seq 1 30); do
@@ -244,6 +238,7 @@ install_containerd() {
         curl -fsSL "https://download.docker.com/linux/${DISTRO_ID}/gpg" -o /etc/apt/keyrings/docker.asc
         chmod a+r /etc/apt/keyrings/docker.asc
         DOCKER_KEY_OWNED=true
+        write_install_state
     fi
     if [ ! -f /etc/apt/sources.list.d/docker.sources ]; then
         cat >/etc/apt/sources.list.d/docker.sources <<EOF
@@ -255,15 +250,18 @@ Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
         DOCKER_REPO_OWNED=true
+        write_install_state
     fi
 
     apt-get update -qq >/dev/null
     apt-get install -y -qq containerd.io >/dev/null
     CONTAINERD_OWNED=true
+    write_install_state
     if [ ! -f /etc/containerd/config.toml ]; then
         install -d -m 0755 /etc/containerd
         containerd config default >/etc/containerd/config.toml
         CONTAINERD_CONFIG_OWNED=true
+        write_install_state
     fi
     systemctl enable --now containerd >/dev/null
     write_install_state
@@ -293,15 +291,18 @@ install_gvisor() {
         curl -fsSL https://gvisor.dev/archive.key |
             gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
         GVISOR_KEY_OWNED=true
+        write_install_state
     fi
     if [ ! -f /etc/apt/sources.list.d/gvisor.list ]; then
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
             >/etc/apt/sources.list.d/gvisor.list
         GVISOR_REPO_OWNED=true
+        write_install_state
     fi
     apt-get update -qq >/dev/null
     apt-get install -y -qq runsc >/dev/null
     $had_runsc || RUNSC_OWNED=true
+    write_install_state
     runsc install >/dev/null
     systemctl restart containerd
     GVISOR_ENABLED=true

@@ -93,7 +93,10 @@ systemctl is-active --quiet trellis 2>/dev/null && was_running=true
 
 if [ "$was_running" = true ] && [ -x "${INSTALL_DIR}/trellisctl" ] && [ -n "$node_id" ]; then
     ui_section "Cluster"
-    node_count="$(local_ctl "$WORK_TMP" nodes list --output json 2>/dev/null | grep -c '"id"' || true)"
+    if ! node_json="$(local_ctl "$WORK_TMP" nodes list --output json 2>/dev/null)"; then
+        ui_die "Could not inspect cluster membership. Nothing local has been deleted."
+    fi
+    node_count="$(printf '%s' "$node_json" | grep -c '"id"' || true)"
     if [ "${node_count:-0}" -gt 1 ]; then
         local_ctl "$WORK_TMP" nodes drain "$node_id" >/dev/null
         ui_step "Drain started"
@@ -118,7 +121,10 @@ if [ "$was_running" = true ] && [ -x "${INSTALL_DIR}/trellisctl" ] && [ -n "$nod
     fi
 else
     ui_section "Cluster"
-    ui_detail "The local daemon is unavailable; skipping remote membership cleanup."
+    ui_warn "The local daemon is unavailable, so cluster membership cannot be changed from this machine."
+    if [ -n "$node_id" ]; then
+        ui_detail "Afterward, verify from another operator context that node ${node_id} is no longer a member."
+    fi
 fi
 
 ui_section "Software"

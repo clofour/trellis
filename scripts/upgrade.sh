@@ -4,7 +4,23 @@ set -euo pipefail
 RAW_COMMON="https://raw.githubusercontent.com/clofour/trellis/main/scripts/common.sh"
 COMMON_TMP=""
 WORK_TMP=""
-cleanup() { local rc=$?; [ -z "$WORK_TMP" ] || rm -rf "$WORK_TMP"; [ -z "$COMMON_TMP" ] || rm -rf "$COMMON_TMP"; return "$rc"; }
+ROLLBACK_NEEDED=false
+drained=false
+node_id=""
+
+cleanup() {
+    local rc=$?
+    if [ "$rc" -ne 0 ]; then
+        if [ "$ROLLBACK_NEEDED" = true ]; then
+            rollback || true
+        elif [ "$drained" = true ] && [ -n "$WORK_TMP" ] && [ -n "$node_id" ]; then
+            local_ctl "$WORK_TMP" nodes undrain "$node_id" >/dev/null 2>&1 || true
+        fi
+    fi
+    [ -z "$WORK_TMP" ] || rm -rf "$WORK_TMP"
+    [ -z "$COMMON_TMP" ] || rm -rf "$COMMON_TMP"
+    return "$rc"
+}
 trap cleanup EXIT
 
 load_common() {
@@ -65,8 +81,6 @@ download_release "$WORK_TMP"
 ui_step "Downloaded and verified ${RELEASE_TAG}"
 
 was_running=false
-drained=false
-node_id=""
 if systemctl is-active --quiet trellis; then was_running=true; fi
 if [ "$was_running" = true ] && [ -f "${DATA_DIR}/node-id" ]; then
     node_id="$(tr -d '[:space:]' <"${DATA_DIR}/node-id")"
@@ -74,7 +88,10 @@ fi
 
 if [ "$was_running" = true ] && [ -n "$node_id" ]; then
     ui_section "Drain"
-    node_count="$(local_ctl "$WORK_TMP" nodes list --output json 2>/dev/null | grep -c '"id"' || true)"
+    if ! node_json="$(local_ctl "$WORK_TMP" nodes list --output json 2>/dev/null)"; then
+        ui_die "Could not inspect cluster membership; no binaries were changed."
+    fi
+    node_count="$(printf '%s' "$node_json" | grep -c '"id"' || true)"
     if [ "${node_count:-0}" -gt 1 ]; then
         local_ctl "$WORK_TMP" nodes drain "$node_id" >/dev/null
         drained=true
@@ -94,7 +111,9 @@ cp -a "${INSTALL_DIR}/trellisctl" "${WORK_TMP}/trellisctl.old"
 [ ! -f "$SERVICE_FILE" ] || cp -a "$SERVICE_FILE" "${WORK_TMP}/trellis.service.old"
 
 rollback() {
-    ui_warn "New daemon failed its health check; restoring ${current_version:-the previous version}."
+    set +e
+    ROLLBACK_NEEDED=false
+    ui_warn "Upgrade failed after changing binaries; restoring ${current_version:-the previous version}."
     systemctl stop trellis >/dev/null 2>&1 || true
     install -m 0755 "${WORK_TMP}/trellis.old" "${INSTALL_DIR}/trellis"
     install -m 0755 "${WORK_TMP}/trellisctl.old" "${INSTALL_DIR}/trellisctl"
@@ -110,6 +129,7 @@ rollback() {
 }
 
 ui_section "Install"
+ROLLBACK_NEEDED=true
 if [ "$was_running" = true ]; then systemctl stop trellis; fi
 install -m 0755 "${WORK_TMP}/trellis" "${INSTALL_DIR}/.trellis.new"
 install -m 0755 "${WORK_TMP}/trellisctl" "${INSTALL_DIR}/.trellisctl.new"
@@ -123,12 +143,13 @@ ui_step "Installed binaries and refreshed the systemd unit"
 if [ "$was_running" = true ]; then
     systemctl start trellis
     if ! wait_for_service "$WORK_TMP"; then
-        rollback
         journalctl -u trellis -n 20 --no-pager >&2 || true
-        ui_die "Upgrade rolled back because Trellis did not become healthy."
+        ui_die "New Trellis version did not become healthy; rolling back."
     fi
     ui_step "Trellis ${RELEASE_TAG} is healthy"
+    ROLLBACK_NEEDED=false
 else
+    ROLLBACK_NEEDED=false
     ui_detail "Service was stopped before the upgrade; leaving it stopped."
 fi
 

@@ -46,7 +46,7 @@ Options:
   --bootstrap-token-file FILE   Read the existing cluster bootstrap token from FILE
   --secrets-key-file FILE       Read the existing cluster secrets key from FILE
   --with-networking             Install WireGuard dependencies for namespace networking
-  --with-gvisor                 Install gVisor/runsc (implies --with-networking)
+  --with-gvisor                 Install gVisor/runsc
   --with-dashboard              Deploy the read-only Trellis dashboard
   --dashboard-write             Give the dashboard cluster/write access (implies --with-dashboard)
   -y, --yes                     Apply the displayed plan without confirmation
@@ -75,7 +75,7 @@ while [ "$#" -gt 0 ]; do
         --bootstrap-token-file) [ "$#" -ge 2 ] || ui_die "--bootstrap-token-file requires a path"; bootstrap_token_file="$2"; shift 2 ;;
         --secrets-key-file) [ "$#" -ge 2 ] || ui_die "--secrets-key-file requires a path"; join_secrets_file="$2"; shift 2 ;;
         --with-networking) with_networking=true; shift ;;
-        --with-gvisor) with_gvisor=true; with_networking=true; shift ;;
+        --with-gvisor) with_gvisor=true; shift ;;
         --with-dashboard) with_dashboard=true; shift ;;
         --dashboard-write) with_dashboard=true; dashboard_access="write"; shift ;;
         -y|--yes) assume_yes=true; shift ;;
@@ -91,7 +91,7 @@ load_install_state
 # An interrupted setup keeps the features it already installed. Explicit flags
 # may add capabilities, but rerunning the installer never silently removes them.
 [ "$NETWORKING_ENABLED" != true ] || with_networking=true
-[ "$GVISOR_ENABLED" != true ] || { with_gvisor=true; with_networking=true; }
+[ "$GVISOR_ENABLED" != true ] || with_gvisor=true
 if [ "$DASHBOARD_INSTALLED" = true ]; then
     with_dashboard=true
     [ "$DASHBOARD_ACCESS_STATE" != write ] || dashboard_access=write
