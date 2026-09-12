@@ -1,342 +1,313 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="clofour/trellis"
-INSTALL_DIR="/usr/local/bin"
-DATA_DIR="/var/lib/trellis/data"
-CONFIG_DIR="/etc/trellis"
-CONFIG_FILE="${CONFIG_DIR}/trellis.yaml"
-SECRETS_KEY_FILE="${CONFIG_DIR}/secrets.key"
-SERVICE_FILE="/etc/systemd/system/trellis.service"
+RAW_COMMON="https://raw.githubusercontent.com/clofour/trellis/main/scripts/common.sh"
+COMMON_TMP=""
+WORK_TMP=""
+STARTED=false
 
-info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
-error() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
-
-confirm() {
-    local prompt="$1" default="${2:-y}"
-    if [ "$default" = "y" ]; then prompt="$prompt [Y/n] "; else prompt="$prompt [y/N] "; fi
-    printf '%s' "$prompt"
-    read -r answer </dev/tty
-    answer="${answer:-$default}"
-    case "$answer" in [Yy]*) return 0 ;; *) return 1 ;; esac
-}
-
-prompt() {
-    local var_name="$1" prompt_text="$2" default="$3"
-    printf '%s [%s] ' "$prompt_text" "$default"
-    read -r value </dev/tty
-    value="${value:-$default}"
-    printf -v "$var_name" '%s' "$value"
-}
-
-prompt_secret() {
-    local var_name="$1" prompt_text="$2" value
-    printf '%s: ' "$prompt_text"
-    read -r -s value </dev/tty
-    printf '\n'
-    [ -n "$value" ] || error "$prompt_text is required."
-    printf -v "$var_name" '%s' "$value"
-}
-
-is_ipv4() {
-    local value="$1" octet
-    local -a octets
-    IFS=. read -r -a octets <<< "$value"
-    [ "${#octets[@]}" -eq 4 ] || return 1
-    for octet in "${octets[@]}"; do
-        [[ "$octet" =~ ^[0-9]+$ ]] || return 1
-        (( 10#$octet <= 255 )) || return 1
-    done
-}
-
-is_private_ipv4() {
-    local value="$1" a b c d
-    is_ipv4 "$value" || return 1
-    IFS=. read -r a b c d <<< "$value"
-    [ "$a" -eq 10 ] || { [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ]; } || { [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; }
-}
-
-detect_private_ipv4() {
-    local value
-    if command -v ip >/dev/null 2>&1; then
-        value="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
-        if [ -n "$value" ] && is_private_ipv4 "$value"; then printf '%s\n' "$value"; return 0; fi
-        while read -r value; do
-            if is_private_ipv4 "$value"; then printf '%s\n' "$value"; return 0; fi
-        done < <(ip -o -4 addr show scope global 2>/dev/null | awk '{ sub(/\/.*/, "", $4); print $4 }')
+cleanup() {
+    local rc=$?
+    [ -z "$WORK_TMP" ] || rm -rf "$WORK_TMP"
+    [ -z "$COMMON_TMP" ] || rm -rf "$COMMON_TMP"
+    if [ "$rc" -ne 0 ] && [ "$STARTED" = true ]; then
+        printf '\n'
+        ui_warn "Setup did not finish. The completed steps were kept; rerun the same command to resume."
     fi
-    while read -r value; do
-        if is_private_ipv4 "$value"; then printf '%s\n' "$value"; return 0; fi
-    done < <(hostname -I 2>/dev/null | tr ' ' '\n')
-    return 1
 }
+trap cleanup EXIT
 
-detect_public_ipv4() {
-    local value
-    value="$(curl -4fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
-    if is_ipv4 "$value"; then printf '%s\n' "$value"; return 0; fi
-    return 1
-}
-
-detect_distro() {
-    if [ -f /etc/os-release ]; then
-        # shellcheck disable=SC1091
-        . /etc/os-release
-        DISTRO_ID="${ID:-}"
-        DISTRO_CODENAME="${VERSION_CODENAME:-}"
+load_common() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+    if [ -n "$script_dir" ] && [ -f "${script_dir}/common.sh" ]; then
+        # shellcheck source=common.sh
+        source "${script_dir}/common.sh"
+        return
     fi
-    [ -n "${DISTRO_ID:-}" ] || error "Cannot detect Linux distribution. Only Debian/Ubuntu are supported."
-    case "$DISTRO_ID" in debian|ubuntu) ;; *) error "Unsupported distribution: $DISTRO_ID. Only Debian and Ubuntu are supported." ;; esac
+    command -v curl >/dev/null 2>&1 || { echo "error: curl is required" >&2; exit 1; }
+    COMMON_TMP="$(mktemp -d)"
+    curl -fsSL "$RAW_COMMON" -o "${COMMON_TMP}/common.sh"
+    # shellcheck source=/dev/null
+    source "${COMMON_TMP}/common.sh"
+}
+load_common
+
+usage() {
+    cat <<'EOF_USAGE'
+Install a Trellis node.
+
+Usage:
+  setup.sh [options]
+
+Options:
+  --advertise HOST              Address peers can use to reach this node
+  --join HOST:8128              Join an existing cluster instead of creating one
+  --bootstrap-token-file FILE   Read the existing cluster bootstrap token from FILE
+  --secrets-key-file FILE       Read the existing cluster secrets key from FILE
+  --with-networking             Install WireGuard dependencies for namespace networking
+  --with-gvisor                 Install gVisor/runsc (implies --with-networking)
+  --with-dashboard              Deploy the read-only Trellis dashboard
+  --dashboard-write             Give the dashboard cluster/write access (implies --with-dashboard)
+  -y, --yes                     Apply the displayed plan without confirmation
+  -h, --help                    Show this help
+
+Environment alternatives for joins:
+  TRELLIS_BOOTSTRAP_TOKEN       Existing cluster bootstrap token
+  TRELLIS_SECRETS_KEY           Existing cluster 32-byte/base64 secrets key
+EOF_USAGE
 }
 
-install_containerd() {
-    info "Installing containerd from the Docker apt repository..."
-    detect_distro
-    apt-get install -y -qq ca-certificates curl
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL "https://download.docker.com/linux/${DISTRO_ID}/gpg" -o /etc/apt/keyrings/docker.asc
-    chmod a+r /etc/apt/keyrings/docker.asc
-    cat > /etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/${DISTRO_ID}
-Suites: ${DISTRO_CODENAME}
-Components: stable
-Architectures: $(dpkg --print-architecture)
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-    apt-get update -qq
-    apt-get install -y -qq containerd.io
-    containerd config default > /etc/containerd/config.toml
-    systemctl enable --now containerd
-}
-
-install_gvisor() {
-    info "Installing gVisor..."
-    detect_distro
-    curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" > /etc/apt/sources.list.d/gvisor.list
-    apt-get update -qq
-    apt-get install -y -qq runsc
-    runsc install
-    systemctl restart containerd
-}
-
-[ "$(uname -s)" = "Linux" ] || error "This script only supports Linux."
-[ "$(uname -m)" = "x86_64" ] || error "This script only supports x86_64 (amd64)."
-[ "$(id -u)" -eq 0 ] || error "Run this script as root (or with sudo)."
-for cmd in curl tar systemctl openssl; do command -v "$cmd" >/dev/null 2>&1 || error "Required command not found: $cmd"; done
-
-if [ -x "${INSTALL_DIR}/trellis" ]; then
-    installed_version="$("${INSTALL_DIR}/trellis" --version 2>/dev/null | awk '{print $NF}')" || installed_version="unknown"
-    error "Trellis is already installed (${installed_version}). To upgrade, run scripts/upgrade.sh instead."
-fi
-
-if ! systemctl is-active --quiet containerd 2>/dev/null; then
-    if command -v containerd >/dev/null 2>&1; then
-        systemctl enable --now containerd
-    else
-        confirm "Install containerd automatically?" "y" || error "containerd is required."
-        install_containerd
-    fi
-fi
-
-info "Fetching latest release from GitHub..."
-release_json="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest")" || error "Failed to find a release."
-release_tag="$(printf '%s' "$release_json" | grep -oP '"tag_name":\s*"\K[^"]+')" || error "Latest release is missing a tag name."
-ui_image="ghcr.io/clofour/trellis-ui:${release_tag}"
-bin_url="$(printf '%s' "$release_json" | grep -oP '"browser_download_url":\s*"\K[^"]*trellis_linux_x64\.tar\.gz')" || error "Release is missing the Linux x64 asset."
-
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-curl -fSL -o "${tmp}/trellis_linux_x64.tar.gz" "$bin_url"
-tar -xzf "${tmp}/trellis_linux_x64.tar.gz" -C "$tmp"
-install -m 0755 "${tmp}/trellis" "${INSTALL_DIR}/trellis"
-install -m 0755 "${tmp}/trellisctl" "${INSTALL_DIR}/trellisctl"
-
-info "Creating data directory at ${DATA_DIR}..."
-install -d -m 0750 "$DATA_DIR"
-install -d -m 0750 "$CONFIG_DIR"
-
-default_hostname="$(hostname)"
-prompt advertise_host "Advertise hostname or IP (reachable by other nodes; public/private to auto-detect)" "$default_hostname"
-case "$advertise_host" in
-    private) advertise_host="$(detect_private_ipv4)" || error "Could not detect a private IPv4 address." ;;
-    public)
-        advertise_host="$(detect_public_ipv4)" || error "Could not detect the public IPv4 address."
-        warn "Ensure NAT, firewall, and port forwarding allow other nodes to reach it."
-        ;;
-esac
-
+advertise_host=""
 join_addr=""
-if confirm "Join an existing cluster?" "n"; then
-    prompt join_addr "Address of an existing cluster node (host:8128)" ""
-    [ -n "$join_addr" ] || error "An existing cluster node address is required."
+bootstrap_token_file=""
+join_secrets_file=""
+with_networking=false
+with_gvisor=false
+with_dashboard=false
+dashboard_access="read"
+assume_yes=false
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --advertise) [ "$#" -ge 2 ] || ui_die "--advertise requires a value"; advertise_host="$2"; shift 2 ;;
+        --join) [ "$#" -ge 2 ] || ui_die "--join requires a host:port"; join_addr="$2"; shift 2 ;;
+        --bootstrap-token-file) [ "$#" -ge 2 ] || ui_die "--bootstrap-token-file requires a path"; bootstrap_token_file="$2"; shift 2 ;;
+        --secrets-key-file) [ "$#" -ge 2 ] || ui_die "--secrets-key-file requires a path"; join_secrets_file="$2"; shift 2 ;;
+        --with-networking) with_networking=true; shift ;;
+        --with-gvisor) with_gvisor=true; with_networking=true; shift ;;
+        --with-dashboard) with_dashboard=true; shift ;;
+        --dashboard-write) with_dashboard=true; dashboard_access="write"; shift ;;
+        -y|--yes) assume_yes=true; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) ui_die "Unknown option: $1" ;;
+    esac
+done
+
+require_root_linux_amd64
+require_commands curl tar systemctl openssl awk grep install mktemp
+load_install_state
+
+# An interrupted setup keeps the features it already installed. Explicit flags
+# may add capabilities, but rerunning the installer never silently removes them.
+[ "$NETWORKING_ENABLED" != true ] || with_networking=true
+[ "$GVISOR_ENABLED" != true ] || { with_gvisor=true; with_networking=true; }
+if [ "$DASHBOARD_INSTALLED" = true ]; then
+    with_dashboard=true
+    [ "$DASHBOARD_ACCESS_STATE" != write ] || dashboard_access=write
 fi
 
-if [ -n "$join_addr" ]; then
-    prompt_secret cluster_token "Bootstrap token for the existing cluster"
+# Recognize complete installs that predate the install-state file without claiming
+# ownership of packages that Trellis cannot prove it installed.
+if [ ! -f "$STATE_FILE" ] && [ -x "${INSTALL_DIR}/trellis" ] && [ -f "$CONFIG_FILE" ] && [ -f "$SERVICE_FILE" ]; then
+    STATE_COMPLETE=true
+    STATE_VERSION="$("${INSTALL_DIR}/trellis" --version 2>/dev/null | awk '{print $NF}' || true)"
+    CONTAINERD_OWNED=false; CONTAINERD_CONFIG_OWNED=false; DOCKER_REPO_OWNED=false; DOCKER_KEY_OWNED=false
+    RUNSC_OWNED=false; GVISOR_REPO_OWNED=false; GVISOR_KEY_OWNED=false; WIREGUARD_OWNED=false
+    NETWORKING_ENABLED=false; GVISOR_ENABLED=false; DASHBOARD_INSTALLED=false; DASHBOARD_NAMESPACE=default; DASHBOARD_ACCESS_STATE=read
+    write_install_state
+fi
+
+if [ "$STATE_COMPLETE" = true ] && [ -x "${INSTALL_DIR}/trellis" ] && [ -f "$CONFIG_FILE" ]; then
+    ui_title "setup"
+    ui_step "Trellis ${STATE_VERSION:-unknown} is already installed"
+    ui_detail "Upgrade: curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/upgrade.sh | sudo bash"
+    exit 0
+fi
+
+resuming=false
+if [ -f "$STATE_FILE" ] || [ -x "${INSTALL_DIR}/trellis" ] || [ -f "$CONFIG_FILE" ] || [ -f "$SERVICE_FILE" ]; then
+    resuming=true
+fi
+
+existing_config=false
+existing_join=""
+if [ -f "$CONFIG_FILE" ]; then
+    existing_config=true
+    configured_advertise="$(awk -F': ' '$1 == "agent_advertise" {sub(/:8127$/, "", $2); print $2; exit}' "$CONFIG_FILE")"
+    existing_join="$(awk -F': ' '$1 == "join" {print $2; exit}' "$CONFIG_FILE")"
+    [ -z "$configured_advertise" ] || advertise_host="$configured_advertise"
+fi
+if [ -z "$advertise_host" ]; then
+    advertise_host="$(detect_private_ipv4 2>/dev/null || hostname)"
+fi
+[ -n "$advertise_host" ] || ui_die "Could not determine an advertise address. Pass --advertise HOST."
+
+if [ -n "$join_addr" ] && [[ "$join_addr" != *:* ]]; then
+    ui_die "--join must be an existing node address such as node-a:8128"
+fi
+if [ -n "$bootstrap_token_file" ] && [ ! -r "$bootstrap_token_file" ]; then ui_die "Cannot read $bootstrap_token_file"; fi
+if [ -n "$join_secrets_file" ] && [ ! -r "$join_secrets_file" ]; then ui_die "Cannot read $join_secrets_file"; fi
+
+fetch_latest_release
+
+containerd_action="reuse existing installation"
+if ! command -v containerd >/dev/null 2>&1; then containerd_action="install automatically"; fi
+cluster_action="create a new cluster"
+if [ "$existing_config" = true ]; then
+    cluster_action="reuse existing node configuration"
+    [ -z "$existing_join" ] || cluster_action="resume join to ${existing_join}"
+elif [ -n "$join_addr" ]; then
+    cluster_action="join ${join_addr}"
+fi
+
+ui_title "setup"
+if [ "$resuming" = true ]; then
+    ui_warn "A previous setup appears incomplete. Trellis will reuse completed state and continue."
+    printf '\n'
+fi
+ui_section "Plan"
+ui_detail "Version       ${RELEASE_TAG}"
+ui_detail "Node address  ${advertise_host}"
+ui_detail "Cluster       ${cluster_action}"
+ui_detail "containerd    ${containerd_action}"
+ui_detail "Networking    $([ "$with_networking" = true ] && printf 'enabled' || printf 'disabled')"
+ui_detail "gVisor        $([ "$with_gvisor" = true ] && printf 'enabled' || printf 'disabled')"
+ui_detail "Dashboard     $([ "$with_dashboard" = true ] && printf '%s' "$dashboard_access" || printf 'not installed')"
+
+if [ "$assume_yes" != true ]; then
+    printf '\n%sApply this plan? [Y/n] %s' "$BOLD" "$RESET"
+    read -r answer </dev/tty
+    case "${answer:-y}" in [Yy]*) ;; *) ui_detail "No changes made."; exit 0 ;; esac
+fi
+STARTED=true
+
+STATE_COMPLETE=false
+STATE_VERSION="$RELEASE_TAG"
+DASHBOARD_NAMESPACE="${DASHBOARD_NAMESPACE:-default}"
+write_install_state
+
+ui_section "Host"
+if command -v containerd >/dev/null 2>&1; then
+    if systemctl is-active --quiet containerd; then
+        ui_step "containerd is ready"
+    else
+        systemctl enable --now containerd >/dev/null
+        ui_step "Started existing containerd"
+    fi
 else
-    cluster_token="trls_boot_$(head -c 32 /dev/urandom | base64 | tr -d '=\n')"
+    install_containerd
 fi
 
-info "Writing node configuration to ${CONFIG_FILE}..."
-cat > "$CONFIG_FILE" <<EOF
+WORK_TMP="$(mktemp -d)"
+ui_step "Downloading Trellis ${RELEASE_TAG}"
+download_release "$WORK_TMP"
+install -d -m 0755 "$INSTALL_DIR"
+install -m 0755 "${WORK_TMP}/trellis" "${INSTALL_DIR}/.trellis.new"
+install -m 0755 "${WORK_TMP}/trellisctl" "${INSTALL_DIR}/.trellisctl.new"
+mv "${INSTALL_DIR}/.trellis.new" "${INSTALL_DIR}/trellis"
+mv "${INSTALL_DIR}/.trellisctl.new" "${INSTALL_DIR}/trellisctl"
+ui_step "Installed trellis and trellisctl"
+
+install -d -m 0750 "$DATA_DIR" "$CONFIG_DIR"
+
+read_secret() {
+    local prompt="$1" file="$2" env_value="$3" value=""
+    if [ -n "$file" ]; then
+        value="$(cat "$file")"
+    elif [ -n "$env_value" ]; then
+        value="$env_value"
+    else
+        printf '%s: ' "$prompt" >/dev/tty
+        read -r -s value </dev/tty
+        printf '\n' >/dev/tty
+    fi
+    [ -n "$value" ] || ui_die "$prompt is required."
+    printf '%s' "$value"
+}
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    if [ -n "$join_addr" ]; then
+        cluster_token="$(read_secret "Existing cluster bootstrap token" "$bootstrap_token_file" "${TRELLIS_BOOTSTRAP_TOKEN:-}")"
+        secrets_value="$(read_secret "Existing cluster secrets key" "$join_secrets_file" "${TRELLIS_SECRETS_KEY:-}")"
+        printf '%s\n' "$secrets_value" >"$SECRETS_KEY_FILE"
+        unset secrets_value
+    else
+        cluster_token="trls_boot_$(head -c 32 /dev/urandom | base64 | tr -d '=\n')"
+        openssl rand -base64 32 >"$SECRETS_KEY_FILE"
+    fi
+    chmod 600 "$SECRETS_KEY_FILE"
+    cat >"$CONFIG_FILE" <<EOF_CONFIG
 cluster: default
 bootstrap_token: ${cluster_token}
 data_dir: ${DATA_DIR}
 agent_advertise: ${advertise_host}:8127
 server_advertise: ${advertise_host}:8128
 raft_advertise: ${advertise_host}:8129
-EOF
-if [ -n "$join_addr" ]; then
-    printf 'join: %s\n' "$join_addr" >> "$CONFIG_FILE"
-fi
-chmod 600 "$CONFIG_FILE"
-
-info "Generating secrets encryption key..."
-openssl rand -base64 32 > "$SECRETS_KEY_FILE"
-chmod 600 "$SECRETS_KEY_FILE"
-printf 'secrets_key: %s\n' "$SECRETS_KEY_FILE" >> "$CONFIG_FILE"
-
-info "Writing systemd unit to ${SERVICE_FILE}..."
-cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=Trellis node
-After=containerd.service network-online.target
-Wants=containerd.service network-online.target
-
-[Service]
-ExecStart=${INSTALL_DIR}/trellis --config ${CONFIG_FILE}
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload
-systemctl enable --now trellis
-info "trellis is running."
-
-# The node is now usable. Optional runtime/networking features come afterwards
-# so a first install does not front-load concepts that are not needed to deploy.
-if confirm "Enable namespace networking on this node?" "n"; then
-    info "Installing WireGuard dependencies for Trellis namespace networking..."
-    apt-get update -qq
-    apt-get install -y -qq wireguard-tools iproute2 iptables >/dev/null
-    if ! command -v containerd-shim-runsc-v1 >/dev/null 2>&1; then
-        if confirm "Install gVisor (recommended for additional syscall-level sandboxing)?" "y"; then
-            install_gvisor
-        fi
-    fi
-    info "Namespace networking dependencies are installed. Configure wireguard_endpoint, wireguard_port, or wireguard_pool in ${CONFIG_FILE} when non-default values are required, then restart trellis."
+secrets_key: ${SECRETS_KEY_FILE}
+EOF_CONFIG
+    if [ -n "$join_addr" ]; then printf 'join: %s\n' "$join_addr" >>"$CONFIG_FILE"; fi
+    chmod 600 "$CONFIG_FILE"
+    unset cluster_token
+    ui_step "Created node configuration"
+else
+    [ -f "$SECRETS_KEY_FILE" ] || ui_die "${CONFIG_FILE} exists but ${SECRETS_KEY_FILE} is missing; restore the matching key and rerun setup."
+    chmod 600 "$CONFIG_FILE" "$SECRETS_KEY_FILE"
+    ui_step "Reusing existing node configuration"
 fi
 
-operator_token=""
-for attempt in $(seq 1 30); do
-    if operator_token="$("${INSTALL_DIR}/trellisctl" --output table credentials create --scope cluster --access write 2>/dev/null)" && [ -n "$operator_token" ]; then
-        break
-    fi
-    operator_token=""
-    sleep 1
-done
-[ -n "$operator_token" ] || error "Trellis started, but a normal operator credential could not be created."
+write_service
+systemctl enable --now trellis >/dev/null
+if ! wait_for_service "$WORK_TMP"; then
+    journalctl -u trellis -n 20 --no-pager >&2 || true
+    ui_die "Trellis did not become healthy."
+fi
+ui_step "Trellis service is healthy"
 
+if [ "$with_networking" = true ] && [ "$NETWORKING_ENABLED" != true ]; then install_networking; fi
+if [ "$with_gvisor" = true ] && [ "$GVISOR_ENABLED" != true ]; then install_gvisor; fi
+if [ "$with_networking" = true ] || [ "$with_gvisor" = true ]; then
+    systemctl restart trellis
+    wait_for_service "$WORK_TMP" || ui_die "Trellis did not become healthy after dependency setup."
+fi
+
+ui_section "Operator access"
 operator_user="${SUDO_USER:-root}"
 if [ "$operator_user" = "root" ]; then
-    operator_home="/root"
-    operator_group="root"
+    operator_home="/root"; operator_group="root"
 else
     operator_home="$(getent passwd "$operator_user" | cut -d: -f6)"
     operator_group="$(id -gn "$operator_user")"
-    [ -n "$operator_home" ] || error "Could not determine home directory for ${operator_user}."
+    [ -n "$operator_home" ] || ui_die "Could not determine home directory for ${operator_user}."
 fi
-operator_config_home="${operator_home}/.config"
-if [ ! -d "$operator_config_home" ]; then
-    install -d -m 0700 -o "$operator_user" -g "$operator_group" "$operator_config_home"
-fi
-HOME="$operator_home" XDG_CONFIG_HOME="$operator_config_home" \
-    "${INSTALL_DIR}/trellisctl" --token "$operator_token" --namespace default context save local --use >/dev/null
-if [ "$operator_user" != "root" ]; then
-    chown -R "${operator_user}:${operator_group}" "${operator_config_home}/trellis"
-fi
-unset operator_token
-info "Saved a scoped cluster/write context for ${operator_user}; normal trellisctl commands no longer need sudo."
-
-install_ui=false
-ui_namespace=""
-if confirm "Install the web dashboard?" "n"; then
-    prompt ui_namespace "Dashboard default namespace" "default"
-    [[ "$ui_namespace" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || error "Dashboard namespace must be a safe identifier."
-
-    dashboard_mode="r"
-    echo "  Dashboard authorization:"
-    echo "    r  — cluster/read  (observe cluster state; no mutations)"
-    echo "    rw — cluster/write (also apply/delete jobs, drain nodes, and manage secrets)"
-    printf 'Dashboard mode [r/rw] (default: r): '
-    read -r _mode_input </dev/tty
-    _mode_input="${_mode_input:-r}"
-    case "$_mode_input" in rw|RW|r/w|R/W) dashboard_mode="rw" ;; r|R) dashboard_mode="r" ;; *) warn "Unknown mode; using read-only." ;; esac
-
-    dashboard_access="read"
-    allow_writes_env=""
-    if [ "$dashboard_mode" = "rw" ]; then
-        dashboard_access="write"
-        allow_writes_env="          TRELLIS_ALLOW_WRITES: \"true\"\n"
-    fi
-
-    dashboard_manifest="${tmp}/trellis-dashboard.yaml"
-    cat > "$dashboard_manifest" <<EOF
-namespace: ${ui_namespace}
-name: trellis-dashboard
-task_groups:
-  - name: web
-    count: 1
-    api_access:
-      scope: cluster
-      access: ${dashboard_access}
-    tasks:
-      - name: dashboard
-        image: ${ui_image}
-        env:
-          TRELLIS_NAMESPACE: ${ui_namespace}
-${allow_writes_env}        resources:
-          cpu: 250
-          memory: 512MiB
-        networking:
-          mode: host
-          ports:
-            - port: 3000
-        health_check:
-          type: http
-          port: 3000
-          path: /
-EOF
-
-    info "Deploying dashboard as ${ui_namespace}/trellis-dashboard..."
-    dashboard_applied=false
-    for attempt in $(seq 1 30); do
-        if "${INSTALL_DIR}/trellisctl" --token "$cluster_token" jobs apply --file "$dashboard_manifest" >/dev/null 2>&1; then
-            dashboard_applied=true
-            break
-        fi
-        sleep 2
+operator_config="${operator_home}/.config/trellis/config.yaml"
+if [ -f "$operator_config" ] && grep -q '^  local:' "$operator_config" 2>/dev/null; then
+    ui_step "Existing local trellisctl context kept for ${operator_user}"
+else
+    operator_token=""
+    for _ in $(seq 1 30); do
+        operator_token="$(local_ctl "$WORK_TMP" credentials create --scope cluster --access write --output table 2>/dev/null || true)"
+        [ -n "$operator_token" ] && break
+        sleep 1
     done
-    [ "$dashboard_applied" = true ] || error "Failed to deploy the dashboard."
-    if [ "$dashboard_mode" = "rw" ]; then
-        warn "The dashboard holds a cluster/write credential. Protect port 3000 with your own HTTPS and identity-aware proxy."
-    fi
-    install_ui=true
+    [ -n "$operator_token" ] || ui_die "Trellis is running, but an operator credential could not be created."
+    operator_config_home="${operator_home}/.config"
+    install -d -m 0700 -o "$operator_user" -g "$operator_group" "$operator_config_home"
+    HOME="$operator_home" XDG_CONFIG_HOME="$operator_config_home" \
+        "${INSTALL_DIR}/trellisctl" --token "$operator_token" --namespace default context save local --use >/dev/null
+    if [ "$operator_user" != "root" ]; then chown -R "${operator_user}:${operator_group}" "${operator_config_home}/trellis"; fi
+    unset operator_token
+    ui_step "Saved local cluster/write context for ${operator_user}"
 fi
 
-unset cluster_token
-echo
-info "Setup complete!"
-info "Node configuration: ${CONFIG_FILE}"
-info "Secrets key: ${SECRETS_KEY_FILE}"
-info "Verify the cluster: trellisctl nodes list"
-info "Start the tutorial: follow docs/public/getting-started.md"
-if [ "$install_ui" = true ]; then
-    info "Dashboard status: trellisctl --namespace ${ui_namespace} jobs status trellis-dashboard"
-    info "Dashboard listens on port 3000 of its allocation node."
+if [ "$with_dashboard" = true ]; then
+    ui_section "Dashboard"
+    deploy_dashboard "$WORK_TMP" "$RELEASE_TAG" default "$dashboard_access"
+    DASHBOARD_INSTALLED=true
+    DASHBOARD_NAMESPACE=default
+    DASHBOARD_ACCESS_STATE="$dashboard_access"
+    write_install_state
+    ui_step "Dashboard deployed on port 3000"
+    if [ "$dashboard_access" = write ]; then
+        ui_warn "The dashboard has cluster/write access. Put port 3000 behind your own HTTPS and identity-aware proxy."
+    fi
 fi
+
+STATE_COMPLETE=true
+STATE_VERSION="$RELEASE_TAG"
+write_install_state
+ui_done "Trellis ${RELEASE_TAG} is ready"
+ui_detail "Config   ${CONFIG_FILE}"
+ui_detail "Verify   trellisctl nodes list"
+ui_detail "Learn    docs/public/getting-started.md"
+ui_detail "Upgrade  curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/upgrade.sh | sudo bash"
