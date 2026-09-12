@@ -40,24 +40,46 @@ sudo systemctl restart trellis
 
 `trellis --config PATH` loads the same strict YAML format. Explicit daemon flags override values from the file and are useful for one-off runs; the installed systemd unit intentionally contains only `trellis --config /etc/trellis/trellis.yaml` so there is one durable configuration source.
 
+Installer-created nodes also keep `/var/lib/trellis/install-state`. It records only lifecycle facts the installer can prove, such as which optional features are enabled and which host packages/repositories Trellis itself introduced. It is not cluster desired state and is not used by the scheduler.
+
 ## Add a node
 
-Run the same setup script on the new Debian/Ubuntu machine. When prompted:
+Adding a server is explicit rather than another branch in the first-install questionnaire. The joining server needs three pieces of information from an existing member:
 
-1. choose an advertise address reachable by the existing nodes;
-2. answer **yes** to **Join an existing cluster?**;
-3. enter an existing node's `host:8128` address;
-4. enter the existing bootstrap token when prompted. The token input is not echoed.
+- an existing control-plane address such as `node-a:8128`;
+- the root bootstrap credential;
+- the **same secrets-encryption key used by the existing servers**.
 
-The bootstrap token is the `bootstrap_token` value in `/etc/trellis/trellis.yaml` on an existing node. Treat it as the root cluster credential and transfer it over a secure channel rather than placing it in shell history.
+The last requirement is important: encrypted secret records are replicated cluster state, so every server that may lead the cluster must be able to decrypt them with the same key/key ID. A joining server must not generate its own key.
 
-After the new daemon starts, verify membership from an existing CLI context:
+On an existing node, make temporary root-readable copies for secure transfer:
+
+```sh
+sudo sh -c 'awk -F": " '\''$1 == "bootstrap_token" { print $2; exit }'\'' \
+  /etc/trellis/trellis.yaml > /root/trellis-bootstrap-token && \
+  chmod 600 /root/trellis-bootstrap-token'
+sudo install -m 600 /etc/trellis/secrets.key /root/trellis-secrets.key
+```
+
+Transfer those two files to the new machine over a secure channel, then run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | \
+  sudo bash -s -- \
+    --join node-a:8128 \
+    --bootstrap-token-file /root/trellis-bootstrap-token \
+    --secrets-key-file /root/trellis-secrets.key
+```
+
+The installer shows one plan before making changes. `--advertise HOST` overrides address auto-detection when peers cannot reach the detected private address. Use `--with-networking`, `--with-gvisor`, and `--with-dashboard` when those capabilities should also be installed on the new node. Delete the temporary transferred copies after setup succeeds.
+
+After the daemon starts, verify membership from any operator context:
 
 ```sh
 trellisctl nodes list
 ```
 
-A joining node must use the existing bootstrap token; minting an ordinary operator/workload token does not create or join a cluster.
+A joining node must use the bootstrap credential; minting an ordinary operator/workload token does not create or join a cluster.
 
 ## Mint operator credentials
 
@@ -95,6 +117,39 @@ A remote bootstrap administrator may instead supply the bootstrap bearer credent
 ## Drain and maintenance
 
 `trellisctl nodes drain NODE` prevents new placement and migrates allocations. `NODE` may be the host/address displayed by `nodes list`, a unique UUID prefix, or a complete UUID. Wait until workloads have healthy replacements before maintenance. `trellisctl nodes undrain NODE` re-enables scheduling. `nodes remove NODE` permanently removes a node from the cluster and is different from draining.
+
+## Upgrade a node
+
+The upgrade entrypoint performs the node-maintenance sequence instead of asking the operator to remember it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/upgrade.sh | sudo bash
+```
+
+It downloads and verifies the new release before touching the running daemon. In a multi-node cluster it drains the local node and waits for its local allocations to stop; Trellis only stops draining allocations after healthy replacement capacity exists. The script then swaps the binaries, refreshes the installer-owned systemd unit, starts the daemon, and verifies both the service and control-plane API. If the new daemon does not become healthy, the previous binaries and unit are restored and the node is undrained.
+
+After a successful core upgrade, the script refreshes a dashboard that was installed and recorded by the setup lifecycle state, then undrains the node. A service that was already stopped remains stopped. Single-node clusters skip evacuation because there is nowhere to move their allocations.
+
+## Uninstall a node
+
+The default uninstall is a reversible machine-removal operation:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/uninstall.sh | sudo bash
+```
+
+On a live multi-node cluster it drains the node, waits for healthy replacements, transfers leadership away when necessary, and removes the local Raft member before deleting local software. It removes only dependencies/repositories recorded as introduced by Trellis; older installations without ownership records are handled conservatively and shared host packages are left alone. The user's `trellisctl` contexts are also kept because they describe cluster connections, not ownership of this machine.
+
+Instead of throwing away the encryption key while retaining encrypted state, normal uninstall archives the complete recoverable set—node data, `/etc/trellis` configuration and secrets key, plus installer state—under a timestamped `/var/lib/trellis/recovery/` directory.
+
+For deliberate permanent destruction, use:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/uninstall.sh | \
+  sudo bash -s -- --purge
+```
+
+`--purge` deletes active node state and any previous recovery archives. Its confirmation therefore defaults to **no**. Both modes expose `--yes` for controlled non-interactive automation.
 
 ## Advanced control-plane maintenance
 
