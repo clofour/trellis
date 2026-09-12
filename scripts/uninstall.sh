@@ -1,199 +1,175 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_DIR="/usr/local/bin"
-DATA_DIR="/var/lib/trellis/data"
-CONFIG_DIR="/etc/trellis"
-SERVICE_FILE="/etc/systemd/system/trellis.service"
-RUN_DIR="/run/trellis"
+RAW_COMMON="https://raw.githubusercontent.com/clofour/trellis/main/scripts/common.sh"
+COMMON_TMP=""
+WORK_TMP=""
+cleanup() { local rc=$?; [ -z "$WORK_TMP" ] || rm -rf "$WORK_TMP"; [ -z "$COMMON_TMP" ] || rm -rf "$COMMON_TMP"; return "$rc"; }
+trap cleanup EXIT
 
-info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
-error() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
-
-confirm() {
-    local prompt="$1" default="${2:-y}"
-    if [ "$default" = "y" ]; then
-        prompt="$prompt [Y/n] "
-    else
-        prompt="$prompt [y/N] "
+load_common() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+    if [ -n "$script_dir" ] && [ -f "${script_dir}/common.sh" ]; then
+        # shellcheck source=common.sh
+        source "${script_dir}/common.sh"
+        return
     fi
-    printf '%s' "$prompt"
-    read -r answer </dev/tty
-    answer="${answer:-$default}"
-    case "$answer" in
-        [Yy]*) return 0 ;;
-        *) return 1 ;;
-    esac
+    command -v curl >/dev/null 2>&1 || { echo "error: curl is required" >&2; exit 1; }
+    COMMON_TMP="$(mktemp -d)"
+    curl -fsSL "$RAW_COMMON" -o "${COMMON_TMP}/common.sh"
+    # shellcheck source=/dev/null
+    source "${COMMON_TMP}/common.sh"
+}
+load_common
+
+usage() {
+    cat <<'EOF_USAGE'
+Remove Trellis from this node.
+
+Usage:
+  uninstall.sh [--purge] [-y|--yes]
+
+By default, Trellis gracefully removes this machine from a multi-node cluster
+and archives its config, secrets key, and local state together under
+/var/lib/trellis/recovery/. This keeps the data recoverable while removing the
+active installation.
+
+Options:
+  --purge       Permanently delete Trellis config, keys, data, and recovery archives
+  -y, --yes     Skip the single confirmation prompt
+  -h, --help    Show this help
+EOF_USAGE
 }
 
-# ── Preflight checks ──────────────────────────────────────
+purge=false
+assume_yes=false
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --purge) purge=true; shift ;;
+        -y|--yes) assume_yes=true; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) ui_die "Unknown option: $1" ;;
+    esac
+done
 
-[ "$(uname -s)" = "Linux" ] || error "This script only supports Linux."
-[ "$(id -u)" -eq 0 ] || error "Run this script as root (or with sudo)."
+require_root_linux_amd64
+if [ ! -x "${INSTALL_DIR}/trellis" ] && [ ! -f "$SERVICE_FILE" ] && [ ! -d "$CONFIG_DIR" ] && [ ! -d "$STATE_ROOT" ]; then
+    ui_title "uninstall"
+    ui_step "Trellis is not installed on this node"
+    exit 0
+fi
+load_install_state
+load_node_config_paths
 
-if [ ! -x "${INSTALL_DIR}/trellis" ] && [ ! -f "$SERVICE_FILE" ]; then
-    error "Trellis does not appear to be installed on this system."
+ui_title "uninstall"
+ui_section "Plan"
+ui_detail "Cluster   drain and remove this node when other members exist"
+ui_detail "Software  remove Trellis binaries, service, runtime files, and only dependencies recorded as Trellis-owned"
+ui_detail "CLI       keep user trellisctl contexts (they belong to the cluster, not this machine)"
+if [ "$purge" = true ]; then
+    ui_detail "Data      permanently delete config, secrets key, state, volumes, and recovery archives"
+else
+    ui_detail "Data      archive config + secrets key + local state together under ${STATE_ROOT}/recovery"
 fi
 
-echo
-warn "This will remove Trellis from this node."
-warn "The cluster token in ${CONFIG_DIR} and all local Raft/TLS state"
-warn "under ${DATA_DIR} will be permanently deleted."
-echo
-confirm "Continue with uninstall?" "n" || { info "Aborted."; exit 0; }
-
-# ── Stop and disable the service ───────────────────────────
-
-if systemctl is-active --quiet trellis 2>/dev/null; then
-    info "Stopping trellis service..."
-    systemctl stop trellis
+if [ "$assume_yes" != true ]; then
+    if [ "$purge" = true ]; then
+        printf '\n%sPermanently purge this node? [y/N] %s' "$BOLD" "$RESET"
+        default_answer=n
+    else
+        printf '\n%sRemove Trellis from this node? [Y/n] %s' "$BOLD" "$RESET"
+        default_answer=y
+    fi
+    read -r answer </dev/tty
+    answer="${answer:-$default_answer}"
+    case "$answer" in [Yy]*) ;; *) ui_detail "No changes made."; exit 0 ;; esac
 fi
 
-if systemctl is-enabled --quiet trellis 2>/dev/null; then
-    info "Disabling trellis service..."
-    systemctl disable trellis
+WORK_TMP="$(mktemp -d)"
+node_id=""
+[ ! -f "${DATA_DIR}/node-id" ] || node_id="$(tr -d '[:space:]' <"${DATA_DIR}/node-id")"
+was_running=false
+systemctl is-active --quiet trellis 2>/dev/null && was_running=true
+
+if [ "$was_running" = true ] && [ -x "${INSTALL_DIR}/trellisctl" ] && [ -n "$node_id" ]; then
+    ui_section "Cluster"
+    if ! node_json="$(local_ctl "$WORK_TMP" nodes list --output json 2>/dev/null)"; then
+        ui_die "Could not inspect cluster membership. Nothing local has been deleted."
+    fi
+    node_count="$(printf '%s' "$node_json" | grep -c '"id"' || true)"
+    if [ "${node_count:-0}" -gt 1 ]; then
+        local_ctl "$WORK_TMP" nodes drain "$node_id" >/dev/null
+        ui_step "Drain started"
+        if ! wait_for_local_allocations_to_stop; then
+            local_ctl "$WORK_TMP" nodes undrain "$node_id" >/dev/null 2>&1 || true
+            ui_die "Timed out waiting for allocations to move. The node was undrained and uninstall stopped before deleting anything."
+        fi
+        ui_step "Allocations moved to healthy replacements"
+        local_ctl "$WORK_TMP" nodes transfer-leadership >/dev/null 2>&1 || true
+        removed=false
+        for _ in $(seq 1 20); do
+            if local_ctl "$WORK_TMP" nodes remove "$node_id" >/dev/null 2>&1; then
+                removed=true
+                break
+            fi
+            sleep 1
+        done
+        [ "$removed" = true ] || ui_die "Could not remove the node from cluster membership. Nothing local has been deleted."
+        ui_step "Removed node from cluster membership"
+    else
+        ui_detail "Single-node cluster; there is no remaining member to remove this node from."
+    fi
+else
+    ui_section "Cluster"
+    ui_warn "The local daemon is unavailable, so cluster membership cannot be changed from this machine."
+    if [ -n "$node_id" ]; then
+        ui_detail "Afterward, verify from another operator context that node ${node_id} is no longer a member."
+    fi
 fi
 
-# ── Optionally stop and remove managed containers ─────────
+ui_section "Software"
+systemctl stop trellis >/dev/null 2>&1 || true
+systemctl disable trellis >/dev/null 2>&1 || true
 
 if command -v ctr >/dev/null 2>&1; then
-    container_ids="$(ctr -n trellis containers ls -q 2>/dev/null || true)"
-    if [ -n "$container_ids" ]; then
-        count="$(echo "$container_ids" | wc -l)"
-        echo
-        warn "Found ${count} container(s) in the trellis containerd namespace."
-        warn "These were started by Trellis and may still be running."
-        echo
-        if confirm "Stop and remove these containers?" "n"; then
-            for cid in $container_ids; do
-                info "Stopping container ${cid}..."
-                ctr -n trellis tasks kill "$cid" -s SIGTERM 2>/dev/null || true
-                sleep 1
-                ctr -n trellis tasks kill "$cid" -s SIGKILL 2>/dev/null || true
-                ctr -n trellis tasks delete "$cid" 2>/dev/null || true
-                info "Removing container ${cid}..."
-                ctr -n trellis containers rm "$cid" 2>/dev/null || true
-            done
-            info "All Trellis containers removed."
-        else
-            info "Keeping containers. Remove them manually with: ctr -n trellis containers rm <id>"
-        fi
-    fi
+    for cid in $(ctr -n trellis containers ls -q 2>/dev/null || true); do
+        ctr -n trellis tasks kill "$cid" -s SIGKILL >/dev/null 2>&1 || true
+        ctr -n trellis tasks delete "$cid" >/dev/null 2>&1 || true
+        ctr -n trellis containers rm "$cid" >/dev/null 2>&1 || true
+    done
 fi
+rm -f "$SERVICE_FILE"
+systemctl daemon-reload
+systemctl reset-failed >/dev/null 2>&1 || true
+rm -f "${INSTALL_DIR}/trellis" "${INSTALL_DIR}/trellisctl"
+rm -rf "$RUN_DIR"
+ui_step "Removed Trellis service and binaries"
+remove_owned_dependencies
 
-# ── Remove the systemd unit ───────────────────────────────
-
-if [ -f "$SERVICE_FILE" ]; then
-    info "Removing systemd unit ${SERVICE_FILE}..."
-    rm -f "$SERVICE_FILE"
-    systemctl daemon-reload
-    systemctl reset-failed 2>/dev/null || true
-fi
-
-# ── Remove binaries ──────────────────────────────────────
-
-info "Removing binaries..."
-rm -f "${INSTALL_DIR}/trellis"
-rm -f "${INSTALL_DIR}/trellisctl"
-
-# ── Remove trellisctl context ──────────────────────────────
-
-operator_user="${SUDO_USER:-root}"
-if [ "$operator_user" = "root" ]; then
-    operator_config_home="/root/.config"
+if [ "$purge" = true ]; then
+    ui_section "Data"
+    if [ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "/" ]; then rm -rf "$DATA_DIR"; fi
+    if [ -n "$SECRETS_KEY_FILE" ] && [ "$SECRETS_KEY_FILE" != "/" ]; then rm -f "$SECRETS_KEY_FILE"; fi
+    rm -rf "$CONFIG_DIR" "$STATE_ROOT"
+    ui_step "Permanently removed Trellis node data"
+    ui_done "Trellis was purged from this node"
 else
-    operator_home="$(getent passwd "$operator_user" | cut -d: -f6 2>/dev/null || true)"
-    operator_config_home="${operator_home}/.config"
+    ui_section "Recovery"
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    recovery_root="${STATE_ROOT}/recovery"
+    recovery_dir="${recovery_root}/${stamp}"
+    # Avoid placing the recovery directory inside the source tree before moving data.
+    data_tmp="${STATE_ROOT}/.data-recovery-${stamp}"
+    if [ -d "$DATA_DIR" ]; then mv "$DATA_DIR" "$data_tmp"; fi
+    install -d -m 0700 "$recovery_dir"
+    if [ -d "$data_tmp" ]; then mv "$data_tmp" "${recovery_dir}/data"; fi
+    if [ -f "$SECRETS_KEY_FILE" ]; then cp -a "$SECRETS_KEY_FILE" "${recovery_dir}/secrets.key"; fi
+    if [ -d "$CONFIG_DIR" ]; then cp -a "$CONFIG_DIR" "${recovery_dir}/config"; rm -rf "$CONFIG_DIR"; fi
+    if [ -f "$SECRETS_KEY_FILE" ]; then rm -f "$SECRETS_KEY_FILE"; fi
+    if [ -f "$STATE_FILE" ]; then cp -a "$STATE_FILE" "${recovery_dir}/install-state"; fi
+    rm -f "$STATE_FILE"
+    ui_step "Archived recoverable node state at ${recovery_dir}"
+    ui_done "Trellis was removed; node data was preserved"
+    ui_detail "Recovery  ${recovery_dir}"
 fi
-if [ -n "${operator_config_home:-}" ] && [ -d "${operator_config_home}/trellis" ]; then
-    info "Removing trellisctl context directory ${operator_config_home}/trellis..."
-    rm -rf "${operator_config_home}/trellis"
-fi
-
-# ── Remove config directory ────────────────────────────────
-
-if [ -d "$CONFIG_DIR" ]; then
-    info "Removing config directory ${CONFIG_DIR}..."
-    rm -rf "$CONFIG_DIR"
-fi
-
-# ── Remove runtime files ───────────────────────────────────
-
-if [ -d "$RUN_DIR" ]; then
-    info "Removing runtime directory ${RUN_DIR}..."
-    rm -rf "$RUN_DIR"
-fi
-
-# ── Remove persistent data ──────────────────────────────────
-
-if [ -d "$DATA_DIR" ]; then
-    echo
-    warn "The data directory ${DATA_DIR} contains Raft state, TLS keys,"
-    warn "WireGuard identity material, and any named container volumes"
-    warn "that were managed by this node."
-    echo
-    if confirm "Delete all persistent data in ${DATA_DIR}?" "n"; then
-        info "Removing data directory ${DATA_DIR}..."
-        rm -rf "$DATA_DIR"
-        # Remove the parent /var/lib/trellis if it is now empty.
-        rmdir /var/lib/trellis 2>/dev/null || true
-    else
-        info "Keeping ${DATA_DIR}. Remove it manually when no longer needed."
-    fi
-fi
-
-# ── Optional: remove apt packages installed by setup.sh ───────────
-
-if command -v apt-get >/dev/null 2>&1; then
-    removals=()
-
-    if dpkg -l runsc >/dev/null 2>&1; then
-        if confirm "Remove gVisor (runsc) installed by Trellis setup?" "n"; then
-            removals+=(runsc)
-        fi
-    fi
-
-    if dpkg -l containerd.io >/dev/null 2>&1; then
-        if confirm "Remove containerd.io installed by Trellis setup?" "n"; then
-            removals+=(containerd.io)
-        fi
-    fi
-
-    if dpkg -l wireguard-tools >/dev/null 2>&1; then
-        if confirm "Remove wireguard-tools installed by Trellis setup?" "n"; then
-            removals+=(wireguard-tools)
-        fi
-    fi
-
-    if [ "${#removals[@]}" -gt 0 ]; then
-        info "Removing packages: ${removals[*]}..."
-        apt-get remove -y "${removals[@]}"
-    fi
-
-    # Remove apt sources that setup.sh added, only if the matching package is gone.
-    if ! dpkg -l containerd.io >/dev/null 2>&1; then
-        if [ -f /etc/apt/keyrings/docker.asc ] \
-            || [ -f /etc/apt/sources.list.d/docker.sources ]; then
-            if confirm "Remove the Docker apt repository added by Trellis setup?" "n"; then
-                rm -f /etc/apt/keyrings/docker.asc \
-                      /etc/apt/sources.list.d/docker.sources
-                apt-get update -qq
-            fi
-        fi
-    fi
-
-    if ! dpkg -l runsc >/dev/null 2>&1; then
-        if [ -f /usr/share/keyrings/gvisor-archive-keyring.gpg ] \
-            || [ -f /etc/apt/sources.list.d/gvisor.list ]; then
-            if confirm "Remove the gVisor apt repository added by Trellis setup?" "n"; then
-                rm -f /usr/share/keyrings/gvisor-archive-keyring.gpg \
-                      /etc/apt/sources.list.d/gvisor.list
-                apt-get update -qq
-            fi
-        fi
-    fi
-fi
-
-echo
-info "Trellis has been uninstalled."
