@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	apiID  = "https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job-api.schema.json"
-	yamlID = "https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job.schema.json"
+	apiID  = "https://raw.githubusercontent.com/clofour/trellis/main/schemas/trellis-job-api.schema.json"
+	yamlID = "https://raw.githubusercontent.com/clofour/trellis/main/schemas/trellis-job.schema.json"
 )
 
 var (

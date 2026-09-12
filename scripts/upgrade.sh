@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="clofour/trellis-experimental"
+REPO="clofour/trellis"
 INSTALL_DIR="/usr/local/bin"
 SERVICE="trellis"
 

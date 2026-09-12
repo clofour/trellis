@@ -7,7 +7,7 @@ This is the shortest complete Trellis journey: install one node, use the CLI as 
 You need a Debian or Ubuntu x86-64 machine with `sudo`. The installer can install containerd when it is missing.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/clofour/trellis-experimental/main/scripts/setup.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | sudo bash
 ```
 
 For this first cluster, accept the detected address and do not join another cluster. The dashboard and WireGuard are optional and are not needed for the first workload.
@@ -29,7 +29,7 @@ trellisctl nodes list
 Create an empty working directory and save this as `trellis.yaml`:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/clofour/trellis-experimental/main/schemas/trellis-job.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/clofour/trellis/main/schemas/trellis-job.schema.json
 name: hello
 namespace: default
 task_groups:
