@@ -8,9 +8,7 @@ Every machine runs the same `trellis` daemon. Raft consensus elects one node to 
 
 ## Quick start
 
-The setup script downloads the latest release binaries, configures a systemd
-service, and generates a cluster token. It supports Linux x64 and requires
-root access. If containerd is missing, the installer can install it for you.
+The setup script downloads the latest release binaries, configures a systemd service, and creates a single-node cluster. It supports Linux x64 and requires root access. The normal path auto-detects the node address, installs containerd when it is missing, leaves optional networking/gVisor/dashboard features disabled, shows one concise plan, and asks for one confirmation.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | sudo bash
@@ -23,7 +21,21 @@ git clone https://github.com/clofour/trellis.git
 sudo ./trellis/scripts/setup.sh
 ```
 
-The script interactively asks whether to enable WireGuard networking, whether to install the web dashboard, and whether this node should join an existing cluster. Joining an existing cluster requires that cluster's token; the installer prompts for it without echoing it.
+Optional capabilities are explicit rather than additional installer questions. For example:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | \
+  sudo bash -s -- --with-networking --with-gvisor --with-dashboard
+```
+
+Use `--join HOST:8128` to add a machine to an existing cluster. A joining server must receive both that cluster's bootstrap token and its existing secrets-encryption key; see [Operations](docs/public/operations.md#add-a-node) for the secure file-based workflow.
+
+Upgrade and removal use the same lifecycle tooling without requiring a repository clone:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/upgrade.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/uninstall.sh | sudo bash
+```
 
 See the [getting-started guide](docs/public/getting-started.md) for a walkthrough of deploying your first workload.
 
