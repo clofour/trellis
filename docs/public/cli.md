@@ -1,6 +1,6 @@
 # CLI workflows
 
-The `trellisctl` CLI is the first-party operator interface to the [Trellis user model](user-model.md). Resource commands remain available, but routine usage is organized around a small workflow: select a cluster context, validate and plan desired state, apply it, observe convergence, diagnose failures, inspect lifecycle history, read logs, and delete the job when it is no longer desired.
+The `trellisctl` CLI is the first-party operator interface to the [Trellis user model](user-model.md). Resource commands remain available, but routine usage is organized around a small workflow: select a cluster context, check or preview desired state when needed, apply it, inspect status, read logs, and delete the job when it is no longer desired.
 
 ## Named cluster contexts
 
@@ -59,25 +59,23 @@ trellisctl namespaces list
 
 A namespace-scoped credential sees only its own namespace. A cluster-scoped credential sees the known desired-job namespaces across the cluster. Applying a job to a new valid namespace is still allowed; after the job exists, that namespace appears in discovery. Use `--output json` when automation needs the array directly.
 
-## Validate and plan a manifest
+## Check and preview a manifest
 
-Validation is local and does not modify or contact the cluster:
+Local validation is a mode of `apply`; it does not modify or contact the cluster:
 
 ```sh
-trellisctl jobs validate --file trellis.yaml
+trellisctl jobs apply --check --file trellis.yaml
 ```
 
 Preview what would change compared with the current job:
 
 ```sh
-trellisctl jobs diff --file trellis.yaml
-# `jobs plan` is an alias
-trellisctl jobs plan --file trellis.yaml
+trellisctl jobs apply --dry-run --file trellis.yaml
 ```
 
-The CLI parses the human-authored YAML locally, converts it to canonical JSON, and sends that model to `POST /v1/jobs/plan`. Trellis validates the canonical model and computes the semantic plan against authoritative current state on the control plane; `trellisctl` does not maintain a second planning implementation.
+The CLI parses the human-authored YAML locally, converts it to canonical JSON, and, unless `--check` was requested, sends that model to the control plane. `--dry-run` calls `POST /v1/jobs/plan`, where Trellis validates the canonical model and computes the semantic plan against authoritative current state; `trellisctl` does not maintain a second planning implementation.
 
-The diff is semantic rather than a textual YAML diff. Task groups are identified by name, so merely reordering them does not look like a deployment. Ordered fields inside a group remain positional where order participates in Trellis semantics. Example output:
+The plan is semantic rather than a textual YAML diff. Task groups are identified by name, so merely reordering them does not look like a deployment. Ordered fields inside a group remain positional where order participates in Trellis semantics. Example output:
 
 ```text
 Plan: update production/web from revision 7
@@ -85,7 +83,7 @@ Plan: update production/web from revision 7
   ~ task_groups[frontend].update.max_parallel: 1 -> 2
 ```
 
-`trellisctl jobs apply --dry-run --file trellis.yaml` uses that same server-owned planner when a CI/CD workflow wants one apply-shaped command for preview and execution. A normal `apply` also asks the server for a plan first and uses its `none` result for the no-op decision.
+A normal `apply` also asks the server for a plan first and uses its `none` result for the no-op decision.
 
 ## Apply and observe convergence
 
@@ -101,15 +99,15 @@ To make deployment completion part of the command result, wait for desired capac
 trellisctl jobs apply --file trellis.yaml --wait --timeout 5m
 ```
 
-The command prints only meaningful state changes while the revision converges. The same observer is available separately:
+The command prints only meaningful state changes while the revision converges. The same observer is available from `status`:
 
 ```sh
-trellisctl jobs watch web --timeout 5m
+trellisctl jobs status web --watch --timeout 5m
 ```
 
 A job is reported as `ready` when at least its desired allocation count from the current revision is running and healthy. Old or draining allocations cannot make a new revision look complete. `converging` means Trellis is still placing, starting, or replacing work. `degraded` means a current allocation explicitly reports an unhealthy, failed, or lost state.
 
-## Inspect and diagnose
+## Inspect status and history
 
 Start at the job level:
 
@@ -118,29 +116,23 @@ trellisctl jobs list
 trellisctl jobs status web
 ```
 
-Table output shows short allocation references and node addresses instead of requiring full internal UUIDs. Full IDs and API fields remain available through `--output json` on commands that expose structured output.
+Table output shows short allocation references and node addresses instead of requiring full internal UUIDs. Full IDs and API fields remain available through `--output json`.
 
-When a job is not healthy, ask for the failure-oriented view:
-
-```sh
-trellisctl jobs diagnose web
-```
-
-`diagnose` surfaces the current allocation lifecycle/health state, reason codes, human-readable messages, retry timing, and attempt count. It intentionally omits normal healthy allocations and old draining allocations unless they report a real problem.
+`jobs status` is also the diagnostic view. When a job is not ready, the normal status output automatically includes allocations that need attention, their lifecycle and health states, reason codes, human-readable messages, retry timing, and attempt count. Healthy allocations and old draining allocations do not create diagnostic noise.
 
 When the current state is not enough to explain what happened, inspect the recorded allocation lifecycle transitions:
 
 ```sh
-trellisctl jobs events web
+trellisctl jobs status web --history
 ```
 
-The job-level command combines lifecycle history from its allocations in timestamp order and shows the allocation, task group, phase, reason, and message for every transition. Narrow it to one allocation using the short reference printed by `jobs status`:
+The history view combines lifecycle transitions from the job's allocations in timestamp order and shows the allocation, task group, phase, reason, and message for every transition. Narrow it to one allocation using the short reference printed by `jobs status`:
 
 ```sh
-trellisctl jobs events web --allocation a1b2c3d4
+trellisctl jobs status web --history --allocation a1b2c3d4
 ```
 
-Lifecycle events are control-plane/runtime state such as `placed`, `starting`, `running`, `failed`, or `lost`. They are deliberately separate from task logs: use events to answer **how the allocation moved through Trellis**, and logs to answer **what the process wrote to stdout/stderr**.
+Lifecycle history is control-plane/runtime state such as `placed`, `starting`, `running`, `failed`, or `lost`. It is deliberately separate from task logs: use history to answer **how the allocation moved through Trellis**, and logs to answer **what the process wrote to stdout/stderr**.
 
 ## Read logs by job, allocation, group, or task
 
@@ -210,7 +202,7 @@ Ambiguous prefixes are rejected and the CLI shows the matching nodes rather than
 Current structured-output commands are:
 
 ```text
-jobs validate, diff/plan, list, status, diagnose, events
+jobs list, status
 namespaces list
 nodes list, status
 secrets set, list, describe
@@ -221,12 +213,12 @@ For example:
 
 ```sh
 trellisctl jobs status web --output json
-trellisctl jobs events web --output json
+trellisctl jobs status web --history --output json
 trellisctl namespaces list --output json
 trellisctl nodes status worker-2 -o json
 ```
 
-`jobs logs` remains a log byte stream, while `jobs apply`, `jobs watch`, `jobs delete`, node mutation commands, backup operations, and context mutation commands remain human/action workflows rather than pretending to produce a stable JSON document.
+`jobs logs` remains a log byte stream, while `jobs apply`, `jobs status --watch`, `jobs delete`, node mutation commands, backup operations, and context mutation commands remain human/action workflows rather than pretending to produce a stable JSON document.
 
 Explicit `--server-addr`, `--token`, `--namespace`, TLS flags, and `TRELLIS_*` environment variables override saved context values. Named contexts are therefore an interactive convenience, not a hidden requirement for automation.
 

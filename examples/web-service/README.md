@@ -13,18 +13,18 @@ Host networking does not perform NAT or port translation. A declared port must t
 ## Deploy and inspect
 
 ```sh
-trellisctl jobs validate --file examples/web-service/trellis.yaml
-trellisctl jobs diff --file examples/web-service/trellis.yaml
+trellisctl jobs apply --check --file examples/web-service/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/web-service/trellis.yaml
 trellisctl jobs apply --file examples/web-service/trellis.yaml --wait
 trellisctl jobs status web-service
 ```
 
 The allocation view shows the selected node and reserved host port. Open `http://NODE_ADDRESS:8080` or query `/health` to verify that the service is reachable.
 
-If the health check does not succeed, use:
+If the health check does not succeed, `jobs status` includes the failure details automatically; pair it with logs when needed:
 
 ```sh
-trellisctl jobs diagnose web-service
+trellisctl jobs status web-service
 trellisctl jobs logs web-service
 ```
 

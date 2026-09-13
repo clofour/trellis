@@ -8,7 +8,7 @@ Complete [Getting Started](../docs/public/getting-started.md) first, or follow t
 
 | Order | Example | Adds |
 | --- | --- | --- |
-| 1 | [`hello/`](hello/) | One job, task group, allocation, and task; the complete validate → diff → apply → inspect → update → logs → delete lifecycle. |
+| 1 | [`hello/`](hello/) | One job, task group, allocation, and task; the complete check → preview → apply → inspect → update → logs → delete lifecycle. |
 
 The first workload deliberately omits ports, health-check settings, secrets, volumes, and rollout configuration. Those are important, but none is required to see Trellis reconcile desired state.
 
@@ -42,8 +42,8 @@ These are compositions of ordinary Trellis primitives, not new resource types. T
 From the repository root:
 
 ```sh
-trellisctl jobs validate --file examples/hello/trellis.yaml
-trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --check --file examples/hello/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/hello/trellis.yaml
 trellisctl jobs apply --file examples/hello/trellis.yaml --wait
 trellisctl jobs status hello
 trellisctl jobs logs hello --tail 100

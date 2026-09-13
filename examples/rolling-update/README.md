@@ -15,8 +15,8 @@ A rolling update starts healthy replacement capacity before removing all old cap
 ## Deploy the first revision
 
 ```sh
-trellisctl jobs validate --file examples/rolling-update/trellis.yaml
-trellisctl jobs diff --file examples/rolling-update/trellis.yaml
+trellisctl jobs apply --check --file examples/rolling-update/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/rolling-update/trellis.yaml
 trellisctl jobs apply --file examples/rolling-update/trellis.yaml --wait
 trellisctl jobs status rolling-update
 ```
@@ -33,13 +33,13 @@ Change only the tutorial image:
 Preview and apply the new revision:
 
 ```sh
-trellisctl jobs diff --file examples/rolling-update/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/rolling-update/trellis.yaml
 trellisctl jobs apply --file examples/rolling-update/trellis.yaml --wait
 trellisctl jobs status rolling-update
 trellisctl jobs logs rolling-update --tail 100
 ```
 
-The plan should show the image change. During convergence, old and new allocations overlap; Trellis waits for healthy replacement capacity before completing the rollout. If overlap capacity or health blocks progress, use `trellisctl jobs diagnose rolling-update` and `trellisctl nodes status NODE`.
+The plan should show the image change. During convergence, old and new allocations overlap; Trellis waits for healthy replacement capacity before completing the rollout. If overlap capacity or health blocks progress, `trellisctl jobs status rolling-update` includes workload diagnostics; pair it with `trellisctl nodes status NODE` for node capacity/configuration.
 
 Remove it when finished:
 

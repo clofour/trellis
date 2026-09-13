@@ -56,7 +56,7 @@ func waitForJob(parent context.Context, w io.Writer, serverClient *client.Server
 		case <-ctx.Done():
 			timer.Stop()
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return fmt.Errorf("timed out waiting for job %s to become healthy; run 'trellisctl jobs diagnose %s'", name, name)
+				return fmt.Errorf("timed out waiting for job %s to become healthy; run 'trellisctl jobs status %s'", name, name)
 			}
 			return ctx.Err()
 		case <-timer.C:

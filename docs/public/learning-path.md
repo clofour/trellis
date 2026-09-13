@@ -25,8 +25,8 @@ Do not skip directly to Patroni to learn basic Trellis. Patroni assumes you alre
 The `hello` example intentionally omits network exposure and application health settings. Learn the core loop first:
 
 ```sh
-trellisctl jobs validate --file examples/hello/trellis.yaml
-trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --check --file examples/hello/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/hello/trellis.yaml
 trellisctl jobs apply --file examples/hello/trellis.yaml --wait
 trellisctl jobs status hello
 trellisctl jobs logs hello
@@ -45,7 +45,7 @@ The `web-service` example keeps `count: 1` and adds only the pieces needed to ma
 
 Host networking has no Trellis NAT or port translation. The reservation prevents another Trellis task from claiming the same node port, and the process must bind that port itself.
 
-Apply the example, reach the service at the selected node's port 8080, and use `jobs diagnose` if its health check blocks readiness. Do not add replicas yet; first make the one-allocation service model concrete.
+Apply the example and reach the service at the selected node's port 8080. If its health check blocks readiness, `jobs status web-service` includes the relevant allocation diagnostics automatically. Do not add replicas yet; first make the one-allocation service model concrete.
 
 ### Optional three-node Vagrant demo
 
@@ -81,7 +81,7 @@ trellisctl nodes list
 trellisctl nodes status NODE
 ```
 
-If only one compatible node exists, `jobs diagnose replicated-service` should make the placement failure visible. Understand why the second allocation cannot be placed before moving on to overlapping updates.
+If only one compatible node exists, `jobs status replicated-service` makes the placement failure visible. Understand why the second allocation cannot be placed before moving on to overlapping updates.
 
 ## 4. Rolling updates
 
@@ -93,9 +93,9 @@ update:
   max_parallel: 1
 ```
 
-Change only the tutorial image from `v1` to `v2`, run `jobs diff`, then apply again. Trellis starts healthy replacement capacity before completing removal of the old revision.
+Change only the tutorial image from `v1` to `v2`, run `jobs apply --dry-run`, then apply again. Trellis starts healthy replacement capacity before completing removal of the old revision.
 
-The fixed host port makes the temporary-capacity cost visible: two old replicas already occupy port 8080 on two nodes, so the first replacement needs another compatible node with that port free. `max_parallel: 1` limits how much replacement capacity can be in flight at once. The three-node Vagrant demo has exactly enough nodes to demonstrate this overlap. If placement or health blocks progress, use `jobs diagnose` rather than treating the rollout as an opaque failed command.
+The fixed host port makes the temporary-capacity cost visible: two old replicas already occupy port 8080 on two nodes, so the first replacement needs another compatible node with that port free. `max_parallel: 1` limits how much replacement capacity can be in flight at once. The three-node Vagrant demo has exactly enough nodes to demonstrate this overlap. If placement or health blocks progress, use `jobs status` rather than treating the rollout as an opaque failed command.
 
 ## 5. Secrets
 
@@ -152,7 +152,7 @@ http://web.namespace-networking.default.trellis:8080/health
 
 That makes both discovery and the private network visible in `trellisctl jobs logs` without introducing an application proxy or special service resource.
 
-Configure the namespace-networking dependencies on every participating node and open the configured WireGuard UDP port between nodes (`51820` by default). The installer sets up WireGuard when namespace networking is enabled and optionally installs gVisor/runsc for additional sandboxing. Use `trellisctl jobs status` to see placement, `jobs logs` to see application-level peer probes, and `jobs events` when you need the recorded allocation lifecycle transitions that led to the current state.
+Configure the namespace-networking dependencies on every participating node and open the configured WireGuard UDP port between nodes (`51820` by default). The installer sets up WireGuard when namespace networking is enabled and optionally installs gVisor/runsc for additional sandboxing. Use `trellisctl jobs status` to see placement and current diagnostics, `jobs logs` to see application-level peer probes, and `jobs status NAME --history` when you need the recorded allocation lifecycle transitions that led to the current state.
 
 Treat discovery as runtime endpoint information, not application consensus. Applications that require a single writer, leader election, or distributed locking still need their own coordination protocol.
 
@@ -191,7 +191,7 @@ The WordPress example is a development composition, not a production topology. T
 Use the learning path to acquire the model; use these pages afterward:
 
 - [Job manifest reference](job-specification.md) for exact fields and validation.
-- [CLI workflows](cli.md) for contexts, planning, diagnosis, lifecycle history, logging, and automation.
+- [CLI workflows](cli.md) for contexts, planning, diagnostics, lifecycle history, logging, and automation.
 - [Operations](operations.md) for node maintenance, backups, TLS, and recovery.
 - [Cookbook](cookbook.md) for architecture outcomes and tradeoffs.
 

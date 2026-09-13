@@ -6,11 +6,11 @@ Operational commands use the vocabulary in the [Trellis user model](user-model.m
 
 ```sh
 trellisctl context current
-trellisctl jobs validate --file trellis.yaml
-trellisctl jobs diff --file trellis.yaml
+trellisctl jobs apply --check --file trellis.yaml
+trellisctl jobs apply --dry-run --file trellis.yaml
 trellisctl jobs apply --file trellis.yaml --wait
 trellisctl jobs status NAME
-trellisctl jobs diagnose NAME
+trellisctl jobs status NAME --history
 trellisctl jobs logs NAME --tail 200
 trellisctl jobs delete NAME
 ```
@@ -183,7 +183,7 @@ Use `--expected-version N` for compare-and-swap (`0` means create only). Values 
 
 The control plane exposes Prometheus metrics at `/metrics`. `GET /v1/auth/whoami` reports the kind, scope, and access of the bearer credential making the request. Job status and allocation events explain lifecycle transitions; logs proxy per-task allocation logs. Monitor leader availability, unhealthy/draining nodes, desired-versus-running/healthy counts, reconciliation latency, retries, and disk capacity for Raft, containerd, and volumes.
 
-For normal workload diagnosis, start with `jobs status`. `ready`, `converging`, and `degraded` summarize desired-versus-observed state without collapsing allocation lifecycle and health. `jobs diagnose` then surfaces only the allocations that need attention, including reason/message, retry timing, and attempt count. `jobs logs NAME` reads matching task streams without requiring full internal runtime IDs.
+For normal workload diagnosis, start and usually finish with `jobs status`. `ready`, `converging`, and `degraded` summarize desired-versus-observed state without collapsing allocation lifecycle and health, and non-ready status output includes the allocations that need attention with reason/message, retry timing, and attempt count. Use `jobs status NAME --history` when you need the recorded lifecycle transitions, and `jobs logs NAME` for task output.
 
 ## Networking and TLS
 

@@ -18,72 +18,19 @@ func NewJobsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "jobs",
 		Short: "Manage desired jobs",
-		Long:  "Validate and plan YAML manifests, apply desired jobs, observe convergence, diagnose runtime problems, read logs, and delete jobs in the selected namespace.",
+		Long:  "Apply desired jobs, inspect their status, read logs, and delete them in the selected namespace.",
 	}
-	cmd.AddCommand(NewJobsValidateCmd())
-	cmd.AddCommand(NewJobsDiffCmd())
 	cmd.AddCommand(NewJobsApplyCmd())
 	cmd.AddCommand(NewJobsListCmd())
 	cmd.AddCommand(NewJobsStatusCmd())
-	cmd.AddCommand(NewJobsWatchCmd())
-	cmd.AddCommand(NewJobsDiagnoseCmd())
 	cmd.AddCommand(NewJobsLogsCmd())
 	cmd.AddCommand(NewJobsDeleteCmd())
 	return cmd
 }
 
-func NewJobsValidateCmd() *cobra.Command {
-	var path string
-	cmd := &cobra.Command{
-		Use:   "validate",
-		Short: "Validate a YAML job manifest without contacting a cluster",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			job, err := readJobManifest(path)
-			if err != nil {
-				return err
-			}
-			if config.Output == "json" {
-				return writeJSON(cmd.OutOrStdout(), job)
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Valid manifest: %s/%s (%d task groups, %d desired allocations)\n", job.Namespace, job.Name, len(job.TaskGroups), desiredAllocations(job))
-			return err
-		},
-	}
-	cmd.Flags().StringVar(&path, "file", "trellis.yaml", "YAML job manifest path")
-	return cmd
-}
-
-func NewJobsDiffCmd() *cobra.Command {
-	var path string
-	cmd := &cobra.Command{
-		Use:     "diff",
-		Aliases: []string{"plan"},
-		Short:   "Show the changes a manifest would apply",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			job, err := readJobManifest(path)
-			if err != nil {
-				return err
-			}
-			if err := ensureActiveNamespace(job); err != nil {
-				return err
-			}
-			serverClient, err := jobClient(job.Namespace)
-			if err != nil {
-				return err
-			}
-			jobPlan, err := serverClient.PlanJob(cmd.Context(), job)
-			if err != nil {
-				return err
-			}
-			return printJobPlan(cmd.OutOrStdout(), jobPlan)
-		},
-	}
-	cmd.Flags().StringVar(&path, "file", "trellis.yaml", "YAML job manifest path")
-	return cmd
-}
-
 func NewJobsApplyCmd() *cobra.Command {
 	var path string
+	var check bool
 	var dryRun bool
 	var wait bool
 	var timeout time.Duration
@@ -91,13 +38,23 @@ func NewJobsApplyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a YAML job manifest",
-		Long:  "Validate and apply a YAML job manifest. Use --dry-run to preview semantic changes or --wait to follow the resulting revision until desired capacity is healthy.",
+		Long:  "Apply a YAML job manifest. Use --check for local validation, --dry-run to preview semantic changes, or --wait to follow the resulting revision until desired capacity is healthy.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if check && dryRun {
+				return fmt.Errorf("--check and --dry-run cannot be used together")
+			}
+			if check && wait {
+				return fmt.Errorf("--check and --wait cannot be used together")
+			}
 			if dryRun && wait {
 				return fmt.Errorf("--dry-run and --wait cannot be used together")
 			}
 			job, err := readJobManifest(path)
 			if err != nil {
+				return err
+			}
+			if check {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Valid manifest: %s/%s (%d task groups, %d desired allocations)\n", job.Namespace, job.Name, len(job.TaskGroups), desiredAllocations(job))
 				return err
 			}
 			if err := ensureActiveNamespace(job); err != nil {
@@ -149,6 +106,7 @@ func NewJobsApplyCmd() *cobra.Command {
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&path, "file", "trellis.yaml", "YAML job manifest path")
+	flags.BoolVar(&check, "check", false, "Validate the manifest locally without contacting a cluster")
 	flags.BoolVar(&dryRun, "dry-run", false, "Validate and show the plan without changing the cluster")
 	flags.BoolVarP(&wait, "wait", "w", false, "Wait until desired job capacity is healthy")
 	flags.DurationVar(&timeout, "timeout", 5*time.Minute, "Maximum time to wait (0 means no timeout)")
@@ -191,16 +149,45 @@ func NewJobsListCmd() *cobra.Command {
 }
 
 func NewJobsStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var watch bool
+	var history bool
+	var allocation string
+	var timeout time.Duration
+	var interval time.Duration
+	cmd := &cobra.Command{
 		Use:   "status NAME",
 		Args:  cobra.ExactArgs(1),
 		Short: "Inspect a job and its allocations",
+		Long:  "Inspect a job and its allocations. Unhealthy or converging jobs include diagnostics automatically. Use --watch to follow convergence or --history to show allocation lifecycle history.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if watch && history {
+				return fmt.Errorf("--watch and --history cannot be used together")
+			}
+			if allocation != "" && !history {
+				return fmt.Errorf("--allocation requires --history")
+			}
 			tlsCfg, err := buildCLITLSConfig()
 			if err != nil {
 				return err
 			}
-			status, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).GetJob(cmd.Context(), args[0])
+			serverClient := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg)
+			if watch {
+				if config.Output == "json" {
+					return fmt.Errorf("--watch does not support --output json")
+				}
+				return waitForJob(cmd.Context(), cmd.OutOrStdout(), serverClient, args[0], interval, timeout)
+			}
+			if history {
+				events, err := loadJobEvents(cmd.Context(), serverClient, args[0], allocation)
+				if err != nil {
+					return err
+				}
+				if config.Output == "json" {
+					return writeJSON(cmd.OutOrStdout(), events)
+				}
+				return printJobEvents(cmd.OutOrStdout(), events)
+			}
+			status, err := serverClient.GetJob(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -210,49 +197,13 @@ func NewJobsStatusCmd() *cobra.Command {
 			return printJobStatus(cmd.OutOrStdout(), status)
 		},
 	}
-}
-
-func NewJobsWatchCmd() *cobra.Command {
-	var timeout time.Duration
-	var interval time.Duration
-	cmd := &cobra.Command{
-		Use:   "watch NAME",
-		Args:  cobra.ExactArgs(1),
-		Short: "Watch a job converge to healthy desired capacity",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			tlsCfg, err := buildCLITLSConfig()
-			if err != nil {
-				return err
-			}
-			serverClient := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg)
-			return waitForJob(cmd.Context(), cmd.OutOrStdout(), serverClient, args[0], interval, timeout)
-		},
-	}
-	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "Maximum time to wait (0 means no timeout)")
-	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
+	flags := cmd.Flags()
+	flags.BoolVarP(&watch, "watch", "w", false, "Follow the job until desired capacity is healthy")
+	flags.BoolVar(&history, "history", false, "Show allocation lifecycle history instead of current status")
+	flags.StringVar(&allocation, "allocation", "", "With --history, limit events to an allocation ID or unique prefix")
+	flags.DurationVar(&timeout, "timeout", 5*time.Minute, "Maximum time to watch (0 means no timeout)")
+	flags.DurationVar(&interval, "interval", 2*time.Second, "Polling interval while watching")
 	return cmd
-}
-
-func NewJobsDiagnoseCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "diagnose NAME",
-		Args:  cobra.ExactArgs(1),
-		Short: "Explain why a job is not healthy",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			tlsCfg, err := buildCLITLSConfig()
-			if err != nil {
-				return err
-			}
-			status, err := client.NewNamespaceServerClient(config.ClusterToken, config.ServerAddr, config.Namespace, tlsCfg).GetJob(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			if config.Output == "json" {
-				return writeJSON(cmd.OutOrStdout(), status)
-			}
-			return printJobDiagnosis(cmd.OutOrStdout(), status)
-		},
-	}
 }
 
 func NewJobsLogsCmd() *cobra.Command {
@@ -355,35 +306,41 @@ func printJobStatus(w io.Writer, status *api.JobStatusResponse) error {
 		return err
 	}
 	if len(status.Allocations) == 0 {
-		_, err := fmt.Fprintln(w, "Allocations: none")
-		return err
-	}
-	if _, err := fmt.Fprintln(w, "Allocations:"); err != nil {
-		return err
-	}
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "Allocation\tTask group\tNode\tLifecycle\tHealth\tDiagnostic"); err != nil {
-		return err
-	}
-	for _, a := range status.Allocations {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(a.ID), a.Group, allocationNode(a), a.Phase, a.Health, diagnosticSummary(a)); err != nil {
+		if _, err := fmt.Fprintln(w, "Allocations: none"); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(w, "Allocations:"); err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		if _, err := fmt.Fprintln(tw, "Allocation\tTask group\tNode\tLifecycle\tHealth\tDiagnostic"); err != nil {
+			return err
+		}
+		for _, a := range status.Allocations {
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(a.ID), a.Group, allocationNode(a), a.Phase, a.Health, diagnosticSummary(a)); err != nil {
+				return err
+			}
+		}
+		if err := tw.Flush(); err != nil {
 			return err
 		}
 	}
-	return tw.Flush()
+	if jobReady(status) {
+		return nil
+	}
+	return printJobProblems(w, status)
 }
 
-func printJobDiagnosis(w io.Writer, status *api.JobStatusResponse) error {
-	if _, err := fmt.Fprintf(w, "Job %s: %s (%d desired, %d running, %d healthy)\n", status.Name, jobState(status), status.Desired, status.Running, status.Healthy); err != nil {
-		return err
-	}
-	if jobReady(status) {
-		_, err := fmt.Fprintln(w, "No runtime problems detected: desired capacity is healthy.")
+func printJobProblems(w io.Writer, status *api.JobStatusResponse) error {
+	if _, err := fmt.Fprintln(w, "\nProblems:"); err != nil {
 		return err
 	}
 	if len(status.Allocations) == 0 {
-		_, err := fmt.Fprintln(w, "No allocations have been created yet. Check schedulable node capacity, placement constraints, required host volumes, and node health.")
-		return err
+		if _, err := fmt.Fprintln(w, "No allocations have been created yet. Check schedulable node capacity, placement constraints, required host volumes, and node health."); err != nil {
+			return err
+		}
+		return printJobNextSteps(w, status.Name)
 	}
 	problems := 0
 	for _, a := range status.Allocations {
@@ -391,7 +348,7 @@ func printJobDiagnosis(w io.Writer, status *api.JobStatusResponse) error {
 			continue
 		}
 		problems++
-		if _, err := fmt.Fprintf(w, "\n- %s %s on %s: lifecycle=%s health=%s\n", shortID(a.ID), a.Group, allocationNode(a), a.Phase, a.Health); err != nil {
+		if _, err := fmt.Fprintf(w, "- %s %s on %s: lifecycle=%s health=%s\n", shortID(a.ID), a.Group, allocationNode(a), a.Phase, a.Health); err != nil {
 			return err
 		}
 		if a.Reason != "" {
@@ -411,8 +368,8 @@ func printJobDiagnosis(w io.Writer, status *api.JobStatusResponse) error {
 		}
 		if a.Attempt > 0 {
 			if _, err := fmt.Fprintf(w, "  attempt: %d\n", a.Attempt); err != nil {
-					return err
-				}
+				return err
+			}
 		}
 	}
 	if problems == 0 {
@@ -420,7 +377,11 @@ func printJobDiagnosis(w io.Writer, status *api.JobStatusResponse) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w, "\nInspect logs with: trellisctl jobs logs %s\nFollow convergence with: trellisctl jobs watch %s\n", status.Name, status.Name)
+	return printJobNextSteps(w, status.Name)
+}
+
+func printJobNextSteps(w io.Writer, name string) error {
+	_, err := fmt.Fprintf(w, "\nInspect logs with: trellisctl jobs logs %s\nFollow convergence with: trellisctl jobs status %s --watch\nView lifecycle history with: trellisctl jobs status %s --history\n", name, name, name)
 	return err
 }
 
