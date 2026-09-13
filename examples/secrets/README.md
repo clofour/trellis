@@ -14,7 +14,7 @@ Create the namespace-scoped values before applying the job:
 printf %s 'token-value' | \
   trellisctl --namespace default secrets set api-token --stdin
 trellisctl --namespace default secrets set tls-key --file ./server.key
-trellisctl jobs validate --file examples/secrets/trellis.yaml
+trellisctl jobs apply --check --file examples/secrets/trellis.yaml
 trellisctl jobs apply --file examples/secrets/trellis.yaml --wait
 ```
 
