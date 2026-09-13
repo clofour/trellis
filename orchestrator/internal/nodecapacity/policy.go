@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	minDefaultCPUReserve       = 100
-	maxDefaultCPUReserve       = 1000
-	minDefaultMemoryReserve    = int64(256 << 20)
-	maxDefaultMemoryReserve    = int64(2 << 30)
-	defaultReserveDenominator  = 20 // 5%
+	minDefaultCPUReserve      = 100
+	maxDefaultCPUReserve      = 1000
+	minDefaultMemoryReserve   = int64(256 << 20)
+	maxDefaultMemoryReserve   = int64(2 << 30)
+	defaultReserveDenominator = 20 // 5%
 )
 
 var reserveOverride struct {
@@ -98,14 +98,14 @@ func cloneInt(value *int) *int {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	cloned := *value
+	return &cloned
 }
 
 func cloneInt64(value *int64) *int64 {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	cloned := *value
+	return &cloned
 }
