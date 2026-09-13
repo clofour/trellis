@@ -64,12 +64,12 @@ func newDescriptors() (
 	)
 	cpuCap = prometheus.NewDesc(
 		"trellis_node_cpu_capacity_millicores",
-		"CPU capacity of a node in millicores.",
+		"CPU capacity allocatable to Trellis workloads on a node in millicores.",
 		[]string{"node_id"}, nil,
 	)
 	memCap = prometheus.NewDesc(
 		"trellis_node_memory_capacity_bytes",
-		"Memory capacity of a node in bytes.",
+		"Memory capacity allocatable to Trellis workloads on a node in bytes.",
 		[]string{"node_id"}, nil,
 	)
 	cpuAlloc = prometheus.NewDesc(
@@ -79,7 +79,7 @@ func newDescriptors() (
 	)
 	memAlloc = prometheus.NewDesc(
 		"trellis_node_memory_allocated_bytes",
-		"Memory reserved by active allocations on a node in bytes (spec value × 1 MiB).",
+		"Memory reserved by active allocations on a node in bytes.",
 		[]string{"node_id"}, nil,
 	)
 	hbAge = prometheus.NewDesc(
@@ -154,7 +154,7 @@ func (c *metricsCollector) Collect(ch chan<- prometheus.Metric) {
 					r := alloc.Tasks[i].Resources
 					if r != nil {
 						u.cpuMillicores += r.CPU
-						u.memBytes += int64(r.Memory) * 1024 * 1024
+						u.memBytes += int64(r.Memory)
 					}
 				}
 			}
