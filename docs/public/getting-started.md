@@ -47,15 +47,15 @@ This is one job containing one task group, one desired allocation, and one task.
 
 The image is a tiny first-party tutorial workload. It stays running and emits a recognizable `Trellis tutorial v1` log line, so the first deployment has something concrete to inspect. The same file is maintained at [`examples/hello/trellis.yaml`](../../examples/hello/trellis.yaml).
 
-## 3. Validate, preview, and deploy
+## 3. Check, preview, and deploy
 
 ```sh
-trellisctl jobs validate --file trellis.yaml
-trellisctl jobs diff --file trellis.yaml
+trellisctl jobs apply --check --file trellis.yaml
+trellisctl jobs apply --dry-run --file trellis.yaml
 trellisctl jobs apply --file trellis.yaml --wait
 ```
 
-Validation parses the human YAML locally. Planning and apply use canonical JSON and Trellis's server-owned semantics.
+`--check` parses and validates the human YAML locally without contacting the cluster. `--dry-run` and normal apply use canonical JSON and Trellis's server-owned planning semantics.
 
 ## 4. Inspect the job
 
@@ -65,11 +65,7 @@ trellisctl jobs status hello
 trellisctl jobs logs hello --tail 100
 ```
 
-You should see the tutorial v1 startup/log message. If the job is not ready, ask for the failure-oriented view:
-
-```sh
-trellisctl jobs diagnose hello
-```
+You should see the tutorial v1 startup/log message. If the job is not ready, `jobs status` includes the relevant placement, lifecycle, retry, and health diagnostics automatically. Use `trellisctl jobs status hello --history` when you need the recorded lifecycle transitions.
 
 ## 5. Update it
 
@@ -82,7 +78,7 @@ image: ghcr.io/clofour/trellis-tutorial:v2
 Then preview and apply the new revision:
 
 ```sh
-trellisctl jobs diff --file trellis.yaml
+trellisctl jobs apply --dry-run --file trellis.yaml
 trellisctl jobs apply --file trellis.yaml --wait
 trellisctl jobs status hello
 trellisctl jobs logs hello --tail 100
@@ -106,7 +102,8 @@ If you installed the dashboard with `--with-dashboard`, open `http://NODE_ADDRES
 ## Troubleshooting
 
 - `sudo journalctl -u trellis -n 200` shows daemon/control-plane logs.
-- `trellisctl jobs diagnose hello` summarizes placement, start, retry, and health failures.
+- `trellisctl jobs status hello` summarizes placement, start, retry, and health failures when the job is not ready.
+- `trellisctl jobs status hello --history` shows allocation lifecycle transitions.
 - Image-pull failures usually mean the node cannot reach GHCR or the image/tag is unavailable.
 - `trellisctl context current` and `trellisctl nodes list` verify the saved operator connection.
 
