@@ -4,36 +4,48 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/clofour/trellis/internal/nodecapacity"
+	"github.com/clofour/trellis/internal/spec"
 	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
 )
 
+type reservedResourcesConfig struct {
+	CPU    *int    `yaml:"cpu"`
+	Memory *string `yaml:"memory"`
+}
+
+type nodeResourcesConfig struct {
+	Reserved *reservedResourcesConfig `yaml:"reserved"`
+}
+
 type nodeConfigFile struct {
-	AgentListen       *string   `yaml:"agent_listen"`
-	AgentAdvertise    *string   `yaml:"agent_advertise"`
-	ServerListen      *string   `yaml:"server_listen"`
-	ServerAdvertise   *string   `yaml:"server_advertise"`
-	RaftListen        *string   `yaml:"raft_listen"`
-	RaftAdvertise     *string   `yaml:"raft_advertise"`
-	Join              *string   `yaml:"join"`
-	DataDir           *string   `yaml:"data_dir"`
-	Cluster           *string   `yaml:"cluster"`
-	BootstrapToken    *string   `yaml:"bootstrap_token"`
-	ContainerdSock    *string   `yaml:"containerd_socket"`
-	Runtime           *string   `yaml:"runtime"`
-	RuntimeFaults     *string   `yaml:"runtime_faults"`
-	WireGuardPool     *string   `yaml:"wireguard_pool"`
-	WireGuardEndpoint *string   `yaml:"wireguard_endpoint"`
-	WireGuardPort     *int      `yaml:"wireguard_port"`
-	DNSListen         *string   `yaml:"dns_listen"`
-	CACert            *string   `yaml:"ca_cert"`
-	CAKey             *string   `yaml:"ca_key"`
-	Cert              *string   `yaml:"cert"`
-	Key               *string   `yaml:"key"`
-	SecretsKey        *string   `yaml:"secrets_key"`
-	SecretsKeyID      *string   `yaml:"secrets_key_id"`
-	Labels            *[]string `yaml:"labels"`
-	HostVolumes       *[]string `yaml:"host_volumes"`
+	AgentListen       *string              `yaml:"agent_listen"`
+	AgentAdvertise    *string              `yaml:"agent_advertise"`
+	ServerListen      *string              `yaml:"server_listen"`
+	ServerAdvertise   *string              `yaml:"server_advertise"`
+	RaftListen        *string              `yaml:"raft_listen"`
+	RaftAdvertise     *string              `yaml:"raft_advertise"`
+	Join              *string              `yaml:"join"`
+	DataDir           *string              `yaml:"data_dir"`
+	Cluster           *string              `yaml:"cluster"`
+	BootstrapToken    *string              `yaml:"bootstrap_token"`
+	ContainerdSock    *string              `yaml:"containerd_socket"`
+	Runtime           *string              `yaml:"runtime"`
+	RuntimeFaults     *string              `yaml:"runtime_faults"`
+	WireGuardPool     *string              `yaml:"wireguard_pool"`
+	WireGuardEndpoint *string              `yaml:"wireguard_endpoint"`
+	WireGuardPort     *int                 `yaml:"wireguard_port"`
+	DNSListen         *string              `yaml:"dns_listen"`
+	CACert            *string              `yaml:"ca_cert"`
+	CAKey             *string              `yaml:"ca_key"`
+	Cert              *string              `yaml:"cert"`
+	Key               *string              `yaml:"key"`
+	SecretsKey        *string              `yaml:"secrets_key"`
+	SecretsKeyID      *string              `yaml:"secrets_key_id"`
+	Labels            *[]string            `yaml:"labels"`
+	HostVolumes       *[]string            `yaml:"host_volumes"`
+	Resources         *nodeResourcesConfig `yaml:"resources"`
 }
 
 func loadNodeConfig(path string, cfg *config, flags *pflag.FlagSet) error {
@@ -85,6 +97,28 @@ func loadNodeConfig(path string, cfg *config, flags *pflag.FlagSet) error {
 	}
 	if parsed.HostVolumes != nil && !flags.Changed("host-volume") {
 		cfg.HostVolumes = append([]string(nil), (*parsed.HostVolumes)...)
+	}
+
+	// Resource reservation policy belongs to the Trellis node. Omitted values
+	// retain Trellis's built-in defaults; the installer does not materialize
+	// those defaults into configuration files.
+	if err := nodecapacity.ConfigureReserve(nil, nil); err != nil {
+		return err
+	}
+	if parsed.Resources != nil && parsed.Resources.Reserved != nil {
+		reserved := parsed.Resources.Reserved
+		var memory *int64
+		if reserved.Memory != nil {
+			value, err := spec.ParseByteSize(*reserved.Memory)
+			if err != nil {
+				return fmt.Errorf("resources.reserved.memory: %w", err)
+			}
+			bytes := int64(value)
+			memory = &bytes
+		}
+		if err := nodecapacity.ConfigureReserve(reserved.CPU, memory); err != nil {
+			return fmt.Errorf("resources.reserved: %w", err)
+		}
 	}
 	return nil
 }

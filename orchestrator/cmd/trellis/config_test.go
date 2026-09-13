@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/clofour/trellis/internal/nodecapacity"
 	"github.com/spf13/pflag"
 )
 
@@ -18,6 +19,10 @@ labels:
   - storage=fast
 host_volumes:
   - data=/srv/data
+resources:
+  reserved:
+    cpu: 500
+    memory: 1GiB
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +35,13 @@ host_volumes:
 	}
 	if len(cfg.Labels) != 1 || cfg.Labels[0] != "storage=fast" || len(cfg.HostVolumes) != 1 || cfg.HostVolumes[0] != "data=/srv/data" {
 		t.Fatalf("unexpected lists: labels=%v volumes=%v", cfg.Labels, cfg.HostVolumes)
+	}
+	cpu, memory, err := nodecapacity.Resolve(8000, 32<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cpu != 7500 || memory != 31<<30 {
+		t.Fatalf("unexpected allocatable resources: cpu=%d memory=%d", cpu, memory)
 	}
 }
 
@@ -59,5 +71,26 @@ func TestLoadNodeConfigRejectsUnknownFields(t *testing.T) {
 	}
 	if err := loadNodeConfig(path, &config{}, pflag.NewFlagSet("test", pflag.ContinueOnError)); err == nil {
 		t.Fatal("expected unknown config field to be rejected")
+	}
+}
+
+func TestLoadNodeConfigKeepsDefaultsPerResource(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trellis.yaml")
+	if err := os.WriteFile(path, []byte("resources:\n  reserved:\n    cpu: 250\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadNodeConfig(path, &config{}, pflag.NewFlagSet("test", pflag.ContinueOnError)); err != nil {
+		t.Fatal(err)
+	}
+	cpu, memory, err := nodecapacity.Resolve(4000, 16<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cpu != 3750 {
+		t.Fatalf("allocatable CPU = %d, want 3750", cpu)
+	}
+	wantMemory := int64(16<<30) - int64(16<<30)/20
+	if memory != wantMemory {
+		t.Fatalf("allocatable memory = %d, want %d", memory, wantMemory)
 	}
 }
