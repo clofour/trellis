@@ -11,8 +11,8 @@ The tutorial image logs what version is running, so the first deployment and fir
 From the repository root:
 
 ```sh
-trellisctl jobs validate --file examples/hello/trellis.yaml
-trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --check --file examples/hello/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/hello/trellis.yaml
 trellisctl jobs apply --file examples/hello/trellis.yaml --wait
 trellisctl jobs status hello
 trellisctl jobs logs hello --tail 100
@@ -30,7 +30,7 @@ To deploy a real second application version, change:
 Then preview and apply it:
 
 ```sh
-trellisctl jobs diff --file examples/hello/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/hello/trellis.yaml
 trellisctl jobs apply --file examples/hello/trellis.yaml --wait
 trellisctl jobs status hello
 trellisctl jobs logs hello --tail 100
