@@ -115,7 +115,7 @@ restart:
 
 The group-level policy applies to the tasks in each allocation. Use a small bounded retry budget for failures that are plausibly transient. Once the allowed failures in the window are exhausted, the allocation remains failed so an operator can inspect its reason, message, attempts, events, and logs instead of entering an unlimited crash loop.
 
-Do not treat restart policy as a substitute for readiness checks or correct dependencies. Repeated startup failures usually indicate a bad revision, missing secret, unavailable volume, invalid configuration, or application defect; use `trellisctl jobs diagnose NAME` after the retry budget is exhausted.
+Do not treat restart policy as a substitute for readiness checks or correct dependencies. Repeated startup failures usually indicate a bad revision, missing secret, unavailable volume, invalid configuration, or application defect; use `trellisctl jobs status NAME` after the retry budget is exhausted.
 
 ## Choose between recreate and rolling replacement
 
@@ -139,7 +139,7 @@ update:
 
 Rolling replacement marks old-revision allocations as draining, starts bounded replacement capacity, and removes old allocations as healthy replacements become available. `max_parallel` limits not-yet-healthy replacements in flight; it is not a percentage.
 
-Rolling updates require spare schedulable capacity and a useful health check. If the group reserves a fixed host port, spare capacity also means another node where that port is available. Recreate updates avoid overlap but can reduce or eliminate service capacity during replacement. In either case, inspect the diff before applying and treat rollback as another desired-state revision: restore the earlier image/configuration and apply it again.
+Rolling updates require spare schedulable capacity and a useful health check. If the group reserves a fixed host port, spare capacity also means another node where that port is available. Recreate updates avoid overlap but can reduce or eliminate service capacity during replacement. In either case, preview with `trellisctl jobs apply --dry-run` before applying and treat rollback as another desired-state revision: restore the earlier image/configuration and apply it again.
 
 ## Switch complete releases with blue/green routing
 
@@ -338,30 +338,3 @@ Use Trellis for the container layer: replica count, placement constraints, netwo
 Do not infer a primary from Trellis scheduling order or health status. Scheduler replica spreading improves failure distribution but is not a consensus algorithm. Trellis discovery tells members where healthy allocations are; it does not decide which member may accept writes.
 
 Before treating such a deployment as highly available, test node loss, leader loss, stale members, replacement onto a node with different local data, restore from backup, and network partitions. If the storage layer is network-backed, verify that the application's own failover model safely controls which member mounts or writes the data.
-
-## Choose the right pattern
-
-| Desired outcome | Pattern | Primary tradeoff |
-|---|---|---|
-| Stable public endpoint for changing replicas | Label-driven ingress controller | Controller and listener need their own availability design |
-| Private cross-node service communication | Namespace WireGuard plus discovery | Requires consistent node networking configuration |
-| Per-replica helper process | Multiple tasks in one task group | Coupled placement, scaling, update, and failure behavior |
-| Application-aware readiness | Health-filtered discovery and rollout | A poor check can admit bad instances or stall deployment |
-| Recovery from transient process failure | Bounded restart policy | Persistent failure eventually needs operator diagnosis |
-| Non-overlapping update | Recreate strategy | Temporary capacity loss |
-| Availability-preserving in-place update | Rolling strategy | Spare capacity and reliable readiness required |
-| Full release validation and fast route rollback | Blue/green | Both releases consume capacity during overlap |
-| Limited real-traffic exposure | Weighted canary | Effective share depends on replicas and proxy semantics |
-| Tenant/environment isolation | Separate namespaces | Cross-namespace communication must be designed explicitly |
-| Specialized-node placement | Hard constraints | Unsatisfied requirements leave work pending |
-| Credential delivery and rotation | Versioned namespace secret | Running allocations need replacement for new values |
-| Persistent node-local data | Advertised host volume | No built-in replication, movement, or backup |
-| Namespace-local automation | `api_access: namespace` | Every task in the group becomes a namespace credential holder |
-| Administrative/cross-namespace automation | `api_access: cluster` | Every task in the group becomes a cluster administrator |
-| Database schema migrations | Pre-deployment expand-and-contract | Migrations must be backwards-compatible with running code |
-| Scheduled database maintenance | Long-running container with internal cron | Container owns the schedule; Trellis owns the lifecycle |
-| Replicated stateful service | Trellis lifecycle plus application-native HA | Application remains responsible for consensus and data safety |
-
-Concrete manifests live in the [examples index](../../examples/README.md); use them to see syntax after choosing the pattern here.
-
-[Documentation index](../README.md) · [Previous: Operations](operations.md) · [Next: Dashboard](dashboard.md)
