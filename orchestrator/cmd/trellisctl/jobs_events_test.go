@@ -9,21 +9,17 @@ import (
 	"github.com/clofour/trellis/internal/lifecycle"
 )
 
-func TestJobsEventsCommandRegistered(t *testing.T) {
+func TestJobsStatusObservationModesRegistered(t *testing.T) {
 	config = CLIConfig{}
 	root := newRootCmd()
-	cmd, _, err := root.Find([]string{"jobs", "events"})
+	cmd, _, err := root.Find([]string{"jobs", "status"})
 	if err != nil {
-		t.Fatalf("find jobs events: %v", err)
+		t.Fatalf("find jobs status: %v", err)
 	}
-	if cmd.Name() != "events" {
-		t.Fatalf("found command %q, want events", cmd.Name())
-	}
-	if cmd.Flags().Lookup("allocation") == nil {
-		t.Fatal("jobs events is missing --allocation")
-	}
-	if cmd.Flags().Lookup("output") == nil {
-		t.Fatal("jobs events is missing structured --output")
+	for _, flag := range []string{"watch", "history", "allocation", "output"} {
+		if cmd.Flags().Lookup(flag) == nil {
+			t.Fatalf("jobs status is missing --%s", flag)
+		}
 	}
 }
 
