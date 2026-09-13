@@ -10,7 +10,7 @@ You need a Debian or Ubuntu x86-64 machine with `sudo`. The installer can instal
 curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | sudo bash
 ```
 
-For this first cluster, accept the detected address and do not join another cluster. The dashboard and WireGuard are optional and are not needed for the first workload.
+The default plan is already the beginner path: create a new single-node cluster, auto-detect a reachable node address, and leave namespace networking, gVisor, and the dashboard disabled. Review the one plan summary and confirm it once; there is no feature-by-feature setup questionnaire. Optional capabilities can be selected explicitly during setup with installer flags such as `--with-networking` or `--with-dashboard`.
 
 The installer uses a root-only bootstrap credential for node/cluster bootstrap, then mints a normal `cluster/write` operator credential and saves a `local` context for the user who invoked `sudo`. Routine `trellisctl` commands therefore do **not** need `sudo` and do not receive the bootstrap credential.
 
@@ -101,7 +101,7 @@ You have now completed the full workload lifecycle: install → connect → depl
 
 ## Optional: dashboard
 
-If you installed the dashboard, open `http://NODE_ADDRESS:3000`. The default installer mode uses a real `cluster/read` credential, not the bootstrap token. Read-write mode instead uses `cluster/write` and enables mutation controls. In either mode the dashboard stays close to `trellisctl`: it edits the same YAML, asks the control plane for the same semantic plan, and exposes Trellis resources rather than adding application-platform abstractions.
+If you installed the dashboard with `--with-dashboard`, open `http://NODE_ADDRESS:3000`. The default installer mode uses a real `cluster/read` credential, not the bootstrap token. `--dashboard-write` instead uses `cluster/write` and enables mutation controls. In either mode the dashboard stays close to `trellisctl`: it edits the same YAML, asks the control plane for the same semantic plan, and exposes Trellis resources rather than adding application-platform abstractions.
 
 ## Troubleshooting
 
