@@ -69,7 +69,7 @@ curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.
   sudo bash -s -- \
     --join node-a:8128 \
     --bootstrap-token-file /root/trellis-bootstrap-token \
-    --secrets-key-file /root/trellis-secrets-key
+    --secrets-key-file /root/trellis-secrets.key
 ```
 
 Normal installer-created clusters derive the secrets key ID from the shared key, so no additional argument is needed. If the existing cluster explicitly sets `secrets_key_id` in its node configuration, pass that same value with `--secrets-key-id ID` (or `TRELLIS_SECRETS_KEY_ID`) on the joining node.
