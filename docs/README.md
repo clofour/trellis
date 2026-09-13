@@ -19,7 +19,7 @@ Getting Started is the only installation walkthrough and [`examples/hello`](../e
 
 | Guide | Use it to |
 |---|---|
-| [CLI workflows](public/cli.md) | Manage contexts; validate, plan, apply, watch, diagnose, log, and delete jobs |
+| [CLI workflows](public/cli.md) | Manage contexts; check, preview, apply, inspect, watch, log, and delete jobs |
 | [Job manifest reference](public/job-specification.md) | Look up the complete current YAML schema and validation rules |
 | [Examples](../examples/README.md) | Run beginner, intermediate, and advanced manifests in learning order |
 | [Cookbook](public/cookbook.md) | Adapt Trellis primitives to deployment outcomes and architecture patterns |
@@ -45,7 +45,7 @@ Read these after the public model unless you are working on Trellis itself:
 
 - YAML is the only human-authored job-manifest format.
 - The manifest schema in [Job manifest reference](public/job-specification.md) must match `orchestrator/internal/spec/types.go`.
-- Commands use the canonical `apply`, `status`, `diagnose`, `logs`, and `delete` workflow from the CLI guide.
+- Commands use the canonical `apply`, `status`, `logs`, and `delete` workflow from the CLI guide; validation/planning and watch/history are modes of those commands rather than separate verbs.
 - Example READMEs state their level and prerequisites; advanced patterns must not masquerade as turnkey beginner workloads.
 - Internal Raft, RPC, and storage mechanics belong in developer documentation or explicitly advanced operator sections.
 
