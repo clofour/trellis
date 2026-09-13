@@ -116,6 +116,7 @@ func (request NodeRegistrationRequest) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON records physical and allocatable capacity reported by a node.
 func (request *NodeRegistrationRequest) UnmarshalJSON(data []byte) error {
 	var wire nodeRegistrationAlias
 	if err := json.Unmarshal(data, &wire); err != nil {
@@ -172,14 +173,10 @@ func (request HeartbeatRequest) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return addNodeResourceMetadata(raw, nodeResourceMetadata{
-		CPUCapacity: state.CPUCapacity, MemoryCapacity: state.MemoryCapacity,
-		CPUAllocatable: state.CPUAllocatable, MemoryAllocatable: state.MemoryAllocatable,
-		CPUUsage: state.CPUUsage, MemoryUsed: state.MemoryUsed,
-		MemoryAvailable: state.MemoryAvailable, MetricsAt: state.MetricsAt,
-	})
+	return addNodeResourceMetadata(raw, nodeResourceMetadata(state))
 }
 
+// UnmarshalJSON records host resource observations carried by a heartbeat.
 func (request *HeartbeatRequest) UnmarshalJSON(data []byte) error {
 	var wire heartbeatAlias
 	if err := json.Unmarshal(data, &wire); err != nil {
@@ -190,12 +187,7 @@ func (request *HeartbeatRequest) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*request = HeartbeatRequest(wire)
-	storeNodeResourceState(request.NodeID, nodeResourceState{
-		CPUCapacity: metadata.CPUCapacity, MemoryCapacity: metadata.MemoryCapacity,
-		CPUAllocatable: metadata.CPUAllocatable, MemoryAllocatable: metadata.MemoryAllocatable,
-		CPUUsage: metadata.CPUUsage, MemoryUsed: metadata.MemoryUsed,
-		MemoryAvailable: metadata.MemoryAvailable, MetricsAt: metadata.MetricsAt,
-	})
+	storeNodeResourceState(request.NodeID, nodeResourceState(metadata))
 	return nil
 }
 
@@ -221,10 +213,5 @@ func (response NodeResponse) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return addNodeResourceMetadata(raw, nodeResourceMetadata{
-		CPUCapacity: state.CPUCapacity, MemoryCapacity: state.MemoryCapacity,
-		CPUAllocatable: state.CPUAllocatable, MemoryAllocatable: state.MemoryAllocatable,
-		CPUUsage: state.CPUUsage, MemoryUsed: state.MemoryUsed,
-		MemoryAvailable: state.MemoryAvailable, MetricsAt: state.MetricsAt,
-	})
+	return addNodeResourceMetadata(raw, nodeResourceMetadata(state))
 }
