@@ -9,18 +9,18 @@ Each replica reserves host port 8080. Because one node cannot satisfy the same f
 ## Deploy and inspect placement
 
 ```sh
-trellisctl jobs validate --file examples/replicated-service/trellis.yaml
-trellisctl jobs diff --file examples/replicated-service/trellis.yaml
+trellisctl jobs apply --check --file examples/replicated-service/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/replicated-service/trellis.yaml
 trellisctl jobs apply --file examples/replicated-service/trellis.yaml --wait
 trellisctl jobs status replicated-service
 ```
 
 The status output should show two healthy allocations on different nodes. Query either node on port 8080 to reach a replica.
 
-If only one compatible node is available, one replica cannot be placed. Use:
+If only one compatible node is available, `jobs status` shows the placement failure. Pair it with the node views when needed:
 
 ```sh
-trellisctl jobs diagnose replicated-service
+trellisctl jobs status replicated-service
 trellisctl nodes list
 trellisctl nodes status NODE
 ```
