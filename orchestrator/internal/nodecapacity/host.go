@@ -11,10 +11,12 @@ import (
 
 // HostMetrics is a point-in-time view of resources consumed by the whole host.
 type HostMetrics struct {
-	CPUUsage       float64
-	MemoryUsed     int64
+	CPUUsage        float64
+	CPUValid        bool
+	MemoryUsed      int64
 	MemoryAvailable int64
-	CollectedAt    time.Time
+	MemoryValid     bool
+	CollectedAt     time.Time
 }
 
 type cpuSample struct {
@@ -38,8 +40,11 @@ func SampleHostMetrics() (metrics HostMetrics, ok bool) {
 	}
 
 	metrics.CollectedAt = time.Now().UTC()
-	metrics.MemoryUsed = memoryUsed
-	metrics.MemoryAvailable = memoryAvailable
+	if memoryOK {
+		metrics.MemoryUsed = memoryUsed
+		metrics.MemoryAvailable = memoryAvailable
+		metrics.MemoryValid = true
+	}
 
 	if cpuOK {
 		cpuState.Lock()
@@ -48,6 +53,7 @@ func SampleHostMetrics() (metrics HostMetrics, ok bool) {
 			idleDelta := current.idle - cpuState.previous.idle
 			if idleDelta <= totalDelta {
 				metrics.CPUUsage = float64(totalDelta-idleDelta) / float64(totalDelta)
+				metrics.CPUValid = true
 			}
 		}
 		cpuState.previous = current
@@ -81,7 +87,7 @@ func readCPU() (cpuSample, bool) {
 	}
 	idle := values[3]
 	if len(values) > 4 {
-		idle += values[4] // iowait is time the CPU was idle from the scheduler's perspective.
+		idle += values[4] // iowait is idle time from the scheduler's perspective.
 	}
 	return cpuSample{total: total, idle: idle}, true
 }
@@ -94,6 +100,7 @@ func readMemory() (used, available int64, ok bool) {
 	defer func() { _ = file.Close() }()
 
 	var total int64
+	available = -1
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
