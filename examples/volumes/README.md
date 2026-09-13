@@ -30,7 +30,7 @@ Repeat `--label` and `--host-volume` for additional values. The name in `--host-
 ## Deploy and verify placement
 
 ```sh
-trellisctl jobs validate --file examples/volumes/trellis.yaml
+trellisctl jobs apply --check --file examples/volumes/trellis.yaml
 trellisctl jobs apply --file examples/volumes/trellis.yaml --wait
 trellisctl --namespace default jobs status volumes-demo
 trellisctl nodes list
