@@ -8,11 +8,13 @@ Every machine runs the same `trellis` daemon. Raft consensus elects one node to 
 
 ## Quick start
 
-The setup script downloads the latest release binaries, configures a systemd service, and creates a single-node cluster. It supports Linux x64 and requires root access. The normal path auto-detects the node address, installs containerd when it is missing, leaves optional networking/gVisor/dashboard features disabled, shows one concise plan, and asks for one confirmation.
+The setup script downloads the latest release binaries, configures a systemd service, and creates a single-node cluster. It supports Linux x64 and requires root access. The normal plan auto-detects the node address, installs containerd when it is missing, and makes namespace networking and gVisor available out of the box. The dashboard remains disabled by default because it exposes an additional service and credential.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | sudo bash
 ```
+
+The installer shows the complete plan before changing the machine. Press Enter to use it, or choose **Customize** to change cluster mode, node address, namespace networking, gVisor, or dashboard access without hunting for command-line flags.
 
 Or clone the repository and run the script directly:
 
@@ -21,11 +23,11 @@ git clone https://github.com/clofour/trellis.git
 sudo ./trellis/scripts/setup.sh
 ```
 
-Optional capabilities are explicit rather than additional installer questions. For example:
+The same choices remain available as flags for automation. For example, a deliberately minimal host can opt out of the default networking and sandboxing dependencies:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | \
-  sudo bash -s -- --with-networking --with-gvisor --with-dashboard
+  sudo bash -s -- --without-networking --without-gvisor
 ```
 
 Use `--join HOST:8128` to add a machine to an existing cluster. A joining server must receive both that cluster's bootstrap token and its existing secrets-encryption key; see [Operations](docs/public/operations.md#add-a-node) for the secure file-based workflow.
