@@ -58,15 +58,37 @@ func storeNodeResourceState(id uuid.UUID, update nodeResourceState) {
 	nodeResourceStates.Store(id, state)
 }
 
-type nodeRegistrationAlias NodeRegistrationRequest
-
-type nodeRegistrationWire struct {
-	nodeRegistrationAlias
-	CPUCapacity       int   `json:"cpu_capacity,omitempty"`
-	MemoryCapacity    int64 `json:"memory_capacity,omitempty"`
-	CPUAllocatable    int   `json:"cpu_allocatable,omitempty"`
-	MemoryAllocatable int64 `json:"memory_allocatable,omitempty"`
+type nodeResourceMetadata struct {
+	CPUCapacity       int        `json:"cpu_capacity,omitempty"`
+	MemoryCapacity    int64      `json:"memory_capacity,omitempty"`
+	CPUAllocatable    int        `json:"cpu_allocatable,omitempty"`
+	MemoryAllocatable int64      `json:"memory_allocatable,omitempty"`
+	CPUUsage          *float64   `json:"cpu_usage,omitempty"`
+	MemoryUsed        *int64     `json:"memory_used,omitempty"`
+	MemoryAvailable   *int64     `json:"memory_available,omitempty"`
+	MetricsAt         *time.Time `json:"metrics_at,omitempty"`
 }
+
+func addNodeResourceMetadata(raw []byte, metadata nodeResourceMetadata) ([]byte, error) {
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	metadataRaw, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(metadataRaw, &fields); err != nil {
+		return nil, err
+	}
+	for key, value := range fields {
+		object[key] = value
+	}
+	return json.Marshal(object)
+}
+
+type nodeRegistrationAlias NodeRegistrationRequest
 
 // MarshalJSON resolves the node's schedulable capacity before registration.
 // The legacy cpu/memory fields continue to carry the values used by the
@@ -84,21 +106,28 @@ func (request NodeRegistrationRequest) MarshalJSON() ([]byte, error) {
 		CPUCapacity: request.CPU, MemoryCapacity: request.Memory,
 		CPUAllocatable: allocatableCPU, MemoryAllocatable: allocatableMemory,
 	})
-	return json.Marshal(nodeRegistrationWire{
-		nodeRegistrationAlias: wireRequest,
+	raw, err := json.Marshal(wireRequest)
+	if err != nil {
+		return nil, err
+	}
+	return addNodeResourceMetadata(raw, nodeResourceMetadata{
 		CPUCapacity: request.CPU, MemoryCapacity: request.Memory,
 		CPUAllocatable: allocatableCPU, MemoryAllocatable: allocatableMemory,
 	})
 }
 
 func (request *NodeRegistrationRequest) UnmarshalJSON(data []byte) error {
-	var wire nodeRegistrationWire
+	var wire nodeRegistrationAlias
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	*request = NodeRegistrationRequest(wire.nodeRegistrationAlias)
-	capacityCPU, capacityMemory := wire.CPUCapacity, wire.MemoryCapacity
-	allocatableCPU, allocatableMemory := wire.CPUAllocatable, wire.MemoryAllocatable
+	var metadata nodeResourceMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return err
+	}
+	*request = NodeRegistrationRequest(wire)
+	capacityCPU, capacityMemory := metadata.CPUCapacity, metadata.MemoryCapacity
+	allocatableCPU, allocatableMemory := metadata.CPUAllocatable, metadata.MemoryAllocatable
 	if capacityCPU == 0 {
 		capacityCPU = request.CPU
 	}
@@ -120,18 +149,6 @@ func (request *NodeRegistrationRequest) UnmarshalJSON(data []byte) error {
 
 type heartbeatAlias HeartbeatRequest
 
-type heartbeatWire struct {
-	heartbeatAlias
-	CPUCapacity       int        `json:"cpu_capacity,omitempty"`
-	MemoryCapacity    int64      `json:"memory_capacity,omitempty"`
-	CPUAllocatable    int        `json:"cpu_allocatable,omitempty"`
-	MemoryAllocatable int64      `json:"memory_allocatable,omitempty"`
-	CPUUsage          *float64   `json:"cpu_usage,omitempty"`
-	MemoryUsed        *int64     `json:"memory_used,omitempty"`
-	MemoryAvailable   *int64     `json:"memory_available,omitempty"`
-	MetricsAt         *time.Time `json:"metrics_at,omitempty"`
-}
-
 // MarshalJSON attaches fresh whole-host resource observations to the ordinary
 // node heartbeat. Scheduling remains request-based and never consumes these
 // live utilization values.
@@ -151,8 +168,11 @@ func (request HeartbeatRequest) MarshalJSON() ([]byte, error) {
 		state.MetricsAt = &collected
 		storeNodeResourceState(request.NodeID, state)
 	}
-	return json.Marshal(heartbeatWire{
-		heartbeatAlias: heartbeatAlias(request),
+	raw, err := json.Marshal(heartbeatAlias(request))
+	if err != nil {
+		return nil, err
+	}
+	return addNodeResourceMetadata(raw, nodeResourceMetadata{
 		CPUCapacity: state.CPUCapacity, MemoryCapacity: state.MemoryCapacity,
 		CPUAllocatable: state.CPUAllocatable, MemoryAllocatable: state.MemoryAllocatable,
 		CPUUsage: state.CPUUsage, MemoryUsed: state.MemoryUsed,
@@ -161,33 +181,25 @@ func (request HeartbeatRequest) MarshalJSON() ([]byte, error) {
 }
 
 func (request *HeartbeatRequest) UnmarshalJSON(data []byte) error {
-	var wire heartbeatWire
+	var wire heartbeatAlias
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	*request = HeartbeatRequest(wire.heartbeatAlias)
+	var metadata nodeResourceMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return err
+	}
+	*request = HeartbeatRequest(wire)
 	storeNodeResourceState(request.NodeID, nodeResourceState{
-		CPUCapacity: wire.CPUCapacity, MemoryCapacity: wire.MemoryCapacity,
-		CPUAllocatable: wire.CPUAllocatable, MemoryAllocatable: wire.MemoryAllocatable,
-		CPUUsage: wire.CPUUsage, MemoryUsed: wire.MemoryUsed,
-		MemoryAvailable: wire.MemoryAvailable, MetricsAt: wire.MetricsAt,
+		CPUCapacity: metadata.CPUCapacity, MemoryCapacity: metadata.MemoryCapacity,
+		CPUAllocatable: metadata.CPUAllocatable, MemoryAllocatable: metadata.MemoryAllocatable,
+		CPUUsage: metadata.CPUUsage, MemoryUsed: metadata.MemoryUsed,
+		MemoryAvailable: metadata.MemoryAvailable, MetricsAt: metadata.MetricsAt,
 	})
 	return nil
 }
 
 type nodeResponseAlias NodeResponse
-
-type nodeResponseWire struct {
-	nodeResponseAlias
-	CPUCapacity       int        `json:"cpu_capacity"`
-	MemoryCapacity    int64      `json:"memory_capacity"`
-	CPUAllocatable    int        `json:"cpu_allocatable"`
-	MemoryAllocatable int64      `json:"memory_allocatable"`
-	CPUUsage          *float64   `json:"cpu_usage,omitempty"`
-	MemoryUsed        *int64     `json:"memory_used,omitempty"`
-	MemoryAvailable   *int64     `json:"memory_available,omitempty"`
-	MetricsAt         *time.Time `json:"metrics_at,omitempty"`
-}
 
 // MarshalJSON exposes both physical and schedulable capacity plus the most
 // recent whole-host utilization observation through node status.
@@ -205,8 +217,11 @@ func (response NodeResponse) MarshalJSON() ([]byte, error) {
 	if state.MemoryCapacity == 0 {
 		state.MemoryCapacity = state.MemoryAllocatable
 	}
-	return json.Marshal(nodeResponseWire{
-		nodeResponseAlias: nodeResponseAlias(response),
+	raw, err := json.Marshal(nodeResponseAlias(response))
+	if err != nil {
+		return nil, err
+	}
+	return addNodeResourceMetadata(raw, nodeResourceMetadata{
 		CPUCapacity: state.CPUCapacity, MemoryCapacity: state.MemoryCapacity,
 		CPUAllocatable: state.CPUAllocatable, MemoryAllocatable: state.MemoryAllocatable,
 		CPUUsage: state.CPUUsage, MemoryUsed: state.MemoryUsed,
