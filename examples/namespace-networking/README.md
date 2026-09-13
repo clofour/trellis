@@ -31,8 +31,8 @@ If these nodes were installed before namespace networking was enabled, use the n
 From the repository root:
 
 ```sh
-trellisctl jobs validate --file examples/namespace-networking/trellis.yaml
-trellisctl jobs diff --file examples/namespace-networking/trellis.yaml
+trellisctl jobs apply --check --file examples/namespace-networking/trellis.yaml
+trellisctl jobs apply --dry-run --file examples/namespace-networking/trellis.yaml
 trellisctl jobs apply --file examples/namespace-networking/trellis.yaml --wait
 trellisctl jobs status namespace-networking
 ```
@@ -51,14 +51,14 @@ A working namespace network and discovery path produces lines like:
 peer reachable: http://web.namespace-networking.default.trellis:8080/health (200 OK)
 ```
 
-A temporary lookup or network failure is printed as `peer check failed`. If an allocation itself did not start, inspect the control-plane lifecycle separately:
+A temporary lookup or network failure is printed as `peer check failed`. If an allocation itself did not start, inspect current diagnostics and lifecycle history through `status`:
 
 ```sh
-trellisctl jobs diagnose namespace-networking
-trellisctl jobs events namespace-networking
+trellisctl jobs status namespace-networking
+trellisctl jobs status namespace-networking --history
 ```
 
-`jobs events` is allocation lifecycle history; `jobs logs` is stdout/stderr from the tutorial process. Use `--allocation` with the short ID from `jobs status` to narrow either view when necessary.
+`status --history` is allocation lifecycle history; `jobs logs` is stdout/stderr from the tutorial process. Use `--history --allocation SHORT_ID` with the short ID from `jobs status` to narrow lifecycle history, or `jobs logs --allocation SHORT_ID` to narrow logs.
 
 ## What this demonstrates
 
