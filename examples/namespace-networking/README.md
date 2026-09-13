@@ -15,14 +15,13 @@ The `observer` group runs the same small tutorial image with an opt-in peer prob
 
 ## Prepare the nodes
 
-Install participating nodes with `--with-networking`; add `--with-gvisor` when you also want runsc syscall sandboxing. These are explicit setup choices rather than interactive installer questions:
+Fresh Trellis installs include the namespace-networking dependencies and gVisor/runsc by default, so the normal setup path is enough:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | \
-  sudo bash -s -- --with-networking --with-gvisor
+curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.sh | sudo bash
 ```
 
-For an additional cluster member, combine those flags with the [documented join workflow](../../docs/public/operations.md#add-a-node). Ensure the configured WireGuard UDP port can pass between participating nodes (`51820` by default).
+Keep **Namespace networking** enabled in the plan. **Customize** can opt out on deliberately minimal hosts, but every node that may run this example needs namespace networking available. For an additional cluster member, use the [documented join workflow](../../docs/public/operations.md#add-a-node). Ensure the configured WireGuard UDP port can pass between participating nodes (`51820` by default).
 
 If these nodes were installed before namespace networking was enabled, use the node configuration and setup guidance in the [learning path](../../docs/public/learning-path.md#8-namespace-networking-and-discovery) before applying this manifest.
 
@@ -62,7 +61,7 @@ trellisctl jobs events namespace-networking
 
 ## What this demonstrates
 
-- `namespace` is the manifest-level networking semantic; WireGuard is a current node implementation detail. `runsc` can be added independently for additional sandboxing.
+- `namespace` is the manifest-level networking semantic; WireGuard is a current node implementation detail. `runsc` is installed by default but remains an explicitly selected task runtime.
 - Healthy task-group allocations are discoverable at `group.job.namespace.trellis`.
 - Discovery returns runtime endpoints; it is not leader election, locking, or application consensus.
 - No host port is declared or exposed. Communication stays on the namespace network.

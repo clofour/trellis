@@ -74,7 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/clofour/trellis/main/scripts/setup.
 
 Normal installer-created clusters derive the secrets key ID from the shared key, so no additional argument is needed. If the existing cluster explicitly sets `secrets_key_id` in its node configuration, pass that same value with `--secrets-key-id ID` (or `TRELLIS_SECRETS_KEY_ID`) on the joining node.
 
-The installer shows one plan before making changes. `--advertise HOST` overrides address auto-detection when peers cannot reach the detected private address. Use `--with-networking`, `--with-gvisor`, and `--with-dashboard` when those capabilities should also be installed on the new node. Delete the temporary transferred copies after setup succeeds.
+The installer shows the complete plan before making changes; choose **Customize** to change it interactively. `--advertise HOST` overrides address auto-detection when peers cannot reach the detected private address. Namespace networking and gVisor/runsc are installed by default on fresh nodes; `--without-networking` and `--without-gvisor` are the automation opt-outs. The dashboard remains opt-in through **Customize**, `--with-dashboard`, or `--dashboard-write`. Delete the temporary transferred copies after setup succeeds.
 
 After the daemon starts, verify membership from any operator context:
 
