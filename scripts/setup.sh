@@ -32,6 +32,11 @@ Options:
 Interactive setup shows the complete plan first. Press Enter to install it, or
 choose Customize to change cluster mode, address, networking, gVisor, or dashboard.
 Flags provide the same choices for automation.
+
+Environment alternatives for joins:
+  TRELLIS_BOOTSTRAP_TOKEN       Existing cluster bootstrap credential
+  TRELLIS_SECRETS_KEY           Existing cluster 32-byte/base64 secrets key
+  TRELLIS_SECRETS_KEY_ID        Existing cluster key ID, when explicitly configured
 HELP
 }
 
