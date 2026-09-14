@@ -25,13 +25,45 @@ func TestScheduleBalancesAndSkipsUnhealthyNodes(t *testing.T) {
 	}
 }
 
-func TestScheduleRequiresAdvertisedHostVolumes(t *testing.T) {
-	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"uploads"}}
+func TestScheduleRequiresRegisteredNamespaceVolume(t *testing.T) {
+	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"default/uploads"}}
 	b := &Node{ID: uuid.New(), Status: NodeStatusHealthy}
-	tasks := []spec.TaskSpec{{Name: "app", Volumes: []spec.VolumeSpec{{Name: "data", Path: "/data", HostVolume: "uploads"}}}}
-	placements := Schedule(&PlacementIntent{Count: 1, Nodes: []*Node{b, a}, Tasks: tasks})
+	tasks := []spec.TaskSpec{{Name: "app", Volumes: []spec.VolumeSpec{{Name: "uploads", HostPath: "@/uploads", ContainerPath: "/data"}}}}
+	placements := Schedule(&PlacementIntent{Namespace: "default", Count: 1, Nodes: []*Node{b, a}, Tasks: tasks})
 	if len(placements) != 1 || placements[0].NodeID != a.ID {
-		t.Fatalf("expected placement on volume-advertising node, got %#v", placements)
+		t.Fatalf("expected placement on registered volume node, got %#v", placements)
+	}
+}
+
+func TestScheduleClaimsNewVolumeOnFirstPlacement(t *testing.T) {
+	a := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy}
+	b := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy}
+	tasks := []spec.TaskSpec{{Name: "app", Volumes: []spec.VolumeSpec{{Name: "database", HostPath: "@/database", ContainerPath: "/data"}}}}
+	placements := Schedule(&PlacementIntent{Namespace: "acme", Count: 2, Nodes: []*Node{a, b}, Tasks: tasks})
+	if len(placements) != 2 || placements[0].NodeID != placements[1].NodeID {
+		t.Fatalf("volume-sharing replicas must stay on first owner: %#v", placements)
+	}
+	owner := placements[0].NodeID
+	var registered bool
+	for _, node := range []*Node{a, b} {
+		if node.ID == owner {
+			for _, volume := range node.Volumes {
+				registered = registered || volume == "acme/database"
+			}
+		}
+	}
+	if !registered {
+		t.Fatal("first placement did not reserve the volume registration")
+	}
+}
+
+func TestScheduleRejectsConflictingVolumeRegistrations(t *testing.T) {
+	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"acme/database"}}
+	b := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"acme/database"}}
+	tasks := []spec.TaskSpec{{Volumes: []spec.VolumeSpec{{Name: "database", HostPath: "@/database", ContainerPath: "/data"}}}}
+	placements := Schedule(&PlacementIntent{Namespace: "acme", Count: 1, Nodes: []*Node{a, b}, Tasks: tasks})
+	if len(placements) != 0 {
+		t.Fatalf("conflicting registrations must be unschedulable: %#v", placements)
 	}
 }
 
