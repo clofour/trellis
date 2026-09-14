@@ -16,8 +16,8 @@ import (
 // VolumeManager resolves task volume mounts and persists the namespace-scoped
 // volume registrations that this node owns.
 type VolumeManager struct {
-	dataRootPath string
-	mu           sync.RWMutex
+	dataRootPath  string
+	mu            sync.RWMutex
 	registrations map[string]string
 }
 

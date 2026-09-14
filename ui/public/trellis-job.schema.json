@@ -449,7 +449,7 @@
           "type": "array"
         },
         "volumes": {
-          "description": "Allocation-local or advertised host-volume mounts for this task.",
+          "description": "Namespace-scoped named volumes. First placement registers a volume to one node; later allocations using the same namespace/name are scheduled there.",
           "items": {
             "$ref": "#/$defs/VolumeSpec"
           },
@@ -484,19 +484,19 @@
     "VolumeSpec": {
       "additionalProperties": false,
       "properties": {
-        "host_volume": {
-          "description": "Optional advertised node volume name. Trellis schedules only onto nodes advertising this name and does not replicate its data.",
-          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+        "container_path": {
+          "description": "Absolute mount path inside the container.",
+          "pattern": "^/",
+          "type": "string"
+        },
+        "host_path": {
+          "description": "Node-side backing directory. @/ is resolved below Trellis's namespace volume root; absolute paths are used verbatim and are not namespace-isolated on disk.",
+          "pattern": "^(?:/|@/)",
           "type": "string"
         },
         "name": {
-          "description": "Volume identifier within this task.",
+          "description": "Stable namespace-scoped volume identity used for placement.",
           "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
-          "type": "string"
-        },
-        "path": {
-          "description": "Absolute mount path inside the container.",
-          "pattern": "^/",
           "type": "string"
         },
         "read_only": {
@@ -506,7 +506,8 @@
       },
       "required": [
         "name",
-        "path"
+        "host_path",
+        "container_path"
       ],
       "type": "object"
     }
