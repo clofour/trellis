@@ -27,8 +27,8 @@ task_groups:
             - port: 3306
         volumes:
           - name: db-data
-            path: /var/lib/mysql
-            host_volume: wordpress-db
+            host_path: "@/wordpress/db"
+            container_path: /var/lib/mysql
         health_check:
           type: tcp
           port: 3306
@@ -51,8 +51,8 @@ task_groups:
             - port: 80
         volumes:
           - name: wp-content
-            path: /var/www/html/wp-content
-            host_volume: wordpress-content
+            host_path: "@/wordpress/content"
+            container_path: /var/www/html/wp-content
         health_check:
           type: http
           port: 80
