@@ -169,13 +169,13 @@ trellisctl jobs delete web --wait --timeout 2m
 
 ## Inspect and maintain nodes without UUID copying
 
-`nodes list` puts the human-meaningful address first, shows a short ID, and formats CPU/memory for humans. When placement depends on a node's labels or advertised host volumes, inspect that node directly:
+`nodes list` puts the human-meaningful address first, shows a short ID, and formats CPU/memory for humans. When placement depends on a node's labels or an existing local-volume registration, inspect that node directly:
 
 ```sh
 trellisctl nodes status worker-2
 ```
 
-`nodes status` shows the full ID, scheduling state, version, CPU/memory capacity, last heartbeat, labels, and advertised host-volume names. Add `--output json` when automation needs the API representation.
+`nodes status` shows the full ID, scheduling state, version, CPU/memory capacity, last heartbeat, labels, and locally known volume registrations. The Raft-backed registration is authoritative for placement; the node view is useful for confirming what backing volumes the node itself has recorded. Add `--output json` when automation needs the API representation.
 
 Node references for status, drain, undrain, and remove may be any of:
 
