@@ -34,7 +34,7 @@ var requiredFields = map[reflect.Type][]string{
 	reflect.TypeOf(spec.SecretRefSpec{}):     {"name", "target"},
 	reflect.TypeOf(spec.PortSpec{}):          {"port"},
 	reflect.TypeOf(spec.HealthCheckSpec{}):   {"type"},
-	reflect.TypeOf(spec.VolumeSpec{}):        {"name", "path"},
+	reflect.TypeOf(spec.VolumeSpec{}):        {"name", "host_path", "container_path"},
 }
 
 var enumValues = map[reflect.Type][]string{
@@ -216,8 +216,8 @@ func applySemanticConstraints(root schema) {
 	addSecretConditions(def(root, "SecretRefSpec"))
 
 	patchDef(root, "VolumeSpec", "name", identifier())
-	patchDef(root, "VolumeSpec", "path", schema{"pattern": `^/`})
-	patchDef(root, "VolumeSpec", "host_volume", identifier())
+	patchDef(root, "VolumeSpec", "host_path", schema{"pattern": `^(?:/|@/)`})
+	patchDef(root, "VolumeSpec", "container_path", schema{"pattern": `^/`})
 	addNetworkingConditions(def(root, "TaskNetworkingSpec"))
 }
 
@@ -311,7 +311,7 @@ func describeAuthoringFields(root schema) {
 	describeDef(root, "TaskSpec", "image", "Pullable OCI image reference. Pin a version or digest for reproducible deployments.")
 	describeDef(root, "TaskSpec", "env", "Literal environment variables. Keep credentials in Trellis secrets instead of manifest text.")
 	describeDef(root, "TaskSpec", "networking", "Network attachment and, for host mode, direct node-port reservations.")
-	describeDef(root, "TaskSpec", "volumes", "Allocation-local or advertised host-volume mounts for this task.")
+	describeDef(root, "TaskSpec", "volumes", "Namespace-scoped named volumes. First placement registers a volume to one node; later allocations using the same namespace/name are scheduled there.")
 	describeDef(root, "TaskSpec", "resources", "CPU and memory requested from the scheduler for each task instance.")
 	describeDef(root, "TaskSpec", "health_check", "Optional HTTP, TCP, or script readiness/health observation. A running task without one is considered healthy.")
 	describeDef(root, "TaskSpec", "secrets", "Stored namespace secrets delivered to the task as environment variables or files.")
@@ -336,9 +336,9 @@ func describeAuthoringFields(root schema) {
 	describeDef(root, "SecretRefSpec", "path", "Destination path below /run/trellis-secrets/ used by a file target.")
 	describeDef(root, "SecretRefSpec", "mode", "File mode for a file target: 0400 or 0600 (or decimal 256/384). Zero uses the default.")
 
-	describeDef(root, "VolumeSpec", "name", "Volume identifier within this task.")
-	describeDef(root, "VolumeSpec", "path", "Absolute mount path inside the container.")
-	describeDef(root, "VolumeSpec", "host_volume", "Optional advertised node volume name. Trellis schedules only onto nodes advertising this name and does not replicate its data.")
+	describeDef(root, "VolumeSpec", "name", "Stable namespace-scoped volume identity used for placement.")
+	describeDef(root, "VolumeSpec", "host_path", "Node-side backing directory. @/ is resolved below Trellis's namespace volume root; absolute paths are used verbatim and are not namespace-isolated on disk.")
+	describeDef(root, "VolumeSpec", "container_path", "Absolute mount path inside the container.")
 	describeDef(root, "VolumeSpec", "read_only", "Mount this volume read-only when true.")
 }
 
