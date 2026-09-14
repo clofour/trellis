@@ -138,6 +138,7 @@ func nodeHasTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpe
 				return false
 			}
 		}
+	}
 	return true
 }
 
