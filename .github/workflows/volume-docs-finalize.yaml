@@ -55,6 +55,11 @@ jobs:
           end = s.index('## Let a trusted workload automate its namespace', start)
           replacement = '''## Use local volumes without confusing identity and path\n\n**Outcome:** keep node-local data stable across allocation replacement while making it explicit which node owns it and where its bytes live.\n\nEvery volume has three separate pieces: `name` is the namespace-scoped identity used by the scheduler, `host_path` is the node-side backing directory, and `container_path` is the mount destination. For Trellis-managed local storage, use the `@/` prefix:\n\n```yaml\nvolumes:\n  - name: cache\n    host_path: "@/cache"\n    container_path: /var/cache/app\n```\n\n`@/cache` resolves below Trellis's volume root for the job namespace and Trellis creates that directory on the node chosen for first placement. If you need an operator-prepared directory instead, use a clean absolute path:\n\n```yaml\nvolumes:\n  - name: database\n    host_path: /srv/trellis/database\n    container_path: /var/lib/app\n```\n\nAn absolute path must already exist and is used verbatim, so filesystem-level namespace isolation is the operator's responsibility. In both forms, the first allocation using an unseen `(namespace, name)` durably binds that identity to one node. Later allocations using the same identity return to that node; loss of the owner leaves them unplaced rather than causing Trellis to create a second copy. Changing `host_path` changes the backing directory on the same owning node and never moves bytes.\n\nA scaled task group repeats the same volume identities in every replica, so sharing a volume name also shares locality. Stateful replicas that need independent local disks should be modeled as independently named task groups/jobs with distinct volume names, plus application-level replication or another storage system. Back up volume data separately; Trellis desired-state backups preserve the ownership metadata, not the bytes.\n\n'''
           s = s[:start] + replacement + s[end:]
+          s = s.replace(
+              '''          - name: backups\n            path: /backups\n            host_volume: db-backups''',
+              '''          - name: backups\n            host_path: "@/db-backups"\n            container_path: /backups'''
+          )
+          s = s.replace('host-volume requirements', 'local-volume requirements')
           p.write_text(s)
 
           p = Path('docs/public/learning-path.md')
@@ -70,6 +75,22 @@ jobs:
               "Trellis backups contain the job, encrypted secret records, and volume-registration locality metadata, but not PostgreSQL volume data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities."
           )
           p.write_text(s)
+
+          p = Path('examples/wordpress/README.md')
+          s = p.read_text()
+          s = s.replace('advertised host volumes', 'local volume registration')
+          s = s.replace('host volumes, health checks', 'local volumes, health checks')
+          s = s.replace(
+              'The single allocation requires two host volumes. Create them with ownership appropriate for the container images, then advertise them when starting a node:',
+              'The manifest uses Trellis-managed `@/` paths for both local volumes, so no node startup flags are required. Trellis creates the namespaced backing directories on the node selected for first placement. If you switch to absolute `host_path` values, create those directories with ownership appropriate for the container images before applying the job.'
+          )
+          old_block = '''```sh\nsudo install -d -m 0750 /srv/trellis/wordpress-db\nsudo install -d -m 0750 /srv/trellis/wordpress-content\nsudo trellis \\\n  --cluster-token "$TRELLIS_TOKEN" \\\n  --host-volume wordpress-db=/srv/trellis/wordpress-db \\\n  --host-volume wordpress-content=/srv/trellis/wordpress-content\n```'''
+          new_block = '''```yaml\nvolumes:\n  - name: db-data\n    host_path: "@/wordpress/db"\n    container_path: /var/lib/mysql\n```'''
+          if old_block not in s:
+              raise SystemExit('wordpress host-volume setup block not found')
+          s = s.replace(old_block, new_block)
+          s = s.replace('does not make host-volume data portable', 'does not make local volume data portable')
+          p.write_text(s)
           PY
       - name: Ensure legacy volume model is gone
         run: |
@@ -84,6 +105,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/public/operations.md docs/developer/node-internals.md docs/public/cookbook.md docs/public/learning-path.md examples/patroni/README.md
+          git add docs/public/operations.md docs/developer/node-internals.md docs/public/cookbook.md docs/public/learning-path.md examples/patroni/README.md examples/wordpress/README.md
           git commit -m "docs: finalize volume registration semantics"
           git push origin HEAD:volume-registration-model
