@@ -21,8 +21,7 @@ type PlacementIntent struct {
 	Tasks         []spec.TaskSpec
 	Constraints   []spec.ConstraintSpec
 	// VolumeOwners maps namespace/name volume registrations to their owning node.
-	// Schedule mutates the map when it places the first allocation for a volume,
-	// making the claim atomic within a reconciliation pass.
+	// Schedule mutates the map when it places the first allocation for a volume.
 	VolumeOwners map[string]uuid.UUID
 }
 
@@ -97,7 +96,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 			break
 		}
 
-		claimTaskVolumes(target.ID, intent.Namespace, intent.Tasks, intent.VolumeOwners)
+		claimTaskVolumes(target, intent.Namespace, intent.Tasks, intent.VolumeOwners)
 		result = append(result, Placement{
 			TaskGroupName: intent.TaskGroupName,
 			NodeID:        target.ID,
@@ -111,6 +110,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 }
 
 func volumeRegistrationKey(namespace, name string) string { return namespace + "\x00" + name }
+func advertisedVolumeName(namespace, name string) string  { return namespace + "/" + name }
 
 func seedAdvertisedVolumeOwners(nodes []*Node, owners map[string]uuid.UUID) {
 	for _, node := range nodes {
@@ -142,12 +142,17 @@ func nodeHasTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpe
 	return true
 }
 
-func claimTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) {
+func claimTaskVolumes(node *Node, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) {
 	for _, task := range tasks {
 		for _, volume := range task.Volumes {
 			key := volumeRegistrationKey(namespace, volume.Name)
-			if _, ok := owners[key]; !ok {
-				owners[key] = nodeID
+			if _, ok := owners[key]; ok {
+				continue
+			}
+			owners[key] = node.ID
+			registration := advertisedVolumeName(namespace, volume.Name)
+			if !slices.Contains(node.Volumes, registration) {
+				node.Volumes = append(node.Volumes, registration)
 			}
 		}
 	}
