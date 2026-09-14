@@ -200,12 +200,14 @@ type HealthCheckSpec struct {
 	Threshold int             `yaml:"threshold,omitempty" json:"threshold,omitempty"`
 }
 
-// VolumeSpec mounts storage into a task.
+// VolumeSpec mounts a namespace-scoped named volume into a task.
+// Name is the stable scheduling identity, HostPath is its node-side backing,
+// and ContainerPath is the mount destination inside the container.
 type VolumeSpec struct {
-	Name       string `yaml:"name" json:"name"`
-	Path       string `yaml:"path" json:"path"`
-	HostVolume string `yaml:"host_volume,omitempty" json:"host_volume,omitempty"`
-	ReadOnly   bool   `yaml:"read_only,omitempty" json:"read_only,omitempty"`
+	Name          string `yaml:"name" json:"name"`
+	HostPath      string `yaml:"host_path" json:"host_path"`
+	ContainerPath string `yaml:"container_path" json:"container_path"`
+	ReadOnly      bool   `yaml:"read_only,omitempty" json:"read_only,omitempty"`
 }
 
 // TaskGroupContentHash returns a digest of task-group fields that affect running containers.
