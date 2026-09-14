@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"slices"
+	"strings"
 
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
@@ -42,6 +43,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 	if intent.VolumeOwners == nil {
 		intent.VolumeOwners = make(map[string]uuid.UUID)
 	}
+	seedAdvertisedVolumeOwners(nodes, intent.VolumeOwners)
 
 	replicaCounts := make(map[uuid.UUID]int)
 	usedCPU := make(map[uuid.UUID]int)
@@ -110,6 +112,25 @@ func Schedule(intent *PlacementIntent) []Placement {
 
 func volumeRegistrationKey(namespace, name string) string { return namespace + "\x00" + name }
 
+func seedAdvertisedVolumeOwners(nodes []*Node, owners map[string]uuid.UUID) {
+	for _, node := range nodes {
+		for _, registration := range node.Volumes {
+			namespace, name, ok := strings.Cut(registration, "/")
+			if !ok || namespace == "" || name == "" {
+				continue
+			}
+			key := volumeRegistrationKey(namespace, name)
+			if owner, exists := owners[key]; exists && owner != node.ID {
+				// Conflicting registrations are deliberately unschedulable rather
+				// than silently choosing one copy of the volume.
+				owners[key] = uuid.Nil
+				continue
+			}
+			owners[key] = node.ID
+		}
+	}
+}
+
 func nodeHasTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) bool {
 	for _, task := range tasks {
 		for _, volume := range task.Volumes {
@@ -117,7 +138,6 @@ func nodeHasTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpe
 				return false
 			}
 		}
-	}
 	return true
 }
 
