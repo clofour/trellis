@@ -6,35 +6,40 @@ This directory demonstrates how Trellis can place and monitor three Patroni/Post
 
 ## What the manifest provides
 
-- Three `postgres` group allocations with a normal scheduler preference to spread replicas.
-- A `database=true` node constraint and required `patroni-data` host volume.
+- Three independently named, single-allocation PostgreSQL task groups.
+- Explicit `patroni-member=1`, `2`, and `3` constraints so the three database members are tied to three deliberately prepared failure domains.
+- A distinct namespace-scoped volume identity for every PostgreSQL member (`postgres-data-1`, `postgres-data-2`, and `postgres-data-3`).
 - Task-level namespace WireGuard networking with the `runsc` runtime for additional syscall-level sandboxing.
-- PostgreSQL and Patroni REST listeners inside the WireGuard-attached task, plus a script `/health` probe.
+- PostgreSQL and Patroni REST listeners inside each namespace-networked task, plus a script `/health` probe.
 - Namespace-scoped Trellis API access for optional endpoint discovery.
 - Environment-delivered superuser and replication credentials.
-- Rolling replacement with one in-flight replacement.
 
-Normal replica spreading is a preference, not a hard topology constraint. Verify actual node placement and do not assume three allocations imply three independent failure domains.
+The separate task groups and volume names are deliberate. A Trellis volume name is a namespace-scoped locality identity: every allocation using the same `(namespace, name)` is scheduled to the node that owns that registration. Reusing one volume name for all three Patroni members would therefore colocate them instead of giving them independent local disks.
 
 ## Required work before applying
 
-### 1. Provision storage and nodes
+### 1. Prepare three nodes
 
-Prepare at least three nodes, ideally in separate failure domains:
+Label one intended database node for each member:
 
 ```sh
-sudo install -d -m 0700 /srv/trellis/patroni
-sudo trellis \
-  --cluster-token "$TRELLIS_TOKEN" \
-  --label database=true \
-  --host-volume patroni-data=/srv/trellis/patroni
+# Node 1
+sudo trellis --bootstrap-token "$TRELLIS_TOKEN" --label patroni-member=1
+
+# Node 2
+sudo trellis --bootstrap-token "$TRELLIS_TOKEN" --label patroni-member=2
+
+# Node 3
+sudo trellis --bootstrap-token "$TRELLIS_TOKEN" --label patroni-member=3
 ```
 
-Each path is node-local and contains a different PostgreSQL data directory. Back it up independently. A host-volume name does not replicate bytes between nodes.
+The manifest uses `@/patroni/member-N`, so each node creates its PostgreSQL directory below Trellis's volume root for the `database` namespace when that member is first realized. Each logical volume then remains registered to that node. Back up the three data directories independently; the matching `@/` paths do not imply replication between nodes.
+
+If you instead use explicit absolute `host_path` values, prepare those directories yourself and keep the member constraints. Absolute host paths are used verbatim and do not gain filesystem-level namespace isolation from Trellis.
 
 ### 2. Supply a real DCS and Patroni configuration
 
-The manifest's static `PATRONI_NAME=trellis-member` is a placeholder and is invalid for a real cluster because every member needs a unique identity. Build an entrypoint that derives identity from stable allocation/node context or injects explicitly unique configuration. Configure Patroni for etcd, Consul, or another Patroni-supported DCS with quorum and TLS appropriate to your environment.
+The manifest gives each member a distinct static `PATRONI_NAME`, but it still omits the real DCS configuration required by Patroni. Configure Patroni for etcd, Consul, or another Patroni-supported DCS with quorum and TLS appropriate to your environment.
 
 `discover-members.sh` queries Trellis allocations labeled `service:patroni`; it can help a controller find endpoints, but the Trellis catalog is eventually reconciled service discovery—not Patroni's consensus DCS. Never use the catalog alone to decide which PostgreSQL member may accept writes.
 
@@ -63,7 +68,7 @@ trellisctl --namespace database jobs status patroni
 trellisctl nodes list
 ```
 
-Check that all three allocations are on intended nodes, Patroni reports one leader, replicas stream successfully, and write/read routing follows the desired roles. Inspect allocation events when a health check fails; Trellis health alone does not prove replication is current or promotion is safe.
+Check that all three allocations are on their intended nodes, Patroni reports one leader, replicas stream successfully, and write/read routing follows the desired roles. Inspect allocation events when a health check fails; Trellis health alone does not prove replication is current or promotion is safe.
 
 ## Failure and upgrade tests
 
@@ -72,12 +77,12 @@ Before storing production data, demonstrate all of the following in a disposable
 1. loss and return of a replica;
 2. loss of the PostgreSQL leader and exactly-one safe promotion;
 3. loss of DCS quorum without split-brain writes;
-4. node drain and replacement without losing the only current copy;
+4. node loss without Trellis silently recreating that member's registered volume on another node;
 5. WAL archiving, base backup, point-in-time restore, and credential recovery;
 6. `pg_rewind` or reinitialization of the former primary;
-7. PostgreSQL/Patroni rolling upgrades with version-skew compatibility;
+7. PostgreSQL/Patroni upgrades with version-skew compatibility;
 8. restoration when Trellis desired state and database data are recovered separately.
 
-Trellis backups contain the job and encrypted secret records, not PostgreSQL data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities.
+Trellis backups contain the job and encrypted secret records, not PostgreSQL volume data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities.
 
 [Examples index](../README.md) · [Learning path](../../docs/public/learning-path.md)
