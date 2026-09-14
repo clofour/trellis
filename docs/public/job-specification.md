@@ -145,7 +145,7 @@ Task groups are the unit of placement, scaling, updates, restart behavior, and d
 | `env` | No | Literal environment-variable map. Do not place credentials here. |
 | `networking` | No | Network mode and, for host mode, optional port reservations. |
 | `resources` | No | CPU in millicores and memory as a byte count or readable size. |
-| `volumes` | No | Allocation-local or advertised host-volume mounts. |
+| `volumes` | No | Namespace-scoped named volume mounts with explicit host and container paths. |
 | `secrets` | No | References to namespace secrets delivered as environment variables or files. |
 | `health_check` | No | HTTP, TCP, or script readiness/health observation. |
 
@@ -183,14 +183,25 @@ CPU is expressed in millicores. The first-party YAML representation accepts a ra
 ```yaml
 volumes:
   - name: cache
-    path: /var/cache/app
-  - name: data
-    path: /var/lib/app
-    host_volume: app-data
+    host_path: "@/cache"
+    container_path: /var/cache/app
+  - name: database
+    host_path: /srv/postgres
+    container_path: /var/lib/postgresql/data
     read_only: false
 ```
 
-Every container path must be absolute. Without `host_volume`, Trellis creates allocation-local storage below its node data directory. With `host_volume`, the name must be advertised by the selected node; Trellis does not create, replicate, snapshot, or back up that host data.
+Every volume has three independent pieces of information. `name` is its stable logical identity within the job namespace and is used for locality-aware scheduling. `host_path` is the backing directory on the owning node. `container_path` is the absolute mount destination inside the container.
+
+The first allocation that uses a previously unseen `(namespace, name)` establishes that volume's node registration. The node persists and advertises the registration, and later allocations using the same namespace and name are scheduled onto that node. Trellis does not silently create another copy on a different node if the owner is unavailable. A named volume therefore has a lifetime independent of any one allocation.
+
+A `host_path` beginning with `@/` is resolved relative to Trellis's volume root for the current namespace. With the default data directory, `@/database` in namespace `acme` resolves below `/var/lib/trellis/data/volumes/namespaces/acme/database`; Trellis creates that directory when realizing the first allocation. `@/` is only a path prefix: the volume identity still comes from `name`.
+
+An absolute `host_path` such as `/srv/postgres` is used verbatim and must already exist on the selected node. This is an intentional escape hatch and **does not provide filesystem-level namespace isolation**: two namespaces can point at the same absolute host directory if an operator configures them that way. Use node constraints when an absolute path only exists on particular nodes so first placement does not repeatedly choose an unsuitable node.
+
+Changing `host_path` does not change the volume identity or move it to another node. A later revision may point the same name at another path on its registered node, but Trellis does not copy or migrate the bytes; preparing the new backing data is the operator's responsibility.
+
+Because locality is attached to `(namespace, name)`, multiple allocations that use the same name intentionally share one node registration. This is useful when several tasks need the same local data, but it also means a replicated stateful system that requires independent disks on separate nodes must use distinct volume names for those members. Trellis does not replicate, snapshot, back up, or migrate volume contents.
 
 ### Secrets
 
