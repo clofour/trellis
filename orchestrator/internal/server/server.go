@@ -96,16 +96,20 @@ func (s *Server) Backup(_ context.Context) (*api.BackupSnapshot, error) {
 		return nil, err
 	}
 	result := &api.BackupSnapshot{
-		FormatVersion: api.BackupFormatVersion,
-		CreatedAt:     s.now().UTC(),
-		Jobs:          make(map[string]json.RawMessage, len(snapshot.Jobs)),
-		Secrets:       make(map[string]json.RawMessage, len(snapshot.Secrets)),
+		FormatVersion:       api.BackupFormatVersion,
+		CreatedAt:           s.now().UTC(),
+		Jobs:                make(map[string]json.RawMessage, len(snapshot.Jobs)),
+		Secrets:             make(map[string]json.RawMessage, len(snapshot.Secrets)),
+		VolumeRegistrations: make(map[string]json.RawMessage, len(snapshot.VolumeRegistrations)),
 	}
 	for key, value := range snapshot.Jobs {
 		result.Jobs[key] = json.RawMessage(value)
 	}
 	for key, value := range snapshot.Secrets {
 		result.Secrets[key] = json.RawMessage(value)
+	}
+	for key, value := range snapshot.VolumeRegistrations {
+		result.VolumeRegistrations[key] = json.RawMessage(value)
 	}
 	return result, nil
 }
@@ -118,7 +122,7 @@ func (s *Server) Restore(ctx context.Context, backup *api.BackupSnapshot) error 
 	if s.backupStore == nil {
 		return fmt.Errorf("restore is unavailable")
 	}
-	snapshot := &state.DesiredSnapshot{Jobs: make(map[string][]byte, len(backup.Jobs)), Secrets: make(map[string][]byte, len(backup.Secrets))}
+	snapshot := &state.DesiredSnapshot{Jobs: make(map[string][]byte, len(backup.Jobs)), Secrets: make(map[string][]byte, len(backup.Secrets)), VolumeRegistrations: make(map[string][]byte, len(backup.VolumeRegistrations))}
 	for key, value := range backup.Jobs {
 		if !json.Valid(value) {
 			return fmt.Errorf("job %q contains invalid JSON", key)
@@ -130,6 +134,12 @@ func (s *Server) Restore(ctx context.Context, backup *api.BackupSnapshot) error 
 			return fmt.Errorf("secret %q contains invalid JSON", key)
 		}
 		snapshot.Secrets[key] = value
+	}
+	for key, value := range backup.VolumeRegistrations {
+		if !json.Valid(value) {
+			return fmt.Errorf("volume registration %q contains invalid JSON", key)
+		}
+		snapshot.VolumeRegistrations[key] = value
 	}
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()

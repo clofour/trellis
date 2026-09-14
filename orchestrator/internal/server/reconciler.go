@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/clofour/trellis/internal/api"
@@ -94,6 +95,16 @@ func (s *Server) Reconcile(ctx context.Context) {
 		}
 	}()
 	now := s.now().UTC()
+	volumeOwners, err := s.state.ListVolumeRegistrations(ctx)
+	if err != nil {
+		s.log.Error("load volume registrations", "error", err)
+		return
+	}
+	persistedVolumeOwners := make(map[string]uuid.UUID, len(volumeOwners))
+	for key, owner := range volumeOwners {
+		persistedVolumeOwners[key] = owner
+	}
+	var newAllocations []*Allocation
 	s.mu.Lock()
 	for _, node := range s.nodes {
 		if node.Status == NodeStatusHealthy && now.Sub(node.LastHeartbeat) > 3*heartbeatInterval {
@@ -214,17 +225,38 @@ func (s *Server) Reconcile(ctx context.Context) {
 					}
 				}
 			}
-			placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: deficit, Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints})
+			placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: deficit, Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints, VolumeOwners: volumeOwners})
 			for _, placement := range placements {
 				node := s.nodes[placement.NodeID]
 				name := fmt.Sprintf("%s-%s-%s-%s", namespace, jobName, group.Name, uuid.NewString()[:8])
 				allocation := &Allocation{ID: name, Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Tasks: group.Tasks, Node: node, Generation: 1, JobRevision: job.Revision, Phase: lifecycle.PhasePlaced, Health: lifecycle.HealthUnknown, Diagnostic: lifecycle.Diagnostic{CreatedAt: now, TransitionedAt: now}}
 				actions = append(actions, Action{Type: ActionStart, Allocation: allocation})
-				s.allocations = append(s.allocations, allocation)
+				newAllocations = append(newAllocations, allocation)
+				valid = append(valid, allocation)
 			}
 		}
 	}
 	s.mu.Unlock()
+
+	for key, owner := range volumeOwners {
+		if _, exists := persistedVolumeOwners[key]; exists {
+			continue
+		}
+		namespace, name, ok := strings.Cut(key, "/")
+		if !ok || namespace == "" || name == "" {
+			s.log.Error("invalid volume registration key", "key", key)
+			return
+		}
+		if err := s.state.PutVolumeRegistration(ctx, &VolumeRegistration{Namespace: namespace, Name: name, NodeID: owner}); err != nil {
+			s.log.Error("persist volume registration", "volume", key, "node_id", owner, "error", err)
+			return
+		}
+	}
+	if len(newAllocations) > 0 {
+		s.mu.Lock()
+		s.allocations = append(s.allocations, newAllocations...)
+		s.mu.Unlock()
+	}
 
 	for i := range actions {
 		if err := s.Execute(ctx, &actions[i]); err != nil {
