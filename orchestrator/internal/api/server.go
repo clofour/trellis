@@ -10,15 +10,16 @@ import (
 )
 
 // BackupFormatVersion is the current desired-state backup format.
-const BackupFormatVersion = 1
+const BackupFormatVersion = 2
 
 // BackupSnapshot contains desired state only. Secret values remain encrypted
 // exactly as stored in Raft and still require the separately managed KEK.
 type BackupSnapshot struct {
-	FormatVersion int                        `json:"format_version"`
-	CreatedAt     time.Time                  `json:"created_at"`
-	Jobs          map[string]json.RawMessage `json:"jobs"`
-	Secrets       map[string]json.RawMessage `json:"secrets"`
+	FormatVersion       int                        `json:"format_version"`
+	CreatedAt           time.Time                  `json:"created_at"`
+	Jobs                map[string]json.RawMessage `json:"jobs"`
+	Secrets             map[string]json.RawMessage `json:"secrets"`
+	VolumeRegistrations map[string]json.RawMessage `json:"volume_registrations"`
 }
 
 // NodeStatusResponse describes the scheduling status of a node.
@@ -206,11 +207,11 @@ type JobRevisionListResponse = []JobRevisionResponse
 
 // AllocationMetricsResponse reports current resource usage for an allocation task.
 type AllocationMetricsResponse struct {
-	AllocationID       string    `json:"allocation_id"`
-	Task               string    `json:"task"`
-	CPUUsageNanoseconds int64    `json:"cpu_usage_nanoseconds"`
-	MemoryUsageBytes   int64     `json:"memory_usage_bytes"`
-	CollectedAt        time.Time `json:"collected_at"`
+	AllocationID        string    `json:"allocation_id"`
+	Task                string    `json:"task"`
+	CPUUsageNanoseconds int64     `json:"cpu_usage_nanoseconds"`
+	MemoryUsageBytes    int64     `json:"memory_usage_bytes"`
+	CollectedAt         time.Time `json:"collected_at"`
 }
 
 // AllocationMetricsListResponse is the response returned when listing allocation metrics.

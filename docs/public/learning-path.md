@@ -11,7 +11,7 @@ Complete [Getting Started](getting-started.md) first. It establishes the only go
 | 3. Replicas and placement | Multiple replicas and the scheduling consequences of fixed host ports | [`examples/replicated-service`](../../examples/replicated-service/) |
 | 4. Rolling updates | Healthy overlap, `max_parallel`, and temporary capacity requirements | [`examples/rolling-update`](../../examples/rolling-update/) |
 | 5. Runtime configuration | Namespace-scoped environment/file secrets and rotation | [`examples/secrets`](../../examples/secrets/) |
-| 6. Persistence | Allocation-local storage, advertised host volumes, constraints, backup responsibility | [`examples/volumes`](../../examples/volumes/) |
+| 6. Persistence | Namespace-scoped volume identities, `@/` paths, explicit host paths, locality, and backup responsibility | [`examples/volumes`](../../examples/volumes/) |
 | 7. Colocated tasks | Sidecars and the consequences of shared placement/scaling/lifecycle | [`examples/sidecar`](../../examples/sidecar/) |
 | 8. Namespace networking | Isolated, host, and namespace networking; service discovery | [`examples/namespace-networking`](../../examples/namespace-networking/) |
 | 9. In-cluster automation | Namespace/cluster scope and read/write API access | [`examples/api-access`](../../examples/api-access/) |
@@ -105,9 +105,13 @@ Follow [`examples/secrets`](../../examples/secrets/) before using secrets in a l
 
 ## 6. Volumes
 
-Start with allocation-managed scratch data, then learn advertised `host_volume` placement. A host-volume name tells the scheduler which nodes can satisfy a mount; it does not replicate, snapshot, or transport bytes.
+Learn the three separate pieces of a volume: `name` is the stable namespace-scoped identity used for locality-aware placement, `host_path` is the node-side backing directory, and `container_path` is where the directory appears in the container.
 
-The [`volumes`](../../examples/volumes/) example deliberately requires operator preparation. Complete its node-label, directory-ownership, backup, and restore notes before adapting it to real data. `trellisctl nodes status NODE` shows the labels and advertised host-volume names that affect placement.
+Start with `host_path: "@/scratch"`. The `@/` prefix resolves below Trellis's volume root for the workload namespace, and Trellis creates the backing directory when the first allocation is realized. Then compare it with an explicit absolute path such as `/srv/trellis/app-data`, which is used verbatim and therefore requires operator preparation and does not receive filesystem-level namespace isolation.
+
+The first allocation using an unseen `(namespace, name)` establishes that volume's owning node. Later allocations using the same identity are scheduled there; node loss does not cause Trellis to silently create a second copy. Multiple allocations that intentionally use one volume name therefore share locality. Replicated stateful members that need independent local disks must use independently named task groups or jobs with distinct volume names, because scaling one task group repeats the same volume identity.
+
+The [`volumes`](../../examples/volumes/) example demonstrates both path forms and uses a node constraint to steer first placement for the explicit absolute path. Complete its directory-ownership, namespace-isolation, backup, and recovery notes before adapting it to real data. `trellisctl nodes status NODE` shows the registered volume identities that affect later placement.
 
 ## 7. Sidecars and task groups
 

@@ -1,8 +1,8 @@
 name: patroni
 namespace: database
 task_groups:
-  - name: postgres
-    count: 3
+  - name: postgres-1
+    count: 1
     runtime: runsc
     api_access:
       scope: namespace
@@ -11,20 +11,19 @@ task_groups:
       service: patroni
       role: database
     constraints:
-      - attribute: database
-        value: "true"
+      - attribute: patroni-member
+        value: "1"
     restart:
       max_restarts: 5
       window: 10m
     update:
-      strategy: rolling
-      max_parallel: 1
+      strategy: recreate
     tasks:
       - name: patroni
         image: ghcr.io/zalando/spilo-17:4.0-p2
         env:
           PATRONI_SCOPE: trellis-patroni
-          PATRONI_NAME: trellis-member
+          PATRONI_NAME: trellis-member-1
           PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
           PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
         networking:
@@ -37,9 +36,105 @@ task_groups:
             target: env
             env: PGPASSWORD_STANDBY
         volumes:
-          - name: postgres-data
-            path: /home/postgres/pgroot
-            host_volume: patroni-data
+          - name: postgres-data-1
+            host_path: "@/patroni/member-1"
+            container_path: /home/postgres/pgroot
+        resources:
+          cpu: 1000
+          memory: 2147483648
+        health_check:
+          type: script
+          command: [curl, --fail, --silent, http://127.0.0.1:8008/health]
+          interval: 10s
+          timeout: 3s
+          threshold: 3
+
+  - name: postgres-2
+    count: 1
+    runtime: runsc
+    api_access:
+      scope: namespace
+      access: read
+    labels:
+      service: patroni
+      role: database
+    constraints:
+      - attribute: patroni-member
+        value: "2"
+    restart:
+      max_restarts: 5
+      window: 10m
+    update:
+      strategy: recreate
+    tasks:
+      - name: patroni
+        image: ghcr.io/zalando/spilo-17:4.0-p2
+        env:
+          PATRONI_SCOPE: trellis-patroni
+          PATRONI_NAME: trellis-member-2
+          PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+          PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+        networking:
+          mode: namespace
+        secrets:
+          - name: postgres-password
+            target: env
+            env: PGPASSWORD_SUPERUSER
+          - name: replication-password
+            target: env
+            env: PGPASSWORD_STANDBY
+        volumes:
+          - name: postgres-data-2
+            host_path: "@/patroni/member-2"
+            container_path: /home/postgres/pgroot
+        resources:
+          cpu: 1000
+          memory: 2147483648
+        health_check:
+          type: script
+          command: [curl, --fail, --silent, http://127.0.0.1:8008/health]
+          interval: 10s
+          timeout: 3s
+          threshold: 3
+
+  - name: postgres-3
+    count: 1
+    runtime: runsc
+    api_access:
+      scope: namespace
+      access: read
+    labels:
+      service: patroni
+      role: database
+    constraints:
+      - attribute: patroni-member
+        value: "3"
+    restart:
+      max_restarts: 5
+      window: 10m
+    update:
+      strategy: recreate
+    tasks:
+      - name: patroni
+        image: ghcr.io/zalando/spilo-17:4.0-p2
+        env:
+          PATRONI_SCOPE: trellis-patroni
+          PATRONI_NAME: trellis-member-3
+          PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+          PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+        networking:
+          mode: namespace
+        secrets:
+          - name: postgres-password
+            target: env
+            env: PGPASSWORD_SUPERUSER
+          - name: replication-password
+            target: env
+            env: PGPASSWORD_STANDBY
+        volumes:
+          - name: postgres-data-3
+            host_path: "@/patroni/member-3"
+            container_path: /home/postgres/pgroot
         resources:
           cpu: 1000
           memory: 2147483648

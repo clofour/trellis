@@ -239,11 +239,16 @@ func Validate(job *JobSpec) error {
 				if !identifierPattern.MatchString(volume.Name) {
 					add(path+".name", "invalid_identifier", "volume name must be a safe identifier")
 				}
-				if strings.TrimSpace(volume.Path) == "" || !strings.HasPrefix(volume.Path, "/") {
-					add(path+".path", "invalid", "absolute path is required")
+				if strings.TrimSpace(volume.ContainerPath) == "" || !filepath.IsAbs(volume.ContainerPath) || filepath.Clean(volume.ContainerPath) != volume.ContainerPath {
+					add(path+".container_path", "invalid", "clean absolute container path is required")
 				}
-				if volume.HostVolume != "" && !identifierPattern.MatchString(volume.HostVolume) {
-					add(path+".host_volume", "invalid_identifier", fmt.Sprintf("invalid host volume %q", volume.HostVolume))
+				if strings.HasPrefix(volume.HostPath, "@/") {
+					rel := strings.TrimPrefix(volume.HostPath, "@/")
+					if rel == "" || filepath.IsAbs(rel) || filepath.Clean(rel) != rel || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+						add(path+".host_path", "invalid", "@/ host path must contain a clean relative path")
+					}
+				} else if strings.TrimSpace(volume.HostPath) == "" || !filepath.IsAbs(volume.HostPath) || filepath.Clean(volume.HostPath) != volume.HostPath {
+					add(path+".host_path", "invalid", "host path must be a clean absolute path or begin with @/")
 				}
 				if volume.Name != "" {
 					if _, exists := volumes[volume.Name]; exists {

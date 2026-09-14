@@ -17,8 +17,6 @@ agent_advertise: node-a:8127
 wireguard_port: 51900
 labels:
   - storage=fast
-host_volumes:
-  - data=/srv/data
 resources:
   reserved:
     cpu: 500
@@ -33,8 +31,8 @@ resources:
 	if cfg.Cluster != "production" || cfg.ClusterToken != "trls_boot_test" || cfg.AgentAdvertise != "node-a:8127" || cfg.WireGuardPort != 51900 {
 		t.Fatalf("unexpected config: %#v", cfg)
 	}
-	if len(cfg.Labels) != 1 || cfg.Labels[0] != "storage=fast" || len(cfg.HostVolumes) != 1 || cfg.HostVolumes[0] != "data=/srv/data" {
-		t.Fatalf("unexpected lists: labels=%v volumes=%v", cfg.Labels, cfg.HostVolumes)
+	if len(cfg.Labels) != 1 || cfg.Labels[0] != "storage=fast" {
+		t.Fatalf("unexpected labels: %v", cfg.Labels)
 	}
 	cpu, memory, err := nodecapacity.Resolve(8000, 32<<30)
 	if err != nil {

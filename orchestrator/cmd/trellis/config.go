@@ -44,7 +44,6 @@ type nodeConfigFile struct {
 	SecretsKey        *string              `yaml:"secrets_key"`
 	SecretsKeyID      *string              `yaml:"secrets_key_id"`
 	Labels            *[]string            `yaml:"labels"`
-	HostVolumes       *[]string            `yaml:"host_volumes"`
 	Resources         *nodeResourcesConfig `yaml:"resources"`
 }
 
@@ -94,9 +93,6 @@ func loadNodeConfig(path string, cfg *config, flags *pflag.FlagSet) error {
 	}
 	if parsed.Labels != nil && !flags.Changed("label") {
 		cfg.Labels = append([]string(nil), (*parsed.Labels)...)
-	}
-	if parsed.HostVolumes != nil && !flags.Changed("host-volume") {
-		cfg.HostVolumes = append([]string(nil), (*parsed.HostVolumes)...)
 	}
 
 	// Resource reservation policy belongs to the Trellis node. Omitted values

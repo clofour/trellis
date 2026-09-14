@@ -212,22 +212,31 @@ For concurrent automation, read secret metadata and update with `--expected-vers
 
 Back up the secrets-encryption key separately from desired-state backups. Encrypted secret records are not recoverable without that key.
 
-## Keep scratch data separate from persistent local data
+## Use local volumes without confusing identity and path
 
-**Outcome:** make it explicit which data may disappear with an allocation and which data must survive allocation replacement on a node.
+**Outcome:** keep node-local data stable across allocation replacement while making it explicit which node owns it and where its bytes live.
 
-Use an ordinary volume without `host_volume` for allocation-local scratch data. Use an advertised `host_volume` when the data must live at an operator-managed node path:
+Every volume has three separate pieces: `name` is the namespace-scoped identity used by the scheduler, `host_path` is the node-side backing directory, and `container_path` is the mount destination. For Trellis-managed local storage, use the `@/` prefix:
 
 ```yaml
 volumes:
-  - name: data
-    path: /var/lib/app
-    host_volume: app-data
+  - name: cache
+    host_path: "@/cache"
+    container_path: /var/cache/app
 ```
 
-A host-volume name is a scheduling capability. Trellis places the allocation only on nodes advertising that name, but it does not create, replicate, snapshot, move, or restore the underlying bytes. Two nodes advertising the same volume name may still contain unrelated data.
+`@/cache` resolves below Trellis's volume root for the job namespace and Trellis creates that directory on the node chosen for first placement. If you need an operator-prepared directory instead, use a clean absolute path:
 
-Pair persistent local storage with deliberate node preparation, ownership, backups, restore drills, and—where availability matters—application replication or an external storage system. Do not assume rescheduling to another compatible node implies the same data is present there.
+```yaml
+volumes:
+  - name: database
+    host_path: /srv/trellis/database
+    container_path: /var/lib/app
+```
+
+An absolute path must already exist and is used verbatim, so filesystem-level namespace isolation is the operator's responsibility. In both forms, the first allocation using an unseen `(namespace, name)` durably binds that identity to one node. Later allocations using the same identity return to that node; loss of the owner leaves them unplaced rather than causing Trellis to create a second copy. Changing `host_path` changes the backing directory on the same owning node and never moves bytes.
+
+A scaled task group repeats the same volume identities in every replica, so sharing a volume name also shares locality. Stateful replicas that need independent local disks should be modeled as independently named task groups/jobs with distinct volume names, plus application-level replication or another storage system. Back up volume data separately; Trellis desired-state backups preserve the ownership metadata, not the bytes.
 
 ## Let a trusted workload automate its namespace
 
@@ -323,8 +332,8 @@ task_groups:
         image: registry.example.com/db-tools:v1
         volumes:
           - name: backups
-            path: /backups
-            host_volume: db-backups
+            host_path: "@/db-backups"
+            container_path: /backups
 ```
 
 Trellis keeps the maintenance container running and restarts it on failure. The container's internal cron or loop handles the schedule.
@@ -333,7 +342,7 @@ Trellis keeps the maintenance container running and restarts it on failure. The 
 
 **Outcome:** let Trellis place and operate replicated stateful members while the application remains responsible for data correctness and leadership.
 
-Use Trellis for the container layer: replica count, placement constraints, network attachment, secret delivery, host-volume requirements, restart policy, health observation, and discovery. Use the stateful system's native mechanisms for replication, leader election or consensus, fencing, membership changes, backups, and recovery.
+Use Trellis for the container layer: replica count, placement constraints, network attachment, secret delivery, local-volume requirements, restart policy, health observation, and discovery. Use the stateful system's native mechanisms for replication, leader election or consensus, fencing, membership changes, backups, and recovery.
 
 Do not infer a primary from Trellis scheduling order or health status. Scheduler replica spreading improves failure distribution but is not a consensus algorithm. Trellis discovery tells members where healthy allocations are; it does not decide which member may accept writes.
 

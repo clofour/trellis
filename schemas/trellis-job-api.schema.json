@@ -413,16 +413,16 @@
     "VolumeSpec": {
       "additionalProperties": false,
       "properties": {
-        "host_volume": {
-          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
+        "container_path": {
+          "pattern": "^/",
+          "type": "string"
+        },
+        "host_path": {
+          "pattern": "^(?:/|@/)",
           "type": "string"
         },
         "name": {
           "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$",
-          "type": "string"
-        },
-        "path": {
-          "pattern": "^/",
           "type": "string"
         },
         "read_only": {
@@ -431,7 +431,8 @@
       },
       "required": [
         "name",
-        "path"
+        "host_path",
+        "container_path"
       ],
       "type": "object"
     }

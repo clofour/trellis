@@ -109,7 +109,7 @@ func newHarness(t *testing.T, count int) *harness {
 	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("build node: %v\n%s", err, out)
 	}
-	h := &harness{t: t, bin: bin, token: "integration-token", client: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}}
+	h := &harness{t: t, bin: bin, token: "integration-token", client: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}}
 	base := t.TempDir()
 	for i := 0; i < count; i++ {
 		n := &node{dir: filepath.Join(base, fmt.Sprintf("node-%d", i))}

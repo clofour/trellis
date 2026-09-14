@@ -28,11 +28,13 @@ type RaftStore struct {
 }
 
 // DesiredSnapshot is the portable portion of control-plane state. Keys are
-// relative to either the jobs or secrets prefix so a backup can be restored
-// into a freshly bootstrapped cluster with a different name.
+// relative to their state prefixes so a backup can be restored into a freshly
+// bootstrapped cluster with a different name. Volume registrations preserve
+// locality metadata only; volume bytes remain external to the backup.
 type DesiredSnapshot struct {
-	Jobs    map[string][]byte `json:"jobs"`
-	Secrets map[string][]byte `json:"secrets"`
+	Jobs                map[string][]byte `json:"jobs"`
+	Secrets             map[string][]byte `json:"secrets"`
+	VolumeRegistrations map[string][]byte `json:"volume_registrations"`
 }
 
 // BackupDesired takes a linearizable view of desired state. The barrier makes
@@ -310,6 +312,7 @@ func (f *fsm) Apply(log *raft.Log) interface{} {
 func (f *fsm) desiredSnapshot(cluster string) (*DesiredSnapshot, error) {
 	jobsPrefix := fmt.Sprintf("trellis/%s/jobs/", cluster)
 	secretsPrefix := fmt.Sprintf("trellis/%s/secrets/", cluster)
+	volumesPrefix := fmt.Sprintf("trellis/%s/volume-registrations/", cluster)
 	jobs, err := f.store.List(context.Background(), jobsPrefix)
 	if err != nil {
 		return nil, err
@@ -318,12 +321,23 @@ func (f *fsm) desiredSnapshot(cluster string) (*DesiredSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := &DesiredSnapshot{Jobs: make(map[string][]byte, len(jobs)), Secrets: make(map[string][]byte, len(secrets))}
+	volumes, err := f.store.List(context.Background(), volumesPrefix)
+	if err != nil {
+		return nil, err
+	}
+	result := &DesiredSnapshot{
+		Jobs:                make(map[string][]byte, len(jobs)),
+		Secrets:             make(map[string][]byte, len(secrets)),
+		VolumeRegistrations: make(map[string][]byte, len(volumes)),
+	}
 	for key, value := range jobs {
 		result.Jobs[key[len(jobsPrefix):]] = value
 	}
 	for key, value := range secrets {
 		result.Secrets[key[len(secretsPrefix):]] = value
+	}
+	for key, value := range volumes {
+		result.VolumeRegistrations[key[len(volumesPrefix):]] = value
 	}
 	return result, nil
 }

@@ -11,7 +11,8 @@ task_groups:
         image: docker.io/library/nginx:1.27-alpine
         volumes:
           - name: scratch
-            path: /var/cache/app
+            host_path: "@/scratch"
+            container_path: /var/cache/app
           - name: database
-            path: /var/lib/app
-            host_volume: app-data
+            host_path: /srv/trellis/app-data
+            container_path: /var/lib/app

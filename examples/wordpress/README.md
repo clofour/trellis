@@ -1,22 +1,20 @@
 # WordPress development stack
 
-**Level:** Advanced composition · **Prerequisites:** understand task groups, task-level host networking, secrets, health checks, and advertised host volumes
+**Level:** Advanced composition · **Prerequisites:** understand task groups, task-level host networking, secrets, health checks, and local volume registration
 
-This example colocates WordPress and MariaDB in one allocation for a compact demonstration. It exercises sidecars, environment and secret injection, host volumes, health checks, restart policy, and service routing in one manifest.
+This example colocates WordPress and MariaDB in one allocation for a compact demonstration. It exercises sidecars, environment and secret injection, local volumes, health checks, restart policy, and service routing in one manifest.
 
 It is **not** a recommended production topology: the database and web tier share placement and lifecycle, and the group cannot be scaled safely by increasing `count`.
 
 ## Prepare the node
 
-The single allocation requires two host volumes. Create them with ownership appropriate for the container images, then advertise them when starting a node:
+The manifest uses Trellis-managed `@/` paths for both local volumes, so no node startup flags are required. Trellis creates the namespaced backing directories on the node selected for first placement. If you switch to absolute `host_path` values, create those directories with ownership appropriate for the container images before applying the job.
 
-```sh
-sudo install -d -m 0750 /srv/trellis/wordpress-db
-sudo install -d -m 0750 /srv/trellis/wordpress-content
-sudo trellis \
-  --cluster-token "$TRELLIS_TOKEN" \
-  --host-volume wordpress-db=/srv/trellis/wordpress-db \
-  --host-volume wordpress-content=/srv/trellis/wordpress-content
+```yaml
+volumes:
+  - name: db-data
+    host_path: "@/wordpress/db"
+    container_path: /var/lib/mysql
 ```
 
 The example uses host networking so WordPress can reach MariaDB at `127.0.0.1:3306`. MariaDB reserves host port 3306 and WordPress reserves host port 80, so the selected node must have both ports free. Host networking is an explicit tradeoff: the containers share the node's network surface rather than receiving normal isolation.
@@ -46,7 +44,7 @@ Browse to `http://NODE_ADDRESS` after the allocation becomes healthy. MariaDB's 
 
 ## Operate and tear down
 
-Back up both host paths using database-aware procedures; copying a live MariaDB directory is not automatically a consistent backup. Deleting the job stops the containers but does not make host-volume data portable:
+Back up both host paths using database-aware procedures; copying a live MariaDB directory is not automatically a consistent backup. Deleting the job stops the containers but does not make local volume data portable:
 
 ```sh
 trellisctl --namespace default jobs delete wordpress

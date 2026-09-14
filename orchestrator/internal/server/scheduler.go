@@ -19,6 +19,9 @@ type PlacementIntent struct {
 	Allocations   []*Allocation
 	Tasks         []spec.TaskSpec
 	Constraints   []spec.ConstraintSpec
+	// VolumeOwners maps namespace/name volume registrations to their owning node.
+	// Schedule mutates the map when it places the first allocation for a volume.
+	VolumeOwners map[string]uuid.UUID
 }
 
 // Placement associates a task group index with a selected node.
@@ -35,6 +38,9 @@ func Schedule(intent *PlacementIntent) []Placement {
 	slices.SortFunc(nodes, func(a, b *Node) int {
 		return bytes.Compare(a.ID[:], b.ID[:])
 	})
+	if intent.VolumeOwners == nil {
+		intent.VolumeOwners = make(map[string]uuid.UUID)
+	}
 
 	replicaCounts := make(map[uuid.UUID]int)
 	usedCPU := make(map[uuid.UUID]int)
@@ -64,7 +70,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 			}
 		}
 		for _, node := range nodes {
-			if node.Status != NodeStatusHealthy || !nodeMatchesConstraints(node, intent.Constraints) || !nodeHasTaskVolumes(node, intent.Tasks) {
+			if node.Status != NodeStatusHealthy || !nodeMatchesConstraints(node, intent.Constraints) || !nodeHasTaskVolumes(node.ID, intent.Namespace, intent.Tasks, intent.VolumeOwners) {
 				continue
 			}
 			if (node.CPU > 0 && usedCPU[node.ID]+reqCPU > node.CPU) || (node.Memory > 0 && usedMemory[node.ID]+reqMemory > node.Memory) {
@@ -88,6 +94,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 			break
 		}
 
+		claimTaskVolumes(target.ID, intent.Namespace, intent.Tasks, intent.VolumeOwners)
 		result = append(result, Placement{
 			TaskGroupName: intent.TaskGroupName,
 			NodeID:        target.ID,
@@ -100,15 +107,28 @@ func Schedule(intent *PlacementIntent) []Placement {
 	return result
 }
 
-func nodeHasTaskVolumes(node *Node, tasks []spec.TaskSpec) bool {
+func volumeRegistrationKey(namespace, name string) string { return namespace + "/" + name }
+
+func nodeHasTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) bool {
 	for _, task := range tasks {
 		for _, volume := range task.Volumes {
-			if volume.HostVolume != "" && !slices.Contains(node.Volumes, volume.HostVolume) {
+			if owner, ok := owners[volumeRegistrationKey(namespace, volume.Name)]; ok && owner != nodeID {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+func claimTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) {
+	for _, task := range tasks {
+		for _, volume := range task.Volumes {
+			key := volumeRegistrationKey(namespace, volume.Name)
+			if _, ok := owners[key]; !ok {
+				owners[key] = nodeID
+			}
+		}
+	}
 }
 
 func nodeMatchesConstraints(node *Node, constraints []spec.ConstraintSpec) bool {

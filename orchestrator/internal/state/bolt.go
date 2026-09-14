@@ -108,17 +108,18 @@ func (b *BoltStore) Restore(data map[string][]byte) error {
 }
 
 // RestoreDesired atomically verifies that the target is fresh and installs
-// only job definitions and encrypted secret records.
+// only job definitions, encrypted secret records, and volume locality metadata.
 func (b *BoltStore) RestoreDesired(cluster string, snapshot *DesiredSnapshot) error {
 	return b.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketName)
 		jobsPrefix := []byte(fmt.Sprintf("trellis/%s/jobs/", cluster))
 		secretsPrefix := []byte(fmt.Sprintf("trellis/%s/secrets/", cluster))
+		volumesPrefix := []byte(fmt.Sprintf("trellis/%s/volume-registrations/", cluster))
 		allocationsPrefix := []byte(fmt.Sprintf("trellis/%s/allocations/", cluster))
-		for _, prefix := range [][]byte{jobsPrefix, secretsPrefix, allocationsPrefix} {
+		for _, prefix := range [][]byte{jobsPrefix, secretsPrefix, volumesPrefix, allocationsPrefix} {
 			key, _ := bucket.Cursor().Seek(prefix)
 			if key != nil && len(key) >= len(prefix) && string(key[:len(prefix)]) == string(prefix) {
-				return fmt.Errorf("restore requires a fresh cluster with no jobs, secrets, or allocations")
+				return fmt.Errorf("restore requires a fresh cluster with no jobs, secrets, volume registrations, or allocations")
 			}
 		}
 		for key, value := range snapshot.Jobs {
@@ -134,6 +135,14 @@ func (b *BoltStore) RestoreDesired(cluster string, snapshot *DesiredSnapshot) er
 				return fmt.Errorf("backup contains an empty secret key")
 			}
 			if err := bucket.Put(append(append([]byte(nil), secretsPrefix...), key...), value); err != nil {
+				return err
+			}
+		}
+		for key, value := range snapshot.VolumeRegistrations {
+			if key == "" {
+				return fmt.Errorf("backup contains an empty volume registration key")
+			}
+			if err := bucket.Put(append(append([]byte(nil), volumesPrefix...), key...), value); err != nil {
 				return err
 			}
 		}

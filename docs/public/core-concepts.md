@@ -4,13 +4,13 @@ Start with the [Trellis user model](user-model.md) for the vocabulary shared by 
 
 ## Cluster and nodes
 
-A **cluster** is one Trellis deployment operated as a unit. Each machine in the cluster is a **node** running `trellis`. Nodes report capacity, labels, advertised host volumes, runtime state, and health. From an operator's perspective a node is healthy, unhealthy, or draining.
+A **cluster** is one Trellis deployment operated as a unit. Each machine in the cluster is a **node** running `trellis`. Nodes report capacity, labels, registered local volumes, runtime state, and health. From an operator's perspective a node is healthy, unhealthy, or draining.
 
 Trellis uses Raft internally to replicate desired state and elect a control-plane leader. Leadership is an implementation detail for normal workload workflows; see the developer documentation when operating or debugging the consensus layer itself.
 
 ## Namespaces and jobs
 
-A **namespace** is the tenant, authorization, discovery, and workload-isolation boundary for jobs, allocations, secrets, and namespace tokens.
+A **namespace** is the tenant, authorization, discovery, and workload-isolation boundary for jobs, allocations, secrets, volume identities, and namespace tokens.
 
 A **job** is named desired state inside a namespace. Humans define a job with a YAML **job manifest**. Applying a manifest creates the job or advances its **revision** when desired state changes.
 
@@ -32,7 +32,7 @@ An allocation can therefore be `running` and `unhealthy`. Lifecycle and health a
 
 ## Scheduling
 
-The scheduler considers only healthy, non-draining nodes. It filters on `os`, `arch`, custom label constraints, advertised host volumes, CPU millicores, and memory bytes. It then uses deterministic best-fit placement with replica spreading as a tie-breaker. Resource values of zero on a node mean capacity is not enforced for that dimension.
+The scheduler considers only healthy, non-draining nodes. It filters on `os`, `arch`, custom label constraints, registered volume locality, CPU millicores, and memory bytes. It then uses deterministic best-fit placement with replica spreading as a tie-breaker. Resource values of zero on a node mean capacity is not enforced for that dimension.
 
 ## Reconciliation and failure handling
 
@@ -46,7 +46,7 @@ Each task selects its attachment through `networking.mode`. Omission or `isolate
 
 ## Persistence and secrets
 
-Unnamed volumes are allocation-local directories beneath the node data directory. A `host_volume` requires a node to advertise that volume name and constrains placement to compatible nodes.
+A volume has a stable namespace-scoped `name`, an explicit node-side `host_path`, and a `container_path`. The first allocation using an unseen volume name establishes its node registration; future allocations using the same `(namespace, name)` are constrained to that node. `@/path` resolves below Trellis's per-namespace volume root, while an absolute host path is used verbatim and therefore does not receive filesystem-level namespace isolation. Volume registration provides locality, not replication or migration.
 
 **Secrets** are namespace-scoped named values referenced by job manifests without embedding their plaintext in YAML. Trellis encrypts stored secret records and injects values into allocations as environment variables or files below `/run/trellis-secrets/`. Updating a secret does not mutate already-running allocations.
 
