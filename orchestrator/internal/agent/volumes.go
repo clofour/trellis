@@ -32,10 +32,6 @@ func NewVolumeManager(dataRoot ...string) *VolumeManager {
 	return vm
 }
 
-// SetHostVolumes is retained as a no-op while the node flag/config is removed.
-// Volume ownership now comes from allocation-time namespace/name registrations.
-func (vm *VolumeManager) SetHostVolumes(_ map[string]string) {}
-
 // AvailableHostVolumes returns persisted volume registrations. The existing
 // node-registration field name is retained for wire compatibility; entries are
 // namespace/name identities rather than configured host-volume capabilities.
