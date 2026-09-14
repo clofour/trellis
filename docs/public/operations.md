@@ -19,7 +19,7 @@ Commands with a coherent structured result expose a local `--output json` flag; 
 
 ## Node configuration
 
-Installer-managed nodes keep their durable daemon configuration at `/etc/trellis/trellis.yaml`. The file is root-readable and contains the node's bootstrap credential together with operator-managed settings such as advertise addresses, labels, host-volume advertisements, secret-encryption key path, and WireGuard transport settings.
+Installer-managed nodes keep their durable daemon configuration at `/etc/trellis/trellis.yaml`. The file is root-readable and contains the node's bootstrap credential together with operator-managed settings such as advertise addresses, labels, secret-encryption key path, and WireGuard transport settings. Volume placement is not configured here; namespace-scoped volume ownership is established by first placement and stored in the control plane.
 
 A minimal installed node resembles:
 
@@ -167,7 +167,7 @@ trellisctl backup create --file trellis-backup.json
 trellisctl backup restore trellis-backup.json
 ```
 
-Backups contain desired jobs and encrypted secret records, not allocations, container images, local volume data, TLS private keys, or the secret encryption key. Restores schedule fresh allocations. Secure and separately back up the 32-byte secrets key referenced by `secrets_key` in the node config; encrypted records are unusable without it.
+Backups contain desired jobs, encrypted secret records, and volume-registration locality metadata. They do **not** contain allocations, container images, local volume bytes, TLS private keys, or the secret encryption key. Restoring the locality metadata deliberately prevents Trellis from silently treating a previously bound volume as new; recovering a volume-backed workload therefore also requires the owning node identity and its data, or an intentional manifest change to a new volume name. Secure and separately back up the 32-byte secrets key referenced by `secrets_key` in the node config; encrypted records are unusable without it.
 
 ## Secrets
 
@@ -191,6 +191,6 @@ Ports `8127`, `8128`, and `8129` must be reachable between appropriate cluster m
 
 ## Failure recovery
 
-A missed-heartbeat node becomes unhealthy; allocations may become lost after leader recovery grace and an availability timeout. Reconciliation replaces missing desired capacity. Persistent workloads using host volumes can only land on nodes advertising the required names, so loss of all compatible nodes leaves them pending.
+A missed-heartbeat node becomes unhealthy; allocations may become lost after leader recovery grace and an availability timeout. Reconciliation replaces missing desired capacity when placement remains valid. A namespace-scoped volume registration stays bound to its original node even while that node is absent, so Trellis leaves a dependent workload unplaced rather than creating an unrelated second copy elsewhere. If the data is intentionally abandoned, use a new volume name; changing only `host_path` does not change the owning node.
 
 [Documentation index](../README.md) · [Previous: CLI workflows](cli.md) · [Next: Cookbook](cookbook.md)

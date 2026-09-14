@@ -14,11 +14,11 @@ A host port of zero requests allocation by the node port manager; a nonzero port
 
 ## Volumes
 
-A volume is identified for scheduling by `(namespace, name)`. The scheduler reserves an unseen identity to the node selected for its first allocation; once the node realizes the mount, it persists that registration locally and advertises `namespace/name` on subsequent registration/heartbeat traffic. Later allocations using the same identity may run only on that node. Conflicting advertisements are treated as unschedulable instead of choosing an arbitrary copy.
+A volume is identified for scheduling by `(namespace, name)`. The control plane loads an authoritative Raft-backed registry before scheduling. When an identity is unseen, the scheduler reserves it to the node selected for first placement and persists that binding **before** starting the new allocation. Later allocations using the same identity may run only on that node, including after leader restart or while the owner is offline. The node also persists `namespace/name -> host path` locally and reports its known registrations for diagnostics, but heartbeat advertisements do not create or override control-plane ownership.
 
 `host_path` controls only the node-side backing path. `@/relative/path` resolves below `<data-dir>/volumes/namespaces/<namespace>/` and the volume manager creates the directory. A clean absolute path is used verbatim and must already exist. Absolute paths deliberately bypass filesystem-level namespace separation, although the logical registration remains namespace-scoped. `container_path` is the absolute destination passed to the runtime; `read_only` changes the OCI mount.
 
-Volume registrations and their data outlive individual allocations. Changing `host_path` for an existing name changes its backing path on the already owning node; Trellis does not move bytes. Volume registration is locality metadata, not replication, snapshots, backup, migration, or distributed storage.
+Volume registrations and their data outlive individual allocations. Changing `host_path` for an existing name changes its backing path on the already owning node; Trellis does not move bytes. Volume registration is locality metadata, not replication, snapshots, migration, or distributed storage. Desired-state backups preserve the registry metadata, but never the volume bytes.
 
 ## Networking
 

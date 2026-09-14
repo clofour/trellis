@@ -83,6 +83,6 @@ Before storing production data, demonstrate all of the following in a disposable
 7. PostgreSQL/Patroni upgrades with version-skew compatibility;
 8. restoration when Trellis desired state and database data are recovered separately.
 
-Trellis backups contain the job and encrypted secret records, not PostgreSQL volume data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities.
+Trellis backups contain the job, encrypted secret records, and volume-registration locality metadata, but not PostgreSQL volume data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities.
 
 [Examples index](../README.md) · [Learning path](../../docs/public/learning-path.md)
