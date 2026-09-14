@@ -149,8 +149,8 @@ export interface PortSpec {
 
 export interface VolumeSpec {
   name: string;
-  path: string;
-  host_volume?: string;
+  host_path: string;
+  container_path: string;
   read_only?: boolean;
 }
 
