@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"slices"
-	"strings"
 
 	"github.com/clofour/trellis/internal/spec"
 	"github.com/google/uuid"
@@ -42,7 +41,6 @@ func Schedule(intent *PlacementIntent) []Placement {
 	if intent.VolumeOwners == nil {
 		intent.VolumeOwners = make(map[string]uuid.UUID)
 	}
-	seedAdvertisedVolumeOwners(nodes, intent.VolumeOwners)
 
 	replicaCounts := make(map[uuid.UUID]int)
 	usedCPU := make(map[uuid.UUID]int)
@@ -96,7 +94,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 			break
 		}
 
-		claimTaskVolumes(target, intent.Namespace, intent.Tasks, intent.VolumeOwners)
+		claimTaskVolumes(target.ID, intent.Namespace, intent.Tasks, intent.VolumeOwners)
 		result = append(result, Placement{
 			TaskGroupName: intent.TaskGroupName,
 			NodeID:        target.ID,
@@ -109,27 +107,7 @@ func Schedule(intent *PlacementIntent) []Placement {
 	return result
 }
 
-func volumeRegistrationKey(namespace, name string) string { return namespace + "\x00" + name }
-func advertisedVolumeName(namespace, name string) string  { return namespace + "/" + name }
-
-func seedAdvertisedVolumeOwners(nodes []*Node, owners map[string]uuid.UUID) {
-	for _, node := range nodes {
-		for _, registration := range node.Volumes {
-			namespace, name, ok := strings.Cut(registration, "/")
-			if !ok || namespace == "" || name == "" {
-				continue
-			}
-			key := volumeRegistrationKey(namespace, name)
-			if owner, exists := owners[key]; exists && owner != node.ID {
-				// Conflicting registrations are deliberately unschedulable rather
-				// than silently choosing one copy of the volume.
-				owners[key] = uuid.Nil
-				continue
-			}
-			owners[key] = node.ID
-		}
-	}
-}
+func volumeRegistrationKey(namespace, name string) string { return namespace + "/" + name }
 
 func nodeHasTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) bool {
 	for _, task := range tasks {
@@ -142,17 +120,12 @@ func nodeHasTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpe
 	return true
 }
 
-func claimTaskVolumes(node *Node, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) {
+func claimTaskVolumes(nodeID uuid.UUID, namespace string, tasks []spec.TaskSpec, owners map[string]uuid.UUID) {
 	for _, task := range tasks {
 		for _, volume := range task.Volumes {
 			key := volumeRegistrationKey(namespace, volume.Name)
-			if _, ok := owners[key]; ok {
-				continue
-			}
-			owners[key] = node.ID
-			registration := advertisedVolumeName(namespace, volume.Name)
-			if !slices.Contains(node.Volumes, registration) {
-				node.Volumes = append(node.Volumes, registration)
+			if _, ok := owners[key]; !ok {
+				owners[key] = nodeID
 			}
 		}
 	}
