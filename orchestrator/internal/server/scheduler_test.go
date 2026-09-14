@@ -25,13 +25,14 @@ func TestScheduleBalancesAndSkipsUnhealthyNodes(t *testing.T) {
 	}
 }
 
-func TestScheduleRequiresRegisteredNamespaceVolume(t *testing.T) {
-	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"default/uploads"}}
+func TestScheduleRequiresRegisteredNamespaceVolumeOwner(t *testing.T) {
+	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy}
 	b := &Node{ID: uuid.New(), Status: NodeStatusHealthy}
 	tasks := []spec.TaskSpec{{Name: "app", Volumes: []spec.VolumeSpec{{Name: "uploads", HostPath: "@/uploads", ContainerPath: "/data"}}}}
-	placements := Schedule(&PlacementIntent{Namespace: "default", Count: 1, Nodes: []*Node{b, a}, Tasks: tasks})
+	owners := map[string]uuid.UUID{volumeRegistrationKey("default", "uploads"): a.ID}
+	placements := Schedule(&PlacementIntent{Namespace: "default", Count: 1, Nodes: []*Node{b, a}, Tasks: tasks, VolumeOwners: owners})
 	if len(placements) != 1 || placements[0].NodeID != a.ID {
-		t.Fatalf("expected placement on registered volume node, got %#v", placements)
+		t.Fatalf("expected placement on registered volume owner, got %#v", placements)
 	}
 }
 
@@ -39,31 +40,33 @@ func TestScheduleClaimsNewVolumeOnFirstPlacement(t *testing.T) {
 	a := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy}
 	b := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy}
 	tasks := []spec.TaskSpec{{Name: "app", Volumes: []spec.VolumeSpec{{Name: "database", HostPath: "@/database", ContainerPath: "/data"}}}}
-	placements := Schedule(&PlacementIntent{Namespace: "acme", Count: 2, Nodes: []*Node{a, b}, Tasks: tasks})
+	owners := map[string]uuid.UUID{}
+	placements := Schedule(&PlacementIntent{Namespace: "acme", Count: 2, Nodes: []*Node{a, b}, Tasks: tasks, VolumeOwners: owners})
 	if len(placements) != 2 || placements[0].NodeID != placements[1].NodeID {
 		t.Fatalf("volume-sharing replicas must stay on first owner: %#v", placements)
 	}
-	owner := placements[0].NodeID
-	var registered bool
-	for _, node := range []*Node{a, b} {
-		if node.ID == owner {
-			for _, volume := range node.Volumes {
-				registered = registered || volume == "acme/database"
-			}
-		}
-	}
-	if !registered {
-		t.Fatal("first placement did not reserve the volume registration")
+	if owner := owners[volumeRegistrationKey("acme", "database")]; owner != placements[0].NodeID {
+		t.Fatalf("first placement did not claim durable owner: got %s want %s", owner, placements[0].NodeID)
 	}
 }
 
-func TestScheduleRejectsConflictingVolumeRegistrations(t *testing.T) {
-	a := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"acme/database"}}
-	b := &Node{ID: uuid.New(), Status: NodeStatusHealthy, Volumes: []string{"acme/database"}}
+func TestScheduleIgnoresNodeAdvertisedVolumeWithoutDurableRegistration(t *testing.T) {
+	a := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy, Volumes: []string{"acme/database"}}
+	b := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy}
 	tasks := []spec.TaskSpec{{Volumes: []spec.VolumeSpec{{Name: "database", HostPath: "@/database", ContainerPath: "/data"}}}}
-	placements := Schedule(&PlacementIntent{Namespace: "acme", Count: 1, Nodes: []*Node{a, b}, Tasks: tasks})
-	if len(placements) != 0 {
-		t.Fatalf("conflicting registrations must be unschedulable: %#v", placements)
+	owners := map[string]uuid.UUID{}
+	placements := Schedule(&PlacementIntent{Namespace: "acme", Count: 1, Nodes: []*Node{b, a}, Tasks: tasks, VolumeOwners: owners})
+	if len(placements) != 1 {
+		t.Fatalf("expected first placement, got %#v", placements)
+	}
+	if placements[0].NodeID != a.ID {
+		// Deterministic node ordering chooses a here because of the fixed UUIDs;
+		// the assertion makes clear that the stale advertisement did not become
+		// authority. Ownership comes from the map populated by Schedule.
+		t.Fatalf("unexpected deterministic first placement: %#v", placements)
+	}
+	if owners[volumeRegistrationKey("acme", "database")] != a.ID {
+		t.Fatalf("first placement was not recorded in ownership map: %#v", owners)
 	}
 }
 
@@ -152,8 +155,8 @@ func TestScheduleProducesNoPlacementsWithoutConstraintMatch(t *testing.T) {
 }
 
 func TestScheduleFiltersNodesByLabel(t *testing.T) {
-	gpu := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy, Labels: map[string]string{"gpu": "true", "region": "us-east"}}
-	cpu := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy, Labels: map[string]string{"region": "us-east"}}
+	gpu := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Status: NodeStatusHealthy, OS: "linux", Arch: "amd64", Labels: map[string]string{"gpu": "true", "region": "us-east"}}
+	cpu := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy, OS: "linux", Arch: "amd64", Labels: map[string]string{"region": "us-east"}}
 
 	placements := Schedule(&PlacementIntent{
 		Count: 1, Nodes: []*Node{gpu, cpu},
