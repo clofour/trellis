@@ -1,31 +1,32 @@
 # Volume patterns
 
-**Level:** Intermediate · **Prerequisites:** complete `hello` and prepare a node path, label, and advertised host-volume name
+**Level:** Intermediate · **Prerequisites:** complete `hello`; for the absolute-path example, prepare the path and matching node label
 
-This example mounts both Trellis-managed allocation storage and an operator-provisioned host volume into a long-running nginx task. It is intended for operators deciding what should survive allocation replacement and where a stateful task may run; nginx merely keeps the demonstration allocation alive and does not use the mounted paths as application data.
+This example demonstrates the two host-path forms used by Trellis named volumes. Both volumes have a namespace-scoped logical `name`; the difference is only how their backing `host_path` is resolved.
 
 ## Storage in the manifest
 
-| Volume | Kind | Lifecycle |
+| Volume | Host path | Meaning |
 |---|---|---|
-| `scratch` | Allocation-managed | Created below the node data directory and suitable for replaceable cache/work files. |
-| `database` | Named host volume `app-data` | Resolves to an absolute host path configured when `trellis` starts. Trellis mounts but does not create, replicate, snapshot, or back up that data. |
+| `scratch` | `@/scratch` | Resolves below Trellis's volume root for the `default` namespace. Trellis creates the directory when the first allocation is realized. |
+| `database` | `/srv/trellis/app-data` | Uses that host directory verbatim. The directory must already exist on the selected node. |
 
-The group also requires node label `storage=fast`. Scheduling succeeds only on a healthy node that has both that exact label and an available `app-data` directory.
+The first allocation of each previously unseen `(namespace, name)` establishes the owning node. That node persists and advertises the registration; later allocations using the same name in the same namespace are scheduled back to it. The logical name is independent of the backing path, so changing `host_path` does not change volume identity or move the volume to a different node.
+
+The group requires node label `storage=fast` because the explicit `/srv/trellis/app-data` path is only prepared on those nodes. Trellis does not probe arbitrary absolute paths during scheduling, so a constraint is the normal way to steer first placement when an explicit path is not present everywhere.
 
 ## Prepare a node
 
-Create and secure the path before starting the node:
+Create and secure the explicit path, then start the node normally:
 
 ```sh
 sudo install -d -m 0750 /srv/trellis/app-data
 sudo trellis \
-  --cluster-token "$TRELLIS_TOKEN" \
-  --label storage=fast \
-  --host-volume app-data=/srv/trellis/app-data
+  --bootstrap-token "$TRELLIS_TOKEN" \
+  --label storage=fast
 ```
 
-Repeat `--label` and `--host-volume` for additional values. The name in `--host-volume` must match the manifest; the host path must be absolute and already exist. Ensure its ownership matches the UID/GID used by the container image.
+There is no volume-registration flag or node-side volume map. Registration happens when the allocation is first realized. Ensure explicit host paths have ownership compatible with the UID/GID used by the container image.
 
 ## Deploy and verify placement
 
@@ -37,12 +38,16 @@ trellisctl nodes list
 trellisctl nodes status NODE
 ```
 
-`nodes status` shows the node's labels and advertised host-volume names without requiring raw JSON. The allocation should land on a node reporting `storage=fast` and `app-data`. If it remains unplaced, check node health, the `storage` label, volume advertisement, directory existence, and free CPU/memory.
+The allocation should land on a healthy node reporting `storage=fast`. After it is realized, that node advertises the `default/scratch` and `default/database` registrations. Later allocations that request those identities are pinned to the same node.
 
-## Recovery and scaling
+## Namespace isolation, recovery, and scaling
 
-A host-volume name is a capability, not a globally shared volume. If two nodes advertise `app-data=/srv/trellis/app-data`, those directories may contain completely different bytes. Constrain a single-writer workload deliberately, or use application-level replication/shared storage. Back up `/srv/trellis/app-data` independently and test restoration before relying on it.
+`@/` is a path prefix into Trellis's namespace volume root. With the default data directory, `@/scratch` in namespace `default` resolves below `/var/lib/trellis/data/volumes/namespaces/default/scratch`. This gives Trellis-rooted volumes filesystem-level namespace separation by construction.
 
-Scaling this manifest above one replica is unsafe unless the application supports multiple writers and every eligible volume path has the required data semantics. Draining the only compatible node cannot make its local bytes appear elsewhere.
+An absolute path such as `/srv/trellis/app-data` is an intentional escape hatch. Trellis still scopes the logical `database` registration by namespace, but it uses the host path verbatim, so filesystem-level namespace isolation is the operator's responsibility. Different namespaces can point at the same absolute directory if their manifests say so.
+
+A registration represents locality, not replication. If its owning node disappears, Trellis does not create another copy under the same name elsewhere. Trellis also does not replicate, snapshot, back up, or migrate the bytes. Back up important data independently.
+
+Multiple allocations using the same namespace/name intentionally share one node registration. That is useful when several tasks need the same local data, but it means replicated stateful members that require independent disks on separate nodes must use distinct volume names.
 
 [Examples index](../README.md) · [Next: Sidecars](../sidecar/)
