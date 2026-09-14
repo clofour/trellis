@@ -1,0 +1,89 @@
+name: volume-docs-finalize
+
+on:
+  push:
+    branches: [volume-registration-model]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: volume-registration-model
+          fetch-depth: 0
+      - name: Update volume documentation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('docs/public/operations.md')
+          s = p.read_text()
+          s = s.replace(
+              "operator-managed settings such as advertise addresses, labels, host-volume advertisements, secret-encryption key path, and WireGuard transport settings.",
+              "operator-managed settings such as advertise addresses, labels, secret-encryption key path, and WireGuard transport settings. Volume placement is not configured here; namespace-scoped volume ownership is established by first placement and stored in the control plane."
+          )
+          s = s.replace(
+              "Backups contain desired jobs and encrypted secret records, not allocations, container images, local volume data, TLS private keys, or the secret encryption key. Restores schedule fresh allocations. Secure and separately back up the 32-byte secrets key referenced by `secrets_key` in the node config; encrypted records are unusable without it.",
+              "Backups contain desired jobs, encrypted secret records, and volume-registration locality metadata. They do **not** contain allocations, container images, local volume bytes, TLS private keys, or the secret encryption key. Restoring the locality metadata deliberately prevents Trellis from silently treating a previously bound volume as new; recovering a volume-backed workload therefore also requires the owning node identity and its data, or an intentional manifest change to a new volume name. Secure and separately back up the 32-byte secrets key referenced by `secrets_key` in the node config; encrypted records are unusable without it."
+          )
+          s = s.replace(
+              "A missed-heartbeat node becomes unhealthy; allocations may become lost after leader recovery grace and an availability timeout. Reconciliation replaces missing desired capacity. Persistent workloads using host volumes can only land on nodes advertising the required names, so loss of all compatible nodes leaves them pending.",
+              "A missed-heartbeat node becomes unhealthy; allocations may become lost after leader recovery grace and an availability timeout. Reconciliation replaces missing desired capacity when placement remains valid. A namespace-scoped volume registration stays bound to its original node even while that node is absent, so Trellis leaves a dependent workload unplaced rather than creating an unrelated second copy elsewhere. If the data is intentionally abandoned, use a new volume name; changing only `host_path` does not change the owning node."
+          )
+          p.write_text(s)
+
+          p = Path('docs/developer/node-internals.md')
+          s = p.read_text()
+          old = "A volume is identified for scheduling by `(namespace, name)`. The scheduler reserves an unseen identity to the node selected for its first allocation; once the node realizes the mount, it persists that registration locally and advertises `namespace/name` on subsequent registration/heartbeat traffic. Later allocations using the same identity may run only on that node. Conflicting advertisements are treated as unschedulable instead of choosing an arbitrary copy."
+          new = "A volume is identified for scheduling by `(namespace, name)`. The control plane loads an authoritative Raft-backed registry before scheduling. When an identity is unseen, the scheduler reserves it to the node selected for first placement and persists that binding **before** starting the new allocation. Later allocations using the same identity may run only on that node, including after leader restart or while the owner is offline. The node also persists `namespace/name -> host path` locally and reports its known registrations for diagnostics, but heartbeat advertisements do not create or override control-plane ownership."
+          if old not in s:
+              raise SystemExit('node internals volume paragraph not found')
+          s = s.replace(old, new)
+          s = s.replace(
+              "Volume registration is locality metadata, not replication, snapshots, backup, migration, or distributed storage.",
+              "Volume registration is locality metadata, not replication, snapshots, migration, or distributed storage. Desired-state backups preserve the registry metadata, but never the volume bytes."
+          )
+          p.write_text(s)
+
+          p = Path('docs/public/cookbook.md')
+          s = p.read_text()
+          start = s.index('## Keep scratch data separate from persistent local data')
+          end = s.index('## Let a trusted workload automate its namespace', start)
+          replacement = '''## Use local volumes without confusing identity and path\n\n**Outcome:** keep node-local data stable across allocation replacement while making it explicit which node owns it and where its bytes live.\n\nEvery volume has three separate pieces: `name` is the namespace-scoped identity used by the scheduler, `host_path` is the node-side backing directory, and `container_path` is the mount destination. For Trellis-managed local storage, use the `@/` prefix:\n\n```yaml\nvolumes:\n  - name: cache\n    host_path: "@/cache"\n    container_path: /var/cache/app\n```\n\n`@/cache` resolves below Trellis's volume root for the job namespace and Trellis creates that directory on the node chosen for first placement. If you need an operator-prepared directory instead, use a clean absolute path:\n\n```yaml\nvolumes:\n  - name: database\n    host_path: /srv/trellis/database\n    container_path: /var/lib/app\n```\n\nAn absolute path must already exist and is used verbatim, so filesystem-level namespace isolation is the operator's responsibility. In both forms, the first allocation using an unseen `(namespace, name)` durably binds that identity to one node. Later allocations using the same identity return to that node; loss of the owner leaves them unplaced rather than causing Trellis to create a second copy. Changing `host_path` changes the backing directory on the same owning node and never moves bytes.\n\nA scaled task group repeats the same volume identities in every replica, so sharing a volume name also shares locality. Stateful replicas that need independent local disks should be modeled as independently named task groups/jobs with distinct volume names, plus application-level replication or another storage system. Back up volume data separately; Trellis desired-state backups preserve the ownership metadata, not the bytes.\n\n'''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s)
+
+          p = Path('docs/public/learning-path.md')
+          s = p.read_text().replace(
+              "Replicated stateful members that need independent local disks must use distinct names.",
+              "Replicated stateful members that need independent local disks must use independently named task groups or jobs with distinct volume names, because scaling one task group repeats the same volume identity."
+          )
+          p.write_text(s)
+
+          p = Path('examples/patroni/README.md')
+          s = p.read_text().replace(
+              "Trellis backups contain the job and encrypted secret records, not PostgreSQL volume data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities.",
+              "Trellis backups contain the job, encrypted secret records, and volume-registration locality metadata, but not PostgreSQL volume data or the separate secrets encryption key. Database backup and fencing remain application/operator responsibilities."
+          )
+          p.write_text(s)
+          PY
+      - name: Ensure legacy volume model is gone
+        run: |
+          if grep -RInE --exclude-dir=.git --exclude='volume-docs-finalize.yaml' 'host_volume|--host-volume|host_volumes' orchestrator docs examples ui schemas; then
+            echo 'legacy host-volume terminology remains' >&2
+            exit 1
+          fi
+      - name: Commit documentation sweep
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/public/operations.md docs/developer/node-internals.md docs/public/cookbook.md docs/public/learning-path.md examples/patroni/README.md
+          git commit -m "docs: finalize volume registration semantics"
+          git push origin HEAD:volume-registration-model
