@@ -80,7 +80,7 @@ func TestPrintNodeStatusShowsPlacementMetadata(t *testing.T) {
 		"Memory: 8.0 GiB",
 		"  storage=fast",
 		"  zone=a",
-		"Host volumes:\n  cache\n  data",
+		"Volume registrations:\n  cache\n  data",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("status output missing %q:\n%s", want, text)
