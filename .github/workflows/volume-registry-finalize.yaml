@@ -1,0 +1,173 @@
+name: volume-registry-finalize
+
+on:
+  push:
+    branches: [volume-registration-model]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: volume-registration-model
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: orchestrator/go.mod
+      - name: Wire durable volume registry into reconciliation and backups
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Reconcile from the Raft-backed volume ownership registry and persist
+          # every first-placement claim before starting the allocation.
+          p = Path('orchestrator/internal/server/reconciler.go')
+          s = p.read_text()
+          s = s.replace('"net/netip"\n\t"time"', '"net/netip"\n\t"strings"\n\t"time"')
+          old = '''\tnow := s.now().UTC()\n\ts.mu.Lock()'''
+          new = '''\tnow := s.now().UTC()\n\tvolumeOwners, err := s.state.ListVolumeRegistrations(ctx)\n\tif err != nil {\n\t\ts.log.Error("load volume registrations", "error", err)\n\t\treturn\n\t}\n\tpersistedVolumeOwners := make(map[string]uuid.UUID, len(volumeOwners))\n\tfor key, owner := range volumeOwners {\n\t\tpersistedVolumeOwners[key] = owner\n\t}\n\tvar newAllocations []*Allocation\n\ts.mu.Lock()'''
+          if old not in s:
+              raise SystemExit('reconciler start anchor missing')
+          s = s.replace(old, new, 1)
+          old = 'placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: deficit, Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints})'
+          new = 'placements := Schedule(&PlacementIntent{Namespace: namespace, JobName: jobName, TaskGroupName: group.Name, Count: deficit, Nodes: s.nodePointers(), Allocations: valid, Tasks: group.Tasks, Constraints: group.Constraints, VolumeOwners: volumeOwners})'
+          if old not in s:
+              raise SystemExit('schedule anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''\t\t\t\tactions = append(actions, Action{Type: ActionStart, Allocation: allocation})\n\t\t\t\ts.allocations = append(s.allocations, allocation)'''
+          new = '''\t\t\t\tactions = append(actions, Action{Type: ActionStart, Allocation: allocation})\n\t\t\t\tnewAllocations = append(newAllocations, allocation)\n\t\t\t\tvalid = append(valid, allocation)'''
+          if old not in s:
+              raise SystemExit('allocation anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''\ts.mu.Unlock()\n\n\tfor i := range actions {'''
+          new = '''\ts.mu.Unlock()\n\n\tfor key, owner := range volumeOwners {\n\t\tif _, exists := persistedVolumeOwners[key]; exists {\n\t\t\tcontinue\n\t\t}\n\t\tnamespace, name, ok := strings.Cut(key, "/")\n\t\tif !ok || namespace == "" || name == "" {\n\t\t\ts.log.Error("invalid volume registration key", "key", key)\n\t\t\treturn\n\t\t}\n\t\tif err := s.state.PutVolumeRegistration(ctx, &VolumeRegistration{Namespace: namespace, Name: name, NodeID: owner}); err != nil {\n\t\t\ts.log.Error("persist volume registration", "volume", key, "node_id", owner, "error", err)\n\t\t\treturn\n\t\t}\n\t}\n\tif len(newAllocations) > 0 {\n\t\ts.mu.Lock()\n\t\ts.allocations = append(s.allocations, newAllocations...)\n\t\ts.mu.Unlock()\n\t}\n\n\tfor i := range actions {'''
+          if old not in s:
+              raise SystemExit('post unlock anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # Portable desired-state backup now includes volume ownership metadata.
+          p = Path('orchestrator/internal/state/raft.go')
+          s = p.read_text()
+          s = s.replace('''// DesiredSnapshot is the portable portion of control-plane state. Keys are\n// relative to either the jobs or secrets prefix so a backup can be restored\n// into a freshly bootstrapped cluster with a different name.\ntype DesiredSnapshot struct {\n\tJobs    map[string][]byte `json:"jobs"`\n\tSecrets map[string][]byte `json:"secrets"`\n}''', '''// DesiredSnapshot is the portable portion of control-plane state. Keys are\n// relative to their state prefixes so a backup can be restored into a freshly\n// bootstrapped cluster with a different name. Volume registrations preserve\n// locality metadata only; volume bytes remain external to the backup.\ntype DesiredSnapshot struct {\n\tJobs                map[string][]byte `json:"jobs"`\n\tSecrets             map[string][]byte `json:"secrets"`\n\tVolumeRegistrations map[string][]byte `json:"volume_registrations"`\n}''')
+          old = '''\tjobsPrefix := fmt.Sprintf("trellis/%s/jobs/", cluster)\n\tsecretsPrefix := fmt.Sprintf("trellis/%s/secrets/", cluster)\n\tjobs, err := f.store.List(context.Background(), jobsPrefix)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tsecrets, err := f.store.List(context.Background(), secretsPrefix)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tresult := &DesiredSnapshot{Jobs: make(map[string][]byte, len(jobs)), Secrets: make(map[string][]byte, len(secrets))}\n\tfor key, value := range jobs {\n\t\tresult.Jobs[key[len(jobsPrefix):]] = value\n\t}\n\tfor key, value := range secrets {\n\t\tresult.Secrets[key[len(secretsPrefix):]] = value\n\t}\n\treturn result, nil'''
+          new = '''\tjobsPrefix := fmt.Sprintf("trellis/%s/jobs/", cluster)\n\tsecretsPrefix := fmt.Sprintf("trellis/%s/secrets/", cluster)\n\tvolumesPrefix := fmt.Sprintf("trellis/%s/volume-registrations/", cluster)\n\tjobs, err := f.store.List(context.Background(), jobsPrefix)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tsecrets, err := f.store.List(context.Background(), secretsPrefix)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tvolumes, err := f.store.List(context.Background(), volumesPrefix)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tresult := &DesiredSnapshot{\n\t\tJobs: make(map[string][]byte, len(jobs)),\n\t\tSecrets: make(map[string][]byte, len(secrets)),\n\t\tVolumeRegistrations: make(map[string][]byte, len(volumes)),\n\t}\n\tfor key, value := range jobs {\n\t\tresult.Jobs[key[len(jobsPrefix):]] = value\n\t}\n\tfor key, value := range secrets {\n\t\tresult.Secrets[key[len(secretsPrefix):]] = value\n\t}\n\tfor key, value := range volumes {\n\t\tresult.VolumeRegistrations[key[len(volumesPrefix):]] = value\n\t}\n\treturn result, nil'''
+          if old not in s:
+              raise SystemExit('raft snapshot anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('orchestrator/internal/state/bolt.go')
+          s = p.read_text()
+          s = s.replace('// only job definitions and encrypted secret records.', '// only job definitions, encrypted secret records, and volume locality metadata.')
+          old = '''\t\tjobsPrefix := []byte(fmt.Sprintf("trellis/%s/jobs/", cluster))\n\t\tsecretsPrefix := []byte(fmt.Sprintf("trellis/%s/secrets/", cluster))\n\t\tallocationsPrefix := []byte(fmt.Sprintf("trellis/%s/allocations/", cluster))\n\t\tfor _, prefix := range [][]byte{jobsPrefix, secretsPrefix, allocationsPrefix} {\n\t\t\tkey, _ := bucket.Cursor().Seek(prefix)\n\t\t\tif key != nil && len(key) >= len(prefix) && string(key[:len(prefix)]) == string(prefix) {\n\t\t\t\treturn fmt.Errorf("restore requires a fresh cluster with no jobs, secrets, or allocations")\n\t\t\t}\n\t\t}'''
+          new = '''\t\tjobsPrefix := []byte(fmt.Sprintf("trellis/%s/jobs/", cluster))\n\t\tsecretsPrefix := []byte(fmt.Sprintf("trellis/%s/secrets/", cluster))\n\t\tvolumesPrefix := []byte(fmt.Sprintf("trellis/%s/volume-registrations/", cluster))\n\t\tallocationsPrefix := []byte(fmt.Sprintf("trellis/%s/allocations/", cluster))\n\t\tfor _, prefix := range [][]byte{jobsPrefix, secretsPrefix, volumesPrefix, allocationsPrefix} {\n\t\t\tkey, _ := bucket.Cursor().Seek(prefix)\n\t\t\tif key != nil && len(key) >= len(prefix) && string(key[:len(prefix)]) == string(prefix) {\n\t\t\t\treturn fmt.Errorf("restore requires a fresh cluster with no jobs, secrets, volume registrations, or allocations")\n\t\t\t}\n\t\t}'''
+          if old not in s:
+              raise SystemExit('bolt prefix anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''\t\tfor key, value := range snapshot.Secrets {\n\t\t\tif key == "" {\n\t\t\t\treturn fmt.Errorf("backup contains an empty secret key")\n\t\t\t}\n\t\t\tif err := bucket.Put(append(append([]byte(nil), secretsPrefix...), key...), value); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t}\n\t\treturn nil'''
+          new = '''\t\tfor key, value := range snapshot.Secrets {\n\t\t\tif key == "" {\n\t\t\t\treturn fmt.Errorf("backup contains an empty secret key")\n\t\t\t}\n\t\t\tif err := bucket.Put(append(append([]byte(nil), secretsPrefix...), key...), value); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t}\n\t\tfor key, value := range snapshot.VolumeRegistrations {\n\t\t\tif key == "" {\n\t\t\t\treturn fmt.Errorf("backup contains an empty volume registration key")\n\t\t\t}\n\t\t\tif err := bucket.Put(append(append([]byte(nil), volumesPrefix...), key...), value); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t}\n\t\treturn nil'''
+          if old not in s:
+              raise SystemExit('bolt restore anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('orchestrator/internal/api/server.go')
+          s = p.read_text()
+          s = s.replace('const BackupFormatVersion = 1', 'const BackupFormatVersion = 2')
+          old = '''type BackupSnapshot struct {\n\tFormatVersion int                        `json:"format_version"`\n\tCreatedAt     time.Time                  `json:"created_at"`\n\tJobs          map[string]json.RawMessage `json:"jobs"`\n\tSecrets       map[string]json.RawMessage `json:"secrets"`\n}'''
+          new = '''type BackupSnapshot struct {\n\tFormatVersion       int                        `json:"format_version"`\n\tCreatedAt           time.Time                  `json:"created_at"`\n\tJobs                map[string]json.RawMessage `json:"jobs"`\n\tSecrets             map[string]json.RawMessage `json:"secrets"`\n\tVolumeRegistrations map[string]json.RawMessage `json:"volume_registrations"`\n}'''
+          if old not in s:
+              raise SystemExit('api backup anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('orchestrator/internal/server/server.go')
+          s = p.read_text()
+          old = '''\tresult := &api.BackupSnapshot{\n\t\tFormatVersion: api.BackupFormatVersion,\n\t\tCreatedAt:     s.now().UTC(),\n\t\tJobs:          make(map[string]json.RawMessage, len(snapshot.Jobs)),\n\t\tSecrets:       make(map[string]json.RawMessage, len(snapshot.Secrets)),\n\t}'''
+          new = '''\tresult := &api.BackupSnapshot{\n\t\tFormatVersion:       api.BackupFormatVersion,\n\t\tCreatedAt:           s.now().UTC(),\n\t\tJobs:                make(map[string]json.RawMessage, len(snapshot.Jobs)),\n\t\tSecrets:             make(map[string]json.RawMessage, len(snapshot.Secrets)),\n\t\tVolumeRegistrations: make(map[string]json.RawMessage, len(snapshot.VolumeRegistrations)),\n\t}'''
+          if old not in s:
+              raise SystemExit('server backup init anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''\tfor key, value := range snapshot.Secrets {\n\t\tresult.Secrets[key] = json.RawMessage(value)\n\t}\n\treturn result, nil'''
+          new = '''\tfor key, value := range snapshot.Secrets {\n\t\tresult.Secrets[key] = json.RawMessage(value)\n\t}\n\tfor key, value := range snapshot.VolumeRegistrations {\n\t\tresult.VolumeRegistrations[key] = json.RawMessage(value)\n\t}\n\treturn result, nil'''
+          if old not in s:
+              raise SystemExit('server backup copy anchor missing')
+          s = s.replace(old, new, 1)
+          old = 'snapshot := &state.DesiredSnapshot{Jobs: make(map[string][]byte, len(backup.Jobs)), Secrets: make(map[string][]byte, len(backup.Secrets))}'
+          new = 'snapshot := &state.DesiredSnapshot{Jobs: make(map[string][]byte, len(backup.Jobs)), Secrets: make(map[string][]byte, len(backup.Secrets)), VolumeRegistrations: make(map[string][]byte, len(backup.VolumeRegistrations))}'
+          if old not in s:
+              raise SystemExit('server restore init anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''\tfor key, value := range backup.Secrets {\n\t\tif !json.Valid(value) {\n\t\t\treturn fmt.Errorf("secret %q contains invalid JSON", key)\n\t\t}\n\t\tsnapshot.Secrets[key] = value\n\t}\n\ts.mutationMu.Lock()'''
+          new = '''\tfor key, value := range backup.Secrets {\n\t\tif !json.Valid(value) {\n\t\t\treturn fmt.Errorf("secret %q contains invalid JSON", key)\n\t\t}\n\t\tsnapshot.Secrets[key] = value\n\t}\n\tfor key, value := range backup.VolumeRegistrations {\n\t\tif !json.Valid(value) {\n\t\t\treturn fmt.Errorf("volume registration %q contains invalid JSON", key)\n\t\t}\n\t\tsnapshot.VolumeRegistrations[key] = value\n\t}\n\ts.mutationMu.Lock()'''
+          if old not in s:
+              raise SystemExit('server restore copy anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # User-facing node status now uses the new terminology.
+          p = Path('orchestrator/cmd/trellisctl/nodes.go')
+          s = p.read_text().replace('Host volumes: none', 'Volume registrations: none').replace('Host volumes:', 'Volume registrations:')
+          p.write_text(s)
+          PY
+
+          cat > orchestrator/internal/server/volume_state_test.go <<'EOF'
+          package server
+
+          import (
+          	"context"
+          	"testing"
+
+          	"github.com/clofour/trellis/internal/spec"
+          	"github.com/google/uuid"
+          )
+
+          func TestVolumeRegistrationRoundTripAndPinsScheduler(t *testing.T) {
+          	ctx := context.Background()
+          	controller := NewStateController(memoryStore{}, "test")
+          	owner := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+          	if err := controller.PutVolumeRegistration(ctx, &VolumeRegistration{Namespace: "acme", Name: "database", NodeID: owner}); err != nil {
+          		t.Fatal(err)
+          	}
+          	owners, err := controller.ListVolumeRegistrations(ctx)
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	if owners[volumeRegistrationKey("acme", "database")] != owner {
+          		t.Fatalf("unexpected registrations: %#v", owners)
+          	}
+
+          	other := &Node{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Status: NodeStatusHealthy}
+          	tasks := []spec.TaskSpec{{Volumes: []spec.VolumeSpec{{Name: "database", HostPath: "@/database", ContainerPath: "/data"}}}}
+          	placements := Schedule(&PlacementIntent{Namespace: "acme", Count: 1, Nodes: []*Node{other}, Tasks: tasks, VolumeOwners: owners})
+          	if len(placements) != 0 {
+          		t.Fatalf("volume was reassigned while its owner was absent: %#v", placements)
+          	}
+          }
+          EOF
+
+          gofmt -w orchestrator/internal/server/reconciler.go orchestrator/internal/server/server.go orchestrator/internal/server/volume_state.go orchestrator/internal/server/volume_state_test.go orchestrator/internal/state/raft.go orchestrator/internal/state/bolt.go orchestrator/internal/api/server.go orchestrator/cmd/trellisctl/nodes.go
+      - name: Regenerate schemas
+        working-directory: orchestrator
+        run: go run ./cmd/generate-schemas
+      - name: Run Go tests
+        working-directory: orchestrator
+        run: go test ./...
+      - name: Check generated schemas
+        working-directory: orchestrator
+        run: go run ./cmd/generate-schemas --check
+      - name: Commit durable-registry integration
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add orchestrator/internal/server/reconciler.go orchestrator/internal/server/server.go orchestrator/internal/server/volume_state.go orchestrator/internal/server/volume_state_test.go orchestrator/internal/state/raft.go orchestrator/internal/state/bolt.go orchestrator/internal/api/server.go orchestrator/cmd/trellisctl/nodes.go schemas/trellis-job.schema.json schemas/trellis-job-api.schema.json
+          git commit -m "feat: make volume registrations durable"
+          git push origin HEAD:volume-registration-model
